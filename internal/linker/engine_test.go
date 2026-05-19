@@ -62,12 +62,12 @@ func TestReplaceMappingsPersistsCurrentStateAndHistory(t *testing.T) {
 	if err := engine.ReplaceMappings(project, []Mapping{{Source: firstSource, Target: target}}); err != nil {
 		t.Fatalf("initial replace: %v", err)
 	}
-	assertSymlinkTarget(t, target, firstSource)
+	assertFileSymlinkTarget(t, target, firstSource)
 
 	if err := engine.ReplaceMappings(project, []Mapping{{Source: secondSource, Target: target}}); err != nil {
 		t.Fatalf("second replace: %v", err)
 	}
-	assertSymlinkTarget(t, target, secondSource)
+	assertFileSymlinkTarget(t, target, secondSource)
 
 	state, err := engine.LoadCurrentState(project)
 	if err != nil {
@@ -137,7 +137,7 @@ func TestReplaceMappingsRollsBackOnHistoryWriteFailure(t *testing.T) {
 		t.Fatal("expected persistence failure")
 	}
 
-	assertSymlinkTarget(t, target, firstSource)
+	assertFileSymlinkTarget(t, target, firstSource)
 	state, stateErr := engine.LoadCurrentState(project)
 	if stateErr != nil {
 		t.Fatalf("load current state after rollback: %v", stateErr)
@@ -168,7 +168,7 @@ func TestResetRemovesOnlyOwnedTargets(t *testing.T) {
 	if _, err := os.Lstat(ownedTarget); !os.IsNotExist(err) {
 		t.Fatalf("owned target still exists, err=%v", err)
 	}
-	assertSymlinkTarget(t, unmanagedTarget, otherSource)
+	assertFileSymlinkTarget(t, unmanagedTarget, otherSource)
 	state, err := engine.LoadCurrentState(project)
 	if err != nil {
 		t.Fatalf("load state after reset: %v", err)
@@ -215,5 +215,22 @@ func assertSymlinkTarget(t *testing.T, path string, want string) {
 	}
 	if got != want {
 		t.Fatalf("readlink(%s) = %s, want %s", path, got, want)
+	}
+}
+
+func assertFileSymlinkTarget(t *testing.T, path string, want string) {
+	t.Helper()
+	assertSymlinkTarget(t, path, want)
+
+	gotContent, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read file through symlink %s: %v", path, err)
+	}
+	wantContent, err := os.ReadFile(want)
+	if err != nil {
+		t.Fatalf("read source file %s: %v", want, err)
+	}
+	if !bytes.Equal(gotContent, wantContent) {
+		t.Fatalf("file content via symlink %s = %q, want source content %q", path, string(gotContent), string(wantContent))
 	}
 }
