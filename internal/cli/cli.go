@@ -31,16 +31,16 @@ var commandDescriptions = []struct {
 
 // Run executes the cfgfc CLI and returns a process exit code.
 func Run(args []string, stdout io.Writer, stderr io.Writer) int {
-	executablePath, err := os.Executable()
-	if err != nil {
-		fmt.Fprintf(stderr, "resolve executable path: %v\n", err)
-		return 1
-	}
-	return RunWithExecutable(args, stdout, stderr, executablePath)
+	return run(args, stdout, stderr)
 }
 
 // RunWithExecutable executes the cfgfc CLI against an injected executable path.
 func RunWithExecutable(args []string, stdout io.Writer, stderr io.Writer, executablePath string) int {
+	_ = executablePath
+	return run(args, stdout, stderr)
+}
+
+func run(args []string, stdout io.Writer, stderr io.Writer) int {
 	if len(args) == 0 || isHelpArg(args[0]) {
 		writeRootHelp(stdout)
 		return 0
@@ -48,7 +48,11 @@ func RunWithExecutable(args []string, stdout io.Writer, stderr io.Writer, execut
 
 	commandName := args[0]
 	commandArgs := args[1:]
-	warehouseRoot := scaffold.WarehouseRootForExecutable(executablePath)
+	warehouseRoot, err := scaffold.WarehouseRoot()
+	if err != nil {
+		fmt.Fprintf(stderr, "resolve warehouse root: %v\n", err)
+		return 1
+	}
 	switch commandName {
 	case "new":
 		return runNew(commandArgs, stdout, stderr, warehouseRoot)
@@ -380,7 +384,12 @@ func runApply(args []string, stdout io.Writer, stderr io.Writer, warehouseRoot s
 		fmt.Fprintf(stderr, "%v\n", err)
 		return 1
 	}
-	planOptions := planner.PlanOptions{HomeDir: os.Getenv("HOME"), Env: envMap(), OS: runtime.GOOS}
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		fmt.Fprintf(stderr, "resolve home directory: %v\n", err)
+		return 1
+	}
+	planOptions := planner.PlanOptions{HomeDir: homeDir, Env: envMap(), OS: runtime.GOOS}
 	var mappings []linker.Mapping
 	switch {
 	case modeName != "" && columnName == "" && settingsInput == "":

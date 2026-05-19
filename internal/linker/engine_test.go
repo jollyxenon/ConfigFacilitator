@@ -181,7 +181,7 @@ func TestResetRemovesOnlyOwnedTargets(t *testing.T) {
 func newProjectPaths(t *testing.T) (warehouse.Project, string) {
 	t.Helper()
 	root := t.TempDir()
-	projectPath := filepath.Join(root, "SettingWarehouse", "OpenCode")
+	projectPath := filepath.Join(root, ".configfacilitator", "SettingWarehouse", "OpenCode")
 	backupDir := filepath.Join(projectPath, "Backup")
 	if err := os.MkdirAll(backupDir, 0o755); err != nil {
 		t.Fatalf("mkdir backup dir: %v", err)

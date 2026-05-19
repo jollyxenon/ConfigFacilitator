@@ -7,6 +7,19 @@ import (
 	"testing"
 )
 
+func setTempHome(t *testing.T, workspace string) string {
+	t.Helper()
+	homeDir := filepath.Join(workspace, "home")
+	if err := os.MkdirAll(homeDir, 0o755); err != nil {
+		t.Fatalf("mkdir home dir: %v", err)
+	}
+	t.Setenv("HOME", homeDir)
+	t.Setenv("USERPROFILE", homeDir)
+	t.Setenv("HOMEDRIVE", "")
+	t.Setenv("HOMEPATH", "")
+	return homeDir
+}
+
 func TestRunShowsRootHelpWithoutArguments(t *testing.T) {
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
@@ -30,6 +43,8 @@ func TestRunShowsRootHelpWithoutArguments(t *testing.T) {
 }
 
 func TestRunReportsMissingProjectForApplyWithoutContext(t *testing.T) {
+	workspace := t.TempDir()
+	setTempHome(t, workspace)
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
 
@@ -69,6 +84,7 @@ func TestRunRejectsUnknownCommands(t *testing.T) {
 
 func TestRunWithExecutableCreatesProjectColumnAndModeScaffolds(t *testing.T) {
 	workspace := t.TempDir()
+	homeDir := setTempHome(t, workspace)
 	executablePath := filepath.Join(workspace, "cfgfc")
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
@@ -76,7 +92,7 @@ func TestRunWithExecutableCreatesProjectColumnAndModeScaffolds(t *testing.T) {
 	if exitCode := RunWithExecutable([]string{"new", "-p", "OpenCode"}, &stdout, &stderr, executablePath); exitCode != 0 {
 		t.Fatalf("new project exit code = %d, stderr=%q", exitCode, stderr.String())
 	}
-	if _, err := os.Stat(filepath.Join(workspace, "SettingWarehouse", "OpenCode", "Column", "ColumnIndex.jsonc")); err != nil {
+	if _, err := os.Stat(filepath.Join(homeDir, ".configfacilitator", "SettingWarehouse", "OpenCode", "Column", "ColumnIndex.jsonc")); err != nil {
 		t.Fatalf("project scaffold missing column index: %v", err)
 	}
 
@@ -85,7 +101,7 @@ func TestRunWithExecutableCreatesProjectColumnAndModeScaffolds(t *testing.T) {
 	if exitCode := RunWithExecutable([]string{"new", "-p", "OpenCode", "-c", "Skills"}, &stdout, &stderr, executablePath); exitCode != 0 {
 		t.Fatalf("new column exit code = %d, stderr=%q", exitCode, stderr.String())
 	}
-	settingIndexPath := filepath.Join(workspace, "SettingWarehouse", "OpenCode", "Column", "Skills", "SettingIndex.jsonc")
+	settingIndexPath := filepath.Join(homeDir, ".configfacilitator", "SettingWarehouse", "OpenCode", "Column", "Skills", "SettingIndex.jsonc")
 	settingIndexData, err := os.ReadFile(settingIndexPath)
 	if err != nil {
 		t.Fatalf("read setting index: %v", err)
@@ -99,7 +115,7 @@ func TestRunWithExecutableCreatesProjectColumnAndModeScaffolds(t *testing.T) {
 	if exitCode := RunWithExecutable([]string{"new", "-p", "OpenCode", "-m", "Max"}, &stdout, &stderr, executablePath); exitCode != 0 {
 		t.Fatalf("new mode exit code = %d, stderr=%q", exitCode, stderr.String())
 	}
-	modeIndexData, err := os.ReadFile(filepath.Join(workspace, "SettingWarehouse", "OpenCode", "Mode", "ModeIndex.jsonc"))
+	modeIndexData, err := os.ReadFile(filepath.Join(homeDir, ".configfacilitator", "SettingWarehouse", "OpenCode", "Mode", "ModeIndex.jsonc"))
 	if err != nil {
 		t.Fatalf("read mode index: %v", err)
 	}
@@ -110,8 +126,9 @@ func TestRunWithExecutableCreatesProjectColumnAndModeScaffolds(t *testing.T) {
 
 func TestRunWithExecutableSyncsWarehouseIndexes(t *testing.T) {
 	workspace := t.TempDir()
+	homeDir := setTempHome(t, workspace)
 	executablePath := filepath.Join(workspace, "cfgfc")
-	warehouseRoot := filepath.Join(workspace, "SettingWarehouse")
+	warehouseRoot := filepath.Join(homeDir, ".configfacilitator", "SettingWarehouse")
 	projectRoot := filepath.Join(warehouseRoot, "OpenCode")
 	for _, path := range []string{
 		filepath.Join(projectRoot, "Column", "Skills", "Skill-A"),
@@ -183,6 +200,7 @@ func TestRunWithExecutableSyncsWarehouseIndexes(t *testing.T) {
 
 func TestRunWithExecutableSwitchAndListUseConvenienceContext(t *testing.T) {
 	workspace := t.TempDir()
+	homeDir := setTempHome(t, workspace)
 	executablePath := filepath.Join(workspace, "cfgfc")
 	if exitCode := RunWithExecutable([]string{"new", "-p", "OpenCode"}, &bytes.Buffer{}, &bytes.Buffer{}, executablePath); exitCode != 0 {
 		t.Fatalf("create project failed")
@@ -190,7 +208,7 @@ func TestRunWithExecutableSwitchAndListUseConvenienceContext(t *testing.T) {
 	if exitCode := RunWithExecutable([]string{"new", "-p", "OpenCode", "-c", "Skills"}, &bytes.Buffer{}, &bytes.Buffer{}, executablePath); exitCode != 0 {
 		t.Fatalf("create column failed")
 	}
-	if err := os.WriteFile(filepath.Join(workspace, "SettingWarehouse", "OpenCode", "Column", "Skills", "Skill-A"), []byte("x"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(homeDir, ".configfacilitator", "SettingWarehouse", "OpenCode", "Column", "Skills", "Skill-A"), []byte("x"), 0o644); err != nil {
 		t.Fatalf("write setting file: %v", err)
 	}
 	if exitCode := RunWithExecutable([]string{"sync", "-p", "OpenCode"}, &bytes.Buffer{}, &bytes.Buffer{}, executablePath); exitCode != 0 {
@@ -218,6 +236,7 @@ func TestRunWithExecutableSwitchAndListUseConvenienceContext(t *testing.T) {
 
 func TestRunWithExecutableListsColumnAndModeDetails(t *testing.T) {
 	workspace := t.TempDir()
+	homeDir := setTempHome(t, workspace)
 	executablePath := filepath.Join(workspace, "cfgfc")
 	if exitCode := RunWithExecutable([]string{"new", "-p", "OpenCode"}, &bytes.Buffer{}, &bytes.Buffer{}, executablePath); exitCode != 0 {
 		t.Fatalf("create project failed")
@@ -228,7 +247,7 @@ func TestRunWithExecutableListsColumnAndModeDetails(t *testing.T) {
 	if exitCode := RunWithExecutable([]string{"new", "-p", "OpenCode", "-m", "Max"}, &bytes.Buffer{}, &bytes.Buffer{}, executablePath); exitCode != 0 {
 		t.Fatalf("create mode failed")
 	}
-	if err := os.WriteFile(filepath.Join(workspace, "SettingWarehouse", "OpenCode", "Column", "Skills", "Skill-A"), []byte("x"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(homeDir, ".configfacilitator", "SettingWarehouse", "OpenCode", "Column", "Skills", "Skill-A"), []byte("x"), 0o644); err != nil {
 		t.Fatalf("write setting file: %v", err)
 	}
 	if exitCode := RunWithExecutable([]string{"sync", "-p", "OpenCode"}, &bytes.Buffer{}, &bytes.Buffer{}, executablePath); exitCode != 0 {
@@ -269,7 +288,7 @@ func TestRunWithExecutableApplyResetAndRevertEndToEnd(t *testing.T) {
 	mustRun(t, executablePath, []string{"new", "-p", "OpenCode", "-c", "Skills"})
 	mustRun(t, executablePath, []string{"new", "-p", "OpenCode", "-m", "Max"})
 
-	warehouseRoot := filepath.Join(workspace, "SettingWarehouse", "OpenCode")
+	warehouseRoot := filepath.Join(homeDir, ".configfacilitator", "SettingWarehouse", "OpenCode")
 	if err := os.WriteFile(filepath.Join(warehouseRoot, "Column", "opencode.json", "CLAUDE.json"), []byte("claude"), 0o644); err != nil {
 		t.Fatalf("write CLAUDE.json: %v", err)
 	}

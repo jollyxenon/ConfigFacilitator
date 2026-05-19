@@ -1,8 +1,8 @@
 # ConfigFacilitator
 
-ConfigFacilitator is a portable Go CLI for managing Project, Column, Setting, and Mode data inside an executable-relative `SettingWarehouse/`.
+ConfigFacilitator is a portable Go CLI for managing Project, Column, Setting, and Mode data inside `~/.configfacilitator/SettingWarehouse/`.
 
-ConfigFacilitator 是一个便携式 Go CLI，用于管理位于可执行文件同级 `SettingWarehouse/` 中的 Project、Column、Setting 和 Mode。
+ConfigFacilitator 是一个便携式 Go CLI，用于管理位于 `~/.configfacilitator/SettingWarehouse/` 中的 Project、Column、Setting 和 Mode。
 
 ## Purpose / 用途
 

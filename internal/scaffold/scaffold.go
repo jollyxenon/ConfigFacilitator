@@ -209,7 +209,7 @@ func modeIndexTemplate(modeIndex index.ModeIndex) string {
 	return string(append(data, '\n'))
 }
 
-// WarehouseRootForExecutable exposes the command-facing warehouse path convention.
-func WarehouseRootForExecutable(executablePath string) string {
-	return warehouse.PathForExecutable(executablePath)
+// WarehouseRoot exposes the command-facing warehouse path convention.
+func WarehouseRoot() (string, error) {
+	return warehouse.DefaultWarehouseRoot()
 }

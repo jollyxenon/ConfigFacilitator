@@ -66,9 +66,13 @@ type Mode struct {
 	Metadata index.ModeEntry
 }
 
-// PathForExecutable returns the warehouse root expected beside the executable.
-func PathForExecutable(executablePath string) string {
-	return filepath.Join(filepath.Dir(executablePath), warehouseDirName)
+// DefaultWarehouseRoot returns the warehouse root in the user's config directory.
+func DefaultWarehouseRoot() (string, error) {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(homeDir, ".configfacilitator", warehouseDirName), nil
 }
 
 // LoadWarehouse loads the warehouse root, project index, and project models.

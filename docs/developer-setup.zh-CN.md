@@ -19,7 +19,7 @@ pixi run help
 - 使用 `pixi run test` 运行完整 Go 测试套件。
 - 使用 `pixi run build` 确认项目仍可编译。
 - 使用 `pixi run help` 验证根命令面。
-- 如果改动涉及命令行为，还要针对临时的可执行文件同级 `SettingWarehouse/` 做一次真实 CLI smoke test。
+- 如果改动涉及命令行为，还要针对临时的 `~/.configfacilitator/SettingWarehouse/` 做一次真实 CLI smoke test。
 
 ## 文档维护流程
 

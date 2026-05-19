@@ -1,6 +1,6 @@
 # ConfigFacilitator 文档
 
-ConfigFacilitator 是一个便携式 Go CLI，用于管理可执行文件同级 `SettingWarehouse/` 中的配置仓库。
+ConfigFacilitator 是一个便携式 Go CLI，用于管理 `~/.configfacilitator/SettingWarehouse/` 中的配置仓库。
 
 ## 从这里开始
 
@@ -13,7 +13,7 @@ ConfigFacilitator 是一个便携式 Go CLI，用于管理可执行文件同级 
 ## 关键信息
 
 - 二进制名称：`cfgfc`
-- 仓库根目录：`SettingWarehouse/`
+- 仓库根目录：`~/.configfacilitator/SettingWarehouse/`
 - 核心实体：`Project`、`Column`、`Setting`、`Mode`
 - 命令：`new`、`sync`、`switch`、`list`、`apply`、`reset`、`revert`
 

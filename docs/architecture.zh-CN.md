@@ -6,7 +6,7 @@
 
 ## 包划分
 
-- `internal/warehouse`：解析可执行文件同级的 `SettingWarehouse/` 并加载仓库模型。
+- `internal/warehouse`：解析 `~/.configfacilitator/SettingWarehouse/` 并加载仓库模型。
 - `internal/index`：解析和写入 JSONC 索引文件。
 - `internal/jsonc`：移除注释并规范化 JSONC 内容。
 - `internal/scaffold`：创建项目、栏目和模式模板。
@@ -18,7 +18,7 @@
 
 ## 存储模型
 
-仓库固定放在可执行文件旁边，而不是当前 shell 目录旁边。项目目录下包含 `Column/`、`Mode/` 和 `Backup/`，主要持久化文件是 `ProjectIndex.jsonc`、`ColumnIndex.jsonc`、`SettingIndex.jsonc`、`ModeIndex.jsonc`、`current_state.json` 和 `history.log`。
+仓库固定放在 `~/.configfacilitator/SettingWarehouse/` 下，而不是当前 shell 目录旁边。项目目录下包含 `Column/`、`Mode/` 和 `Backup/`，主要持久化文件是 `ProjectIndex.jsonc`、`ColumnIndex.jsonc`、`SettingIndex.jsonc`、`ModeIndex.jsonc`、`current_state.json` 和 `history.log`。
 
 ## 行为规则
 

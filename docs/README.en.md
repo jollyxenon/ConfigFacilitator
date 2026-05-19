@@ -1,6 +1,6 @@
 # ConfigFacilitator Documentation
 
-ConfigFacilitator is a portable Go CLI that manages configuration warehouses in an executable-relative `SettingWarehouse/`.
+ConfigFacilitator is a portable Go CLI that manages configuration warehouses in `~/.configfacilitator/SettingWarehouse/`.
 
 ## Start here
 
@@ -13,7 +13,7 @@ ConfigFacilitator is a portable Go CLI that manages configuration warehouses in 
 ## Quick facts
 
 - Binary name: `cfgfc`
-- Warehouse root: `SettingWarehouse/`
+- Warehouse root: `~/.configfacilitator/SettingWarehouse/`
 - Core entities: `Project`, `Column`, `Setting`, `Mode`
 - Commands: `new`, `sync`, `switch`, `list`, `apply`, `reset`, `revert`
 

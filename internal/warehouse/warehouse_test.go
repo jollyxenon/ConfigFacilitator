@@ -1,14 +1,25 @@
 package warehouse
 
 import (
+	"os"
 	"path/filepath"
 	"testing"
 )
 
-func TestPathForExecutableUsesExecutableSiblingWarehouse(t *testing.T) {
-	executablePath := filepath.Join("/tmp", "cfgfc-bin", "cfgfc")
-	got := PathForExecutable(executablePath)
-	want := filepath.Join("/tmp", "cfgfc-bin", "SettingWarehouse")
+func TestDefaultWarehouseRootUsesHomeConfigDirectory(t *testing.T) {
+	homeDir := filepath.Join("/tmp", "cfgfc-home")
+	t.Setenv("HOME", homeDir)
+	t.Setenv("USERPROFILE", homeDir)
+	t.Setenv("HOMEDRIVE", "")
+	t.Setenv("HOMEPATH", "")
+	if err := os.MkdirAll(homeDir, 0o755); err != nil {
+		t.Fatalf("mkdir home dir: %v", err)
+	}
+	got, err := DefaultWarehouseRoot()
+	if err != nil {
+		t.Fatalf("DefaultWarehouseRoot returned error: %v", err)
+	}
+	want := filepath.Join(homeDir, ".configfacilitator", "SettingWarehouse")
 	if got != want {
 		t.Fatalf("expected warehouse path %q, got %q", want, got)
 	}

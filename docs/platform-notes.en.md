@@ -6,7 +6,7 @@ ConfigFacilitator uses real symlinks only. It does not fall back to directory ju
 
 ## Portable layout
 
-The warehouse is resolved relative to the executable, not the shell working directory. Moving the binary changes the active warehouse root.
+The warehouse is resolved at `~/.configfacilitator/SettingWarehouse/`, not beside the shell working directory. Moving the binary does not change the active warehouse root.
 
 ## Session context
 

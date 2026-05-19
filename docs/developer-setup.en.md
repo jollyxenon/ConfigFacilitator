@@ -19,7 +19,7 @@ pixi run help
 - Use `pixi run test` for the full Go test suite.
 - Use `pixi run build` to confirm the project still compiles.
 - Use `pixi run help` to verify the root command surface.
-- For command changes, also run a real CLI smoke test against a temp executable-relative `SettingWarehouse/`.
+- For command changes, also run a real CLI smoke test against a temp `~/.configfacilitator/SettingWarehouse/`.
 
 ## Documentation workflow
 

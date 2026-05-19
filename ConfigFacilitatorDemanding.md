@@ -9,7 +9,7 @@
 - 每个栏目下有几个子配置 (**S**etting)。
 - 对于每个项目，还可以创建模式 (**M**ode，即预设)。模式会为每个栏目选择指定的子配置。
 
-这个软件应该是 portable（便携式）的，所有需要管理的配置放在统一的 `SettingWarehouse` 文件夹中，该文件夹固定存放在 `cfgfc` 可执行文件的同级目录下。系统的底层核心机制采用**软链接 (Symlink)** 驱动，并在每次应用配置时记录状态，以便于撤销和回溯。
+这个软件应该是 portable（便携式）的，所有需要管理的配置放在统一的 `SettingWarehouse` 文件夹中，该文件夹固定存放在 `~/.configfacilitator/SettingWarehouse/`。系统的底层核心机制采用**软链接 (Symlink)** 驱动，并在每次应用配置时记录状态，以便于撤销和回溯。
 
 ## 简单示例
 
@@ -41,8 +41,8 @@
 ### 目录结构样例
 
 ```text
-cfgfc (可执行文件)
-SettingWarehouse/
+cfgfc
+~/.configfacilitator/SettingWarehouse/
 ├── ProjectIndex.jsonc
 └── OpenCode/
     ├── Backup/
@@ -116,7 +116,7 @@ SettingWarehouse/
 
 CLI 使用 `cfgfc` 唤起 ConfigFacilitator。
 **核心缩写规范**：项目 `-p` (Project)、模式 `-m` (Mode)、栏目 `-c` (Column)、子配置 `-s` (Setting)。
-**注意**：所有命令中的 `-p <ProjectName>` 参数，在执行过 `cfgfc switch` 进入特定项目上下文后，均可**省略**。
+**注意**：`switch` 只影响 `list`、`apply`、`reset` 和 `revert` 的项目上下文；`new` 与 `sync` 仍然需要显式的 `-p <ProjectName>`。
 
 ### 1. 搭建骨架 (`new`)
 
@@ -128,7 +128,7 @@ CLI 使用 `cfgfc` 唤起 ConfigFacilitator。
 
 ### 2. 同步数据 (`sync`)
 
-- **全局同步**：`cfgfc sync`。自动扫描 `SettingWarehouse` 下所有项目及栏目的实体文件，补全和修复所有的 Index 记录。
+- **全局同步**：`cfgfc sync`。自动扫描 `~/.configfacilitator/SettingWarehouse/` 下所有项目及栏目的实体文件，补全和修复所有的 Index 记录。
 - **项目同步**：`cfgfc sync -p <ProjectName>`。仅扫描并同步指定项目。
 - *同步逻辑说明*：如果发现新实体文件，则自动加入 JSON。**如果发现实体文件丢失（如被用户重命名或误删），系统会在 Index 中保留这些“游离节点”**（可标记为 missing 状态），绝不擅自删除该节点的配置条目，以保证用户之前手写的 `"description"` 备注与路径配置不会丢失。
 
@@ -166,20 +166,20 @@ CLI 使用 `cfgfc` 唤起 ConfigFacilitator。
     ```bash
     cfgfc new -p OpenCode
     cfgfc switch OpenCode   # 切换上下文绑定当前终端进程，后续操作锁定 OpenCode，省略 -p
-    cfgfc new -c "opencode.json"
-    cfgfc new -c "Skills"
+    cfgfc new -p OpenCode -c "opencode.json"
+    cfgfc new -p OpenCode -c "Skills"
     ```
 
 2. **填充内容与新建模式模板**：
-    - 用户打开文件管理器，将 `CLAUDE.json` 和 `GPT.json` 拖入 `SettingWarehouse/OpenCode/Column/opencode.json/` 目录下。将具体的技能文件夹拖入 `Skills` 目录下。
+    - 用户打开文件管理器，将 `CLAUDE.json` 和 `GPT.json` 拖入 `~/.configfacilitator/SettingWarehouse/OpenCode/Column/opencode.json/` 目录下。将具体的技能文件夹拖入 `Skills` 目录下。
     - 用户打开对应的 `SettingIndex.jsonc` 填写 `"defaultTarget"` 或 `"target"`，指定软链接生成的绝对路径（可使用 `~` 等变量）。
     - 生成模式模板：
 
         ```bash
-        cfgfc new -m Max
+        cfgfc new -p OpenCode -m Max
         ```
 
-    - 用户使用文本编辑器打开生成的 `SettingWarehouse/OpenCode/Mode/ModeIndex.jsonc`，补全映射关系和覆盖策略。
+    - 用户使用文本编辑器打开生成的 `~/.configfacilitator/SettingWarehouse/OpenCode/Mode/ModeIndex.jsonc`，补全映射关系和覆盖策略。
 
 3. **扫描同步与检视**：
 
