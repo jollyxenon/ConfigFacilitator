@@ -1,0 +1,15 @@
+{
+  "description": "Main config settings",
+  "defaultTarget": "~/.config/opencode/opencode.json",
+  "settings": {
+    "GPT.json": {
+      "displayName": "GPT",
+      "description": "GPT model config"
+    },
+    "CLAUDE.json": {
+      "displayName": "Claude",
+      "description": "Missing config",
+      "missing": true
+    }
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "description": "Skills column",
+  "settings": {
+    "Skill-A": {
+      "displayName": "Skill A",
+      "description": "A skill directory"
+    },
+    "Skill-B": {
+      "displayName": "Skill B",
+      "description": "B skill directory"
+    }
+  }
+}

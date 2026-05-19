@@ -1,0 +1,12 @@
+[workspace]
+name = "config-facilitator"
+channels = ["conda-forge"]
+platforms = ["linux-64"]
+
+[dependencies]
+go = ">=1.24.4,<1.25"
+
+[tasks]
+test = "go test ./..."
+build = "go build ./..."
+help = "go run ./cmd/cfgfc --help"

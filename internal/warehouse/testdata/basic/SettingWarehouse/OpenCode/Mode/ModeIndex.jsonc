@@ -1,0 +1,16 @@
+{
+  "Max": {
+    "displayName": "Max",
+    "description": "full mode",
+    "columns": {
+      "opencode.json": {
+        "settings": ["GPT.json"],
+        "strategy": "full"
+      },
+      "Skills": {
+        "settings": ["Skill-A", "Skill-B"],
+        "strategy": "incremental"
+      }
+    }
+  }
+}

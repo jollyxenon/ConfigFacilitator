@@ -1,0 +1,6 @@
+openspec/
+.codenomad/
+.sisyphus/
+.opencode/
+
+*.log

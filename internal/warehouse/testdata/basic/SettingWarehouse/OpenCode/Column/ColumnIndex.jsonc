@@ -1,0 +1,10 @@
+{
+  "opencode.json": {
+    "displayName": "Main Config",
+    "description": "Primary config file"
+  },
+  "Skills": {
+    "displayName": "Skills",
+    "description": "Skill directories"
+  }
+}
