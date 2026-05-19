@@ -29,3 +29,9 @@
 - Use `pixi run build` to confirm the project still compiles.
 - Use `pixi run help` to verify the root command surface.
 - For command changes, also run a real CLI smoke test against a temp executable-relative `SettingWarehouse/`.
+
+## Documentation Expectations
+
+- Sync documentation after every modification that changes user-facing behavior, command surface, project structure, or developer workflow.
+- Keep non-root project documentation under `docs/`.
+- Maintain English and Chinese document parity when updating docs.
