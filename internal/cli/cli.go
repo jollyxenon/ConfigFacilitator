@@ -412,7 +412,7 @@ func runNew(args []string, stdout io.Writer, stderr io.Writer, warehouseRoot str
 		}
 		err = scaffold.CreateColumn(warehouseRoot, project.Name, columnName)
 		if err == nil {
-			fmt.Fprintf(stdout, "Created column scaffold %q in project %q\n", columnName, project.Name)
+			fmt.Fprintf(stdout, "Created column scaffold %q in project %q\n", columnName, displayStatusName(project.Metadata.DisplayName, project.Name))
 		}
 	case projectName != "" && columnName == "" && modeName != "":
 		project, resolveErr := resolveProjectReference(warehouseRoot, projectName)
@@ -422,7 +422,7 @@ func runNew(args []string, stdout io.Writer, stderr io.Writer, warehouseRoot str
 		}
 		err = scaffold.CreateMode(warehouseRoot, project.Name, modeName)
 		if err == nil {
-			fmt.Fprintf(stdout, "Created mode scaffold %q in project %q\n", modeName, project.Name)
+			fmt.Fprintf(stdout, "Created mode scaffold %q in project %q\n", modeName, displayStatusName(project.Metadata.DisplayName, project.Name))
 		}
 	default:
 		fmt.Fprintln(stderr, "new requires one of: -p <project>, -p <project> -c <column>, or -p <project> -m <mode>")
@@ -462,7 +462,12 @@ func runSync(args []string, stdout io.Writer, stderr io.Writer, warehouseRoot st
 	} else {
 		err = syncer.SyncProject(warehouseRoot, projectName)
 		if err == nil {
-			fmt.Fprintf(stdout, "Synchronized project %q\n", projectName)
+			project, resolveErr := resolveProjectReference(warehouseRoot, projectName)
+			if resolveErr != nil {
+				fmt.Fprintf(stderr, "%v\n", resolveErr)
+				return 1
+			}
+			fmt.Fprintf(stdout, "Synchronized project %q\n", displayStatusName(project.Metadata.DisplayName, project.Name))
 		}
 	}
 	if err != nil {
@@ -557,7 +562,7 @@ func runSwitch(args []string, stdout io.Writer, stderr io.Writer, warehouseRoot 
 		fmt.Fprintf(stderr, "%v\n", err)
 		return 1
 	}
-	fmt.Fprintf(stdout, "Switched active project to %q\n", project.Name)
+	fmt.Fprintf(stdout, "Switched active project to %q\n", displayStatusName(project.Metadata.DisplayName, project.Name))
 	return 0
 }
 
@@ -717,6 +722,15 @@ func displayLabel(displayName string, canonicalID string) string {
 	return fmt.Sprintf("%s [%s]", displayName, canonicalID)
 }
 
+func displayStatusName(displayName string, canonicalID string) string {
+	displayName = strings.TrimSpace(displayName)
+	canonicalID = strings.TrimSpace(canonicalID)
+	if displayName == "" {
+		return canonicalID
+	}
+	return displayName
+}
+
 // displayModeColumn renders one mode column reference using column display metadata when available.
 func displayModeColumn(project warehouse.Project, reference string) string {
 	column, err := project.ResolveColumn(reference)
@@ -770,20 +784,30 @@ func runApply(args []string, stdout io.Writer, stderr io.Writer, warehouseRoot s
 	var mappings []linker.Mapping
 	switch {
 	case modeName != "" && columnName == "" && settingsInput == "":
+		mode, resolveErr := project.ResolveMode(modeName)
+		if resolveErr != nil {
+			fmt.Fprintf(stderr, "%v\n", resolveErr)
+			return 1
+		}
 		mappings, err = planner.PlanModeMappings(project, modeName, currentState.Mappings, planOptions)
 		if err == nil {
 			err = engine.ReplaceMappings(project, mappings)
 		}
 		if err == nil {
-			fmt.Fprintf(stdout, "Applied mode %q for project %q\n", modeName, project.Name)
+			fmt.Fprintf(stdout, "Applied mode %q for project %q\n", displayStatusName(mode.Metadata.DisplayName, mode.Name), displayStatusName(project.Metadata.DisplayName, project.Name))
 		}
 	case modeName == "" && columnName != "" && settingsInput != "":
+		column, resolveErr := project.ResolveColumn(columnName)
+		if resolveErr != nil {
+			fmt.Fprintf(stderr, "%v\n", resolveErr)
+			return 1
+		}
 		mappings, err = planner.PlanColumnMappings(project, columnName, planner.ParseSettingList(settingsInput), planOptions)
 		if err == nil {
 			err = engine.ReplaceMappings(project, mappings)
 		}
 		if err == nil {
-			fmt.Fprintf(stdout, "Applied column %q for project %q\n", columnName, project.Name)
+			fmt.Fprintf(stdout, "Applied column %q for project %q\n", displayStatusName(column.Metadata.DisplayName, column.Name), displayStatusName(project.Metadata.DisplayName, project.Name))
 		}
 	default:
 		fmt.Fprintln(stderr, "apply requires either -m <mode> or -c <column> -s <settings>")
@@ -811,7 +835,7 @@ func runReset(args []string, stdout io.Writer, stderr io.Writer, warehouseRoot s
 		fmt.Fprintf(stderr, "%v\n", err)
 		return 1
 	}
-	fmt.Fprintf(stdout, "Reset project %q\n", project.Name)
+	fmt.Fprintf(stdout, "Reset project %q\n", displayStatusName(project.Metadata.DisplayName, project.Name))
 	return 0
 }
 
@@ -836,7 +860,7 @@ func runRevert(args []string, stdout io.Writer, stderr io.Writer, warehouseRoot 
 		fmt.Fprintf(stderr, "%v\n", err)
 		return 1
 	}
-	fmt.Fprintf(stdout, "Reverted project %q\n", project.Name)
+	fmt.Fprintf(stdout, "Reverted project %q\n", displayStatusName(project.Metadata.DisplayName, project.Name))
 	return 0
 }
 

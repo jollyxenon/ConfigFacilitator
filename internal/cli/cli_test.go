@@ -152,6 +152,9 @@ func TestRunWithExecutableCreatesProjectColumnAndModeScaffolds(t *testing.T) {
 	if exitCode := RunWithExecutable([]string{"new", "-p", "OpenCode"}, &stdout, &stderr, executablePath); exitCode != 0 {
 		t.Fatalf("new project exit code = %d, stderr=%q", exitCode, stderr.String())
 	}
+	if !bytes.Contains(stdout.Bytes(), []byte("Created project scaffold \"OpenCode\"")) {
+		t.Fatalf("unexpected new project stdout %q", stdout.String())
+	}
 	if _, err := os.Stat(filepath.Join(homeDir, ".configfacilitator", "OpenCode", "Column", "ColumnIndex.jsonc")); err != nil {
 		t.Fatalf("project scaffold missing column index: %v", err)
 	}
@@ -171,6 +174,9 @@ func TestRunWithExecutableCreatesProjectColumnAndModeScaffolds(t *testing.T) {
 	if exitCode := RunWithExecutable([]string{"new", "-p", "OpenCode", "-c", "Skills"}, &stdout, &stderr, executablePath); exitCode != 0 {
 		t.Fatalf("new column exit code = %d, stderr=%q", exitCode, stderr.String())
 	}
+	if !bytes.Contains(stdout.Bytes(), []byte("Created column scaffold \"Skills\" in project \"OpenCode\"")) {
+		t.Fatalf("unexpected new column stdout %q", stdout.String())
+	}
 	settingIndexPath := filepath.Join(homeDir, ".configfacilitator", "OpenCode", "Column", "Skills", "SettingIndex.jsonc")
 	settingIndexData, err := os.ReadFile(settingIndexPath)
 	if err != nil {
@@ -182,6 +188,9 @@ func TestRunWithExecutableCreatesProjectColumnAndModeScaffolds(t *testing.T) {
 	stderr.Reset()
 	if exitCode := RunWithExecutable([]string{"new", "-p", "OpenCode", "-m", "Max"}, &stdout, &stderr, executablePath); exitCode != 0 {
 		t.Fatalf("new mode exit code = %d, stderr=%q", exitCode, stderr.String())
+	}
+	if !bytes.Contains(stdout.Bytes(), []byte("Created mode scaffold \"Max\" in project \"OpenCode\"")) {
+		t.Fatalf("unexpected new mode stdout %q", stdout.String())
 	}
 	modeIndexData, err := os.ReadFile(filepath.Join(homeDir, ".configfacilitator", "OpenCode", "Mode", "ModeIndex.jsonc"))
 	if err != nil {
@@ -818,16 +827,24 @@ func TestRunWithExecutableApplyResetAndRevertEndToEnd(t *testing.T) {
 	}
 
 	mustRun(t, executablePath, []string{"sync", "-p", "OpenCode"})
-	mustRun(t, executablePath, []string{"switch", "OpenCode"})
-	mustRun(t, executablePath, []string{"apply", "-c", "opencode.json", "-s", "GPT.json"})
+	if got := mustRun(t, executablePath, []string{"switch", "OpenCode"}); !bytes.Contains([]byte(got), []byte("Switched active project to \"OpenCode\"")) {
+		t.Fatalf("unexpected switch stdout %q", got)
+	}
+	if got := mustRun(t, executablePath, []string{"apply", "-c", "opencode.json", "-s", "GPT.json"}); !bytes.Contains([]byte(got), []byte("Applied column \"opencode.json\" for project \"OpenCode\"")) {
+		t.Fatalf("unexpected apply-column stdout %q", got)
+	}
 	assertFileSymlinkPointsTo(t, filepath.Join(configDir, "opencode.json"), filepath.Join(warehouseRoot, "Column", "opencode.json", "GPT.json"))
 
-	mustRun(t, executablePath, []string{"apply", "-m", "Max"})
+	if got := mustRun(t, executablePath, []string{"apply", "-m", "Max"}); !bytes.Contains([]byte(got), []byte("Applied mode \"Max\" for project \"OpenCode\"")) {
+		t.Fatalf("unexpected apply-mode stdout %q", got)
+	}
 	assertFileSymlinkPointsTo(t, filepath.Join(configDir, "opencode.json"), filepath.Join(warehouseRoot, "Column", "opencode.json", "CLAUDE.json"))
 	assertSymlinkPointsTo(t, filepath.Join(configDir, "skills", "Skill-A"), filepath.Join(warehouseRoot, "Column", "Skills", "Skill-A"))
 	assertSymlinkPointsTo(t, filepath.Join(configDir, "skills", "Skill-B"), filepath.Join(warehouseRoot, "Column", "Skills", "Skill-B"))
 
-	mustRun(t, executablePath, []string{"revert"})
+	if got := mustRun(t, executablePath, []string{"revert"}); !bytes.Contains([]byte(got), []byte("Reverted project \"OpenCode\"")) {
+		t.Fatalf("unexpected revert stdout %q", got)
+	}
 	assertFileSymlinkPointsTo(t, filepath.Join(configDir, "opencode.json"), filepath.Join(warehouseRoot, "Column", "opencode.json", "GPT.json"))
 	if _, err := os.Lstat(filepath.Join(configDir, "skills", "Skill-A")); !os.IsNotExist(err) {
 		t.Fatalf("Skill-A should be removed after revert, err=%v", err)
@@ -836,7 +853,9 @@ func TestRunWithExecutableApplyResetAndRevertEndToEnd(t *testing.T) {
 		t.Fatalf("Skill-B should be removed after revert, err=%v", err)
 	}
 
-	mustRun(t, executablePath, []string{"reset"})
+	if got := mustRun(t, executablePath, []string{"reset"}); !bytes.Contains([]byte(got), []byte("Reset project \"OpenCode\"")) {
+		t.Fatalf("unexpected reset stdout %q", got)
+	}
 	if _, err := os.Lstat(filepath.Join(configDir, "opencode.json")); !os.IsNotExist(err) {
 		t.Fatalf("opencode.json should be removed after reset, err=%v", err)
 	}
@@ -916,8 +935,8 @@ func TestRunWithExecutableResolvesAliasesAndStoresCanonicalProjectContext(t *tes
 	if exitCode := RunWithExecutable([]string{"switch", "oc"}, &stdout, &stderr, executablePath); exitCode != 0 {
 		t.Fatalf("switch alias exit=%d stderr=%q", exitCode, stderr.String())
 	}
-	if !bytes.Contains(stdout.Bytes(), []byte(`"OpenCodeFolder"`)) {
-		t.Fatalf("expected normalized project identifier in switch output, got %q", stdout.String())
+	if !bytes.Contains(stdout.Bytes(), []byte(`Open Code`)) {
+		t.Fatalf("expected display name in switch output, got %q", stdout.String())
 	}
 
 	stdout.Reset()
