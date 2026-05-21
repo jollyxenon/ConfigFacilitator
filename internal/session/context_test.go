@@ -63,3 +63,22 @@ func TestResolveProjectUsesStoredContextWhenExplicitMissing(t *testing.T) {
 		t.Fatalf("expected project to be marked as context-derived")
 	}
 }
+
+func TestClearRemovesStoredProject(t *testing.T) {
+	store := NewStore(t.TempDir())
+	if err := store.Set(3333, "OpenCode"); err != nil {
+		t.Fatalf("Set returned error: %v", err)
+	}
+
+	if err := store.Clear(3333); err != nil {
+		t.Fatalf("Clear returned error: %v", err)
+	}
+
+	project, ok, err := store.Get(3333)
+	if err != nil {
+		t.Fatalf("Get returned error: %v", err)
+	}
+	if ok {
+		t.Fatalf("expected cleared project to be missing, got %q", project)
+	}
+}

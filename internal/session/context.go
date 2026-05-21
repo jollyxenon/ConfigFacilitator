@@ -39,6 +39,15 @@ func (store Store) Set(ppid int, project string) error {
 	return os.WriteFile(store.recordPath(ppid), data, 0o644)
 }
 
+// Clear removes the active project for a PPID-scoped convenience session.
+func (store Store) Clear(ppid int) error {
+	err := os.Remove(store.recordPath(ppid))
+	if err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	return nil
+}
+
 // Get returns the project stored for the given PPID, if any.
 func (store Store) Get(ppid int) (string, bool, error) {
 	data, err := os.ReadFile(store.recordPath(ppid))
