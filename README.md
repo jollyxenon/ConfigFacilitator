@@ -15,17 +15,33 @@ Project directories are discovered directly under `~/.configfacilitator/`, inclu
 
 ## Installation / 安装
 
-Build with Go 1.24.4 or run through `pixi`:
+Build locally:
 
 ```bash
 pixi run build
 ```
 
-使用 Go 1.24.4 构建，或通过 `pixi` 运行：
+Install `cfgfc` as a global command:
+
+```bash
+pixi run install-global
+```
+
+If `cfgfc` is still not found, add `GOBIN` or `$(go env GOPATH)/bin` to your `PATH`.
+
+本地构建：
 
 ```bash
 pixi run build
 ```
+
+将 `cfgfc` 安装为全局命令：
+
+```bash
+pixi run install-global
+```
+
+如果执行后仍然找不到 `cfgfc`，请把 `GOBIN` 或 `$(go env GOPATH)/bin` 加到 `PATH` 中。
 
 ## License / 开源协议
 
