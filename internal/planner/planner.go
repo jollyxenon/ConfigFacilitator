@@ -17,16 +17,16 @@ type PlanOptions struct {
 }
 
 // PlanColumnMappings builds the mapping set for one explicit column selection.
-func PlanColumnMappings(project warehouse.Project, columnName string, settingNames []string, options PlanOptions) ([]linker.Mapping, error) {
-	column, ok := project.Columns[columnName]
-	if !ok {
-		return nil, fmt.Errorf("column %q does not exist in project %q", columnName, project.Name)
+func PlanColumnMappings(project warehouse.Project, columnReference string, settingReferences []string, options PlanOptions) ([]linker.Mapping, error) {
+	column, err := project.ResolveColumn(columnReference)
+	if err != nil {
+		return nil, err
 	}
-	mappings := make([]linker.Mapping, 0, len(settingNames))
-	for _, settingName := range settingNames {
-		setting, ok := column.Settings[settingName]
-		if !ok {
-			return nil, fmt.Errorf("setting %q does not exist in column %q", settingName, columnName)
+	mappings := make([]linker.Mapping, 0, len(settingReferences))
+	for _, settingReference := range settingReferences {
+		setting, err := column.ResolveSetting(settingReference)
+		if err != nil {
+			return nil, err
 		}
 		mapping, err := resolveSettingMapping(column, setting, options)
 		if err != nil {
@@ -38,31 +38,31 @@ func PlanColumnMappings(project warehouse.Project, columnName string, settingNam
 }
 
 // PlanModeMappings builds the mapping set for a mode selection from current managed state.
-func PlanModeMappings(project warehouse.Project, modeName string, current []linker.Mapping, options PlanOptions) ([]linker.Mapping, error) {
-	mode, ok := project.Modes[modeName]
-	if !ok {
-		return nil, fmt.Errorf("mode %q does not exist in project %q", modeName, project.Name)
+func PlanModeMappings(project warehouse.Project, modeReference string, current []linker.Mapping, options PlanOptions) ([]linker.Mapping, error) {
+	mode, err := project.ResolveMode(modeReference)
+	if err != nil {
+		return nil, err
 	}
 	byColumn := groupCurrentMappingsByColumn(project, current)
 	result := []linker.Mapping{}
 	seenTargets := map[string]struct{}{}
-	for columnName, column := range project.Columns {
-		selection, declared := mode.Metadata.Columns[columnName]
-		if !declared {
-			continue
+	for columnReference, selection := range mode.Metadata.Columns {
+		column, err := project.ResolveColumn(columnReference)
+		if err != nil {
+			return nil, err
 		}
 		if selection.Strategy == "incremental" {
-			for _, mapping := range byColumn[columnName] {
+			for _, mapping := range byColumn[column.Name] {
 				if _, exists := seenTargets[mapping.Target]; !exists {
 					result = append(result, mapping)
 					seenTargets[mapping.Target] = struct{}{}
 				}
 			}
 		}
-		for _, settingName := range selection.Settings {
-			setting, ok := column.Settings[settingName]
-			if !ok {
-				return nil, fmt.Errorf("setting %q does not exist in column %q", settingName, columnName)
+		for _, settingReference := range selection.Settings {
+			setting, err := column.ResolveSetting(settingReference)
+			if err != nil {
+				return nil, err
 			}
 			mapping, err := resolveSettingMapping(column, setting, options)
 			if err != nil {

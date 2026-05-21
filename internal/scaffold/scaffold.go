@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 
 	"github.com/xenon/ConfigFacilitator/internal/index"
 	"github.com/xenon/ConfigFacilitator/internal/warehouse"
@@ -88,7 +89,7 @@ func CreateMode(rootPath string, projectName string, modeName string) error {
 	for _, columnName := range sortedColumnNames(columnIndex) {
 		columns[columnName] = index.ModeColumnSelection{Settings: []string{}, Strategy: "full", Extra: map[string]json.RawMessage{}}
 	}
-	modeIndex.Modes[modeName] = index.ModeEntry{DisplayName: modeName, Description: "", Columns: columns, Extra: map[string]json.RawMessage{}}
+	modeIndex.Modes[modeName] = index.ModeEntry{DisplayName: modeName, Aliases: []string{}, Description: "", Columns: columns, Extra: map[string]json.RawMessage{}}
 	return os.WriteFile(modeIndexPath, []byte(modeIndexTemplate(modeIndex)), 0o644)
 }
 
@@ -102,19 +103,21 @@ func ensureProjectIndex(rootPath string, projectName string) error {
 		return err
 	}
 	entry := projectIndex.Projects[projectName]
-	if entry.FolderName == "" {
-		entry.FolderName = projectName
+	if entry.WarehouseName == "" {
+		entry.WarehouseName = projectName
 	}
 	if entry.DisplayName == "" {
 		entry.DisplayName = projectName
+	}
+	if entry.Aliases == nil {
+		entry.Aliases = []string{}
 	}
 	projectIndex.Projects[projectName] = entry
 	data, err := json.MarshalIndent(projectIndex, "", "  ")
 	if err != nil {
 		return err
 	}
-	data = append(data, '\n')
-	return os.WriteFile(projectIndexPath, data, 0o644)
+	return os.WriteFile(projectIndexPath, []byte(formatJSONCWithExample(string(data), projectIndexExampleComment())), 0o644)
 }
 
 func ensureColumnIndex(projectPath string, columnName string) error {
@@ -124,19 +127,21 @@ func ensureColumnIndex(projectPath string, columnName string) error {
 		return err
 	}
 	entry := columnIndex.Columns[columnName]
-	if entry.FolderName == "" {
-		entry.FolderName = columnName
+	if entry.WarehouseName == "" {
+		entry.WarehouseName = columnName
 	}
 	if entry.DisplayName == "" {
 		entry.DisplayName = columnName
+	}
+	if entry.Aliases == nil {
+		entry.Aliases = []string{}
 	}
 	columnIndex.Columns[columnName] = entry
 	data, err := json.MarshalIndent(columnIndex, "", "  ")
 	if err != nil {
 		return err
 	}
-	data = append(data, '\n')
-	return os.WriteFile(columnIndexPath, data, 0o644)
+	return os.WriteFile(columnIndexPath, []byte(formatJSONCWithExample(string(data), columnIndexExampleComment())), 0o644)
 }
 
 func readProjectIndex(path string) (index.ProjectIndex, error) {
@@ -191,22 +196,104 @@ func sortedColumnNames(columnIndex index.ColumnIndex) []string {
 }
 
 func columnIndexTemplate() string {
-	return "{\n  // Add columns keyed by folder name.\n}\n"
+	return formatJSONCWithExample("{}", columnIndexExampleComment())
 }
 
 func settingIndexTemplate() string {
-	return "{\n  \"description\": \"\",\n  \"defaultTarget\": \"\",\n  \"settings\": {\n    // \"ExampleSetting\": {\n    //   \"displayName\": \"Example Setting\",\n    //   \"description\": \"\",\n    //   \"target\": \"\"\n    // }\n  }\n}\n"
+	return formatJSONCWithExample("{\n  \"description\": \"\",\n  \"defaultTarget\": \"\",\n  \"settings\": {}\n}", settingIndexExampleComment())
 }
 
 func modeIndexTemplate(modeIndex index.ModeIndex) string {
 	if len(modeIndex.Modes) == 0 {
-		return "{\n  // Add modes keyed by mode name.\n}\n"
+		return formatJSONCWithExample("{}", modeIndexExampleComment())
 	}
 	data, err := json.MarshalIndent(modeIndex, "", "  ")
 	if err != nil {
 		panic(err)
 	}
-	return string(append(data, '\n'))
+	return formatJSONCWithExample(string(data), modeIndexExampleComment())
+}
+
+// formatJSONCWithExample appends one trailing example comment block to a JSON body.
+func formatJSONCWithExample(body string, exampleComment string) string {
+	trimmedBody := strings.TrimRight(body, "\n")
+	trimmedComment := strings.TrimRight(exampleComment, "\n")
+	return trimmedBody + "\n\n" + trimmedComment + "\n"
+}
+
+// projectIndexExampleComment returns the generated example block for ProjectIndex.jsonc.
+func projectIndexExampleComment() string {
+	return `/*
+Example:
+{
+  "OpenCode": {
+	    "displayName": "OpenCode",
+	    "aliases": [],
+	    "description": "Optional note about this project"
+  }
+}
+
+Keep durable notes in the "description" field.
+*/`
+}
+
+// columnIndexExampleComment returns the generated example block for ColumnIndex.jsonc.
+func columnIndexExampleComment() string {
+	return `/*
+Example:
+{
+  "Skills": {
+	    "displayName": "Skills",
+	    "aliases": [],
+	    "description": "Optional note about this column"
+  }
+}
+
+Add columns keyed by folder name and keep permanent notes in "description".
+*/`
+}
+
+// settingIndexExampleComment returns the generated example block for SettingIndex.jsonc.
+func settingIndexExampleComment() string {
+	return `/*
+Example:
+{
+  "description": "Optional note about this column",
+  "defaultTarget": "~/.config/opencode/opencode.json",
+  "settings": {
+    "ExampleSetting": {
+	      "displayName": "Example Setting",
+	      "aliases": [],
+	      "description": "Optional note about this setting",
+	      "target": "~/.config/opencode/special/special.json"
+    }
+  }
+}
+
+Use "description" for permanent notes. Set "target" only when one setting needs a custom destination.
+*/`
+}
+
+// modeIndexExampleComment returns the generated example block for ModeIndex.jsonc.
+func modeIndexExampleComment() string {
+	return `/*
+Example:
+{
+  "Max": {
+	    "displayName": "Max",
+	    "aliases": [],
+	    "description": "Optional note about this mode",
+	    "columns": {
+	      "Skills": {
+        "settings": ["Skill-A", "Skill-B"],
+        "strategy": "incremental"
+      }
+    }
+  }
+}
+
+List modes keyed by mode name. Use "full" to replace a column or "incremental" to append settings.
+*/`
 }
 
 // WarehouseRoot exposes the command-facing warehouse path convention.

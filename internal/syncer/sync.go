@@ -35,45 +35,41 @@ func SyncProject(rootPath string, projectName string) error {
 	if err := rewriteProjectIndex(loaded); err != nil {
 		return err
 	}
-	project, ok := loaded.Projects[projectName]
-	if !ok {
-		return os.ErrNotExist
+	project, err := loaded.ResolveProject(projectName)
+	if err != nil {
+		return err
 	}
 	return rewriteProject(project)
 }
 
 func rewriteProjectIndex(loaded warehouse.Warehouse) error {
 	projectIndex := loaded.ProjectIndex
-	if projectIndex.Projects == nil {
-		projectIndex.Projects = map[string]index.ProjectEntry{}
-	}
-	for name, project := range loaded.Projects {
+	projectIndex.Projects = map[string]index.ProjectEntry{}
+	for _, project := range loaded.Projects {
 		entry := project.Metadata
-		if entry.FolderName == "" {
-			entry.FolderName = name
-		}
 		if entry.DisplayName == "" {
-			entry.DisplayName = name
+			entry.DisplayName = project.Name
 		}
-		projectIndex.Projects[name] = entry
+		if entry.Aliases == nil {
+			entry.Aliases = []string{}
+		}
+		projectIndex.Projects[project.Name] = entry
 	}
 	return writeJSON(projectIndex, loaded.ProjectIndexPath)
 }
 
 func rewriteProject(project warehouse.Project) error {
 	columnIndex := project.ColumnIndex
-	if columnIndex.Columns == nil {
-		columnIndex.Columns = map[string]index.ColumnEntry{}
-	}
-	for name, column := range project.Columns {
+	columnIndex.Columns = map[string]index.ColumnEntry{}
+	for _, column := range project.Columns {
 		entry := column.Metadata
-		if entry.FolderName == "" {
-			entry.FolderName = name
-		}
 		if entry.DisplayName == "" {
-			entry.DisplayName = name
+			entry.DisplayName = column.Name
 		}
-		columnIndex.Columns[name] = entry
+		if entry.Aliases == nil {
+			entry.Aliases = []string{}
+		}
+		columnIndex.Columns[column.Name] = entry
 		if err := rewriteSettingIndex(column); err != nil {
 			return err
 		}
@@ -82,33 +78,38 @@ func rewriteProject(project warehouse.Project) error {
 		return err
 	}
 	modeIndex := project.ModeIndex
-	if modeIndex.Modes == nil {
-		modeIndex.Modes = map[string]index.ModeEntry{}
-	}
-	for name, mode := range project.Modes {
+	modeIndex.Modes = map[string]index.ModeEntry{}
+	for _, mode := range project.Modes {
 		entry := mode.Metadata
+		if entry.DisplayName == "" {
+			entry.DisplayName = mode.Name
+		}
+		if entry.Aliases == nil {
+			entry.Aliases = []string{}
+		}
 		if mode.Missing {
 			entry.Extra = withMissingMarker(entry.Extra)
 		}
-		modeIndex.Modes[name] = entry
+		modeIndex.Modes[mode.Name] = entry
 	}
 	return writeJSON(modeIndex, project.ModeIndexPath)
 }
 
 func rewriteSettingIndex(column warehouse.Column) error {
 	settingIndex := column.SettingIndex
-	if settingIndex.Settings == nil {
-		settingIndex.Settings = map[string]index.SettingEntry{}
-	}
-	for name, setting := range column.Settings {
+	settingIndex.Settings = map[string]index.SettingEntry{}
+	for _, setting := range column.Settings {
 		entry := setting.Metadata
 		if entry.DisplayName == "" {
-			entry.DisplayName = name
+			entry.DisplayName = setting.Name
+		}
+		if entry.Aliases == nil {
+			entry.Aliases = []string{}
 		}
 		if setting.Missing {
 			entry.Extra = withMissingMarker(entry.Extra)
 		}
-		settingIndex.Settings[name] = entry
+		settingIndex.Settings[setting.Name] = entry
 	}
 	return writeJSON(settingIndex, column.SettingIndexPath)
 }

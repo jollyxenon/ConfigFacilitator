@@ -9,7 +9,7 @@ import (
 	"github.com/xenon/ConfigFacilitator/internal/jsonc"
 )
 
-// ProjectIndex stores project-level metadata keyed by folder name.
+// ProjectIndex stores project-level metadata keyed by warehouse-side project name.
 type ProjectIndex struct {
 	Projects map[string]ProjectEntry
 	Extra    map[string]json.RawMessage
@@ -17,14 +17,14 @@ type ProjectIndex struct {
 
 // ProjectEntry stores a single project record.
 type ProjectEntry struct {
-	FolderName string
-	DisplayName string
-	Aliases     []string
-	Description string
-	Extra       map[string]json.RawMessage
+	WarehouseName string
+	DisplayName   string
+	Aliases       []string
+	Description   string
+	Extra         map[string]json.RawMessage
 }
 
-// ColumnIndex stores column-level metadata keyed by folder name.
+// ColumnIndex stores column-level metadata keyed by warehouse-side column name.
 type ColumnIndex struct {
 	Columns map[string]ColumnEntry
 	Extra   map[string]json.RawMessage
@@ -32,15 +32,16 @@ type ColumnIndex struct {
 
 // ColumnEntry stores a single column record.
 type ColumnEntry struct {
-	FolderName string
-	DisplayName string
-	Description string
-	Extra       map[string]json.RawMessage
+	WarehouseName string
+	DisplayName   string
+	Aliases       []string
+	Description   string
+	Extra         map[string]json.RawMessage
 }
 
 // SettingIndex stores column-local setting metadata and targets.
 type SettingIndex struct {
-	Description  string
+	Description   string
 	DefaultTarget string
 	Settings      map[string]SettingEntry
 	Extra         map[string]json.RawMessage
@@ -48,13 +49,15 @@ type SettingIndex struct {
 
 // SettingEntry stores a single setting record.
 type SettingEntry struct {
-	DisplayName string
-	Description string
-	Target      string
-	Extra       map[string]json.RawMessage
+	WarehouseName string
+	DisplayName   string
+	Aliases       []string
+	Description   string
+	Target        string
+	Extra         map[string]json.RawMessage
 }
 
-// ModeIndex stores mode metadata keyed by mode name.
+// ModeIndex stores mode metadata keyed by warehouse-side mode name.
 type ModeIndex struct {
 	Modes map[string]ModeEntry
 	Extra map[string]json.RawMessage
@@ -62,10 +65,12 @@ type ModeIndex struct {
 
 // ModeEntry stores one mode and its column mappings.
 type ModeEntry struct {
-	DisplayName string
-	Description string
-	Columns     map[string]ModeColumnSelection
-	Extra       map[string]json.RawMessage
+	WarehouseName string
+	DisplayName   string
+	Aliases       []string
+	Description   string
+	Columns       map[string]ModeColumnSelection
+	Extra         map[string]json.RawMessage
 }
 
 // ModeColumnSelection stores one column selection inside a mode.
@@ -160,15 +165,23 @@ func parseSettingIndex(raw map[string]json.RawMessage) (SettingIndex, error) {
 	for key, value := range raw {
 		switch key {
 		case "description":
-			if err := json.Unmarshal(value, &index.Description); err != nil { return SettingIndex{}, err }
+			if err := json.Unmarshal(value, &index.Description); err != nil {
+				return SettingIndex{}, err
+			}
 		case "defaultTarget":
-			if err := json.Unmarshal(value, &index.DefaultTarget); err != nil { return SettingIndex{}, err }
+			if err := json.Unmarshal(value, &index.DefaultTarget); err != nil {
+				return SettingIndex{}, err
+			}
 		case "settings":
 			var settings map[string]json.RawMessage
-			if err := json.Unmarshal(value, &settings); err != nil { return SettingIndex{}, err }
+			if err := json.Unmarshal(value, &settings); err != nil {
+				return SettingIndex{}, err
+			}
 			for settingKey, settingValue := range settings {
 				entry, err := parseSettingEntry(settingKey, settingValue)
-				if err != nil { return SettingIndex{}, err }
+				if err != nil {
+					return SettingIndex{}, err
+				}
 				index.Settings[settingKey] = entry
 			}
 		default:
@@ -182,7 +195,9 @@ func parseModeIndex(raw map[string]json.RawMessage) (ModeIndex, error) {
 	index := ModeIndex{Modes: map[string]ModeEntry{}, Extra: map[string]json.RawMessage{}}
 	for key, value := range raw {
 		entry, err := parseModeEntry(key, value)
-		if err != nil { return ModeIndex{}, err }
+		if err != nil {
+			return ModeIndex{}, err
+		}
 		if entry.IsEmpty() {
 			index.Extra[key] = value
 			continue
@@ -192,105 +207,169 @@ func parseModeIndex(raw map[string]json.RawMessage) (ModeIndex, error) {
 	return index, nil
 }
 
-func parseProjectEntry(folderName string, raw json.RawMessage) (ProjectEntry, error) {
-	entry := ProjectEntry{FolderName: folderName, Extra: map[string]json.RawMessage{}}
-	if bytes.Equal(bytes.TrimSpace(raw), []byte("null")) { return entry, nil }
+func parseProjectEntry(warehouseName string, raw json.RawMessage) (ProjectEntry, error) {
+	entry := ProjectEntry{Extra: map[string]json.RawMessage{}}
+	if bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
+		return normalizeProjectEntry(entry, warehouseName), nil
+	}
 	var data map[string]json.RawMessage
-	if err := json.Unmarshal(raw, &data); err != nil { return ProjectEntry{}, err }
+	if err := json.Unmarshal(raw, &data); err != nil {
+		return ProjectEntry{}, err
+	}
 	for key, value := range data {
 		switch key {
-		case "folderName":
-			if err := json.Unmarshal(value, &entry.FolderName); err != nil { return ProjectEntry{}, err }
+		case "id":
+			return ProjectEntry{}, fmt.Errorf("project entry %q uses unsupported field %q", warehouseName, key)
 		case "displayName":
-			if err := json.Unmarshal(value, &entry.DisplayName); err != nil { return ProjectEntry{}, err }
+			if err := json.Unmarshal(value, &entry.DisplayName); err != nil {
+				return ProjectEntry{}, err
+			}
 		case "aliases":
-			if err := json.Unmarshal(value, &entry.Aliases); err != nil { return ProjectEntry{}, err }
+			if err := json.Unmarshal(value, &entry.Aliases); err != nil {
+				return ProjectEntry{}, err
+			}
 		case "description":
-			if err := json.Unmarshal(value, &entry.Description); err != nil { return ProjectEntry{}, err }
+			if err := json.Unmarshal(value, &entry.Description); err != nil {
+				return ProjectEntry{}, err
+			}
 		default:
 			entry.Extra[key] = value
 		}
 	}
-	return entry, nil
+	return normalizeProjectEntry(entry, warehouseName), nil
 }
 
-func parseColumnEntry(folderName string, raw json.RawMessage) (ColumnEntry, error) {
-	entry := ColumnEntry{FolderName: folderName, Extra: map[string]json.RawMessage{}}
-	if bytes.Equal(bytes.TrimSpace(raw), []byte("null")) { return entry, nil }
+func parseColumnEntry(warehouseName string, raw json.RawMessage) (ColumnEntry, error) {
+	entry := ColumnEntry{Extra: map[string]json.RawMessage{}}
+	if bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
+		return normalizeColumnEntry(entry, warehouseName), nil
+	}
 	var data map[string]json.RawMessage
-	if err := json.Unmarshal(raw, &data); err != nil { return ColumnEntry{}, err }
+	if err := json.Unmarshal(raw, &data); err != nil {
+		return ColumnEntry{}, err
+	}
 	for key, value := range data {
 		switch key {
-		case "folderName":
-			if err := json.Unmarshal(value, &entry.FolderName); err != nil { return ColumnEntry{}, err }
+		case "id":
+			return ColumnEntry{}, fmt.Errorf("column entry %q uses unsupported field %q", warehouseName, key)
 		case "displayName":
-			if err := json.Unmarshal(value, &entry.DisplayName); err != nil { return ColumnEntry{}, err }
+			if err := json.Unmarshal(value, &entry.DisplayName); err != nil {
+				return ColumnEntry{}, err
+			}
+		case "aliases":
+			if err := json.Unmarshal(value, &entry.Aliases); err != nil {
+				return ColumnEntry{}, err
+			}
 		case "description":
-			if err := json.Unmarshal(value, &entry.Description); err != nil { return ColumnEntry{}, err }
+			if err := json.Unmarshal(value, &entry.Description); err != nil {
+				return ColumnEntry{}, err
+			}
 		default:
 			entry.Extra[key] = value
 		}
 	}
-	return entry, nil
+	return normalizeColumnEntry(entry, warehouseName), nil
 }
 
-func parseSettingEntry(name string, raw json.RawMessage) (SettingEntry, error) {
-	entry := SettingEntry{DisplayName: name, Extra: map[string]json.RawMessage{}}
-	if bytes.Equal(bytes.TrimSpace(raw), []byte("null")) { return entry, nil }
+func parseSettingEntry(warehouseName string, raw json.RawMessage) (SettingEntry, error) {
+	entry := SettingEntry{Extra: map[string]json.RawMessage{}}
+	if bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
+		return normalizeSettingEntry(entry, warehouseName), nil
+	}
 	var data map[string]json.RawMessage
-	if err := json.Unmarshal(raw, &data); err != nil { return SettingEntry{}, err }
+	if err := json.Unmarshal(raw, &data); err != nil {
+		return SettingEntry{}, err
+	}
 	for key, value := range data {
 		switch key {
+		case "id":
+			return SettingEntry{}, fmt.Errorf("setting entry %q uses unsupported field %q", warehouseName, key)
 		case "displayName":
-			if err := json.Unmarshal(value, &entry.DisplayName); err != nil { return SettingEntry{}, err }
+			if err := json.Unmarshal(value, &entry.DisplayName); err != nil {
+				return SettingEntry{}, err
+			}
+		case "aliases":
+			if err := json.Unmarshal(value, &entry.Aliases); err != nil {
+				return SettingEntry{}, err
+			}
 		case "description":
-			if err := json.Unmarshal(value, &entry.Description); err != nil { return SettingEntry{}, err }
+			if err := json.Unmarshal(value, &entry.Description); err != nil {
+				return SettingEntry{}, err
+			}
 		case "target":
-			if err := json.Unmarshal(value, &entry.Target); err != nil { return SettingEntry{}, err }
+			if err := json.Unmarshal(value, &entry.Target); err != nil {
+				return SettingEntry{}, err
+			}
 		default:
 			entry.Extra[key] = value
 		}
 	}
-	return entry, nil
+	return normalizeSettingEntry(entry, warehouseName), nil
 }
 
-func parseModeEntry(name string, raw json.RawMessage) (ModeEntry, error) {
-	entry := ModeEntry{DisplayName: name, Columns: map[string]ModeColumnSelection{}, Extra: map[string]json.RawMessage{}}
-	if bytes.Equal(bytes.TrimSpace(raw), []byte("null")) { return entry, nil }
+func parseModeEntry(warehouseName string, raw json.RawMessage) (ModeEntry, error) {
+	entry := ModeEntry{Columns: map[string]ModeColumnSelection{}, Extra: map[string]json.RawMessage{}}
+	if bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
+		return normalizeModeEntry(entry, warehouseName), nil
+	}
 	var data map[string]json.RawMessage
-	if err := json.Unmarshal(raw, &data); err != nil { return ModeEntry{}, err }
+	if err := json.Unmarshal(raw, &data); err != nil {
+		return ModeEntry{}, err
+	}
 	for key, value := range data {
 		switch key {
+		case "id":
+			return ModeEntry{}, fmt.Errorf("mode entry %q uses unsupported field %q", warehouseName, key)
 		case "displayName":
-			if err := json.Unmarshal(value, &entry.DisplayName); err != nil { return ModeEntry{}, err }
+			if err := json.Unmarshal(value, &entry.DisplayName); err != nil {
+				return ModeEntry{}, err
+			}
+		case "aliases":
+			if err := json.Unmarshal(value, &entry.Aliases); err != nil {
+				return ModeEntry{}, err
+			}
 		case "description":
-			if err := json.Unmarshal(value, &entry.Description); err != nil { return ModeEntry{}, err }
+			if err := json.Unmarshal(value, &entry.Description); err != nil {
+				return ModeEntry{}, err
+			}
 		case "columns":
 			var cols map[string]json.RawMessage
-			if err := json.Unmarshal(value, &cols); err != nil { return ModeEntry{}, err }
+			if err := json.Unmarshal(value, &cols); err != nil {
+				return ModeEntry{}, err
+			}
 			for columnName, columnValue := range cols {
 				selection, err := parseModeColumnSelection(columnName, columnValue)
-				if err != nil { return ModeEntry{}, err }
+				if err != nil {
+					return ModeEntry{}, err
+				}
 				entry.Columns[columnName] = selection
 			}
 		default:
 			entry.Extra[key] = value
 		}
 	}
-	return entry, nil
+	return normalizeModeEntry(entry, warehouseName), nil
 }
 
 func parseModeColumnSelection(name string, raw json.RawMessage) (ModeColumnSelection, error) {
 	selection := ModeColumnSelection{Extra: map[string]json.RawMessage{}}
-	if bytes.Equal(bytes.TrimSpace(raw), []byte("null")) { return selection, nil }
+	if bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
+		return selection, nil
+	}
 	var data map[string]json.RawMessage
-	if err := json.Unmarshal(raw, &data); err != nil { return ModeColumnSelection{}, err }
+	if err := json.Unmarshal(raw, &data); err != nil {
+		return ModeColumnSelection{}, err
+	}
 	for key, value := range data {
 		switch key {
 		case "settings":
-			if err := json.Unmarshal(value, &selection.Settings); err != nil { return ModeColumnSelection{}, err }
+			if err := json.Unmarshal(value, &selection.Settings); err != nil {
+				return ModeColumnSelection{}, err
+			}
 		case "strategy":
-			if err := json.Unmarshal(value, &selection.Strategy); err != nil { return ModeColumnSelection{}, err }
+			if err := json.Unmarshal(value, &selection.Strategy); err != nil {
+				return ModeColumnSelection{}, err
+			}
 		default:
 			selection.Extra[key] = value
 		}
@@ -346,58 +425,93 @@ func marshalModeIndex(index ModeIndex) ([]byte, error) {
 }
 
 func (entry ProjectEntry) MarshalJSON() ([]byte, error) { return marshalProjectEntry(entry) }
-func (entry ColumnEntry) MarshalJSON() ([]byte, error) { return marshalColumnEntry(entry) }
+func (entry ColumnEntry) MarshalJSON() ([]byte, error)  { return marshalColumnEntry(entry) }
 func (entry SettingEntry) MarshalJSON() ([]byte, error) { return marshalSettingEntry(entry) }
-func (entry ModeEntry) MarshalJSON() ([]byte, error) { return marshalModeEntry(entry) }
-func (entry ModeColumnSelection) MarshalJSON() ([]byte, error) { return marshalModeColumnSelection(entry) }
+func (entry ModeEntry) MarshalJSON() ([]byte, error)    { return marshalModeEntry(entry) }
+func (entry ModeColumnSelection) MarshalJSON() ([]byte, error) {
+	return marshalModeColumnSelection(entry)
+}
 
-func (entry ProjectEntry) IsEmpty() bool { return entry.FolderName == "" && entry.DisplayName == "" && len(entry.Aliases) == 0 && entry.Description == "" && len(entry.Extra) == 0 }
-func (entry ColumnEntry) IsEmpty() bool { return entry.FolderName == "" && entry.DisplayName == "" && entry.Description == "" && len(entry.Extra) == 0 }
-func (entry ModeEntry) IsEmpty() bool { return entry.DisplayName == "" && entry.Description == "" && len(entry.Columns) == 0 && len(entry.Extra) == 0 }
+func (entry ProjectEntry) IsEmpty() bool {
+	return entry.WarehouseName == "" && entry.DisplayName == "" && len(entry.Aliases) == 0 && entry.Description == "" && len(entry.Extra) == 0
+}
+func (entry ColumnEntry) IsEmpty() bool {
+	return entry.WarehouseName == "" && entry.DisplayName == "" && len(entry.Aliases) == 0 && entry.Description == "" && len(entry.Extra) == 0
+}
+func (entry ModeEntry) IsEmpty() bool {
+	return entry.WarehouseName == "" && entry.DisplayName == "" && len(entry.Aliases) == 0 && entry.Description == "" && len(entry.Columns) == 0 && len(entry.Extra) == 0
+}
 
 func marshalProjectEntry(entry ProjectEntry) ([]byte, error) {
 	data := map[string]any{}
-	if entry.FolderName != "" { data["folderName"] = entry.FolderName }
-	if entry.DisplayName != "" { data["displayName"] = entry.DisplayName }
-	if len(entry.Aliases) > 0 { data["aliases"] = entry.Aliases }
-	if entry.Description != "" { data["description"] = entry.Description }
+	if entry.DisplayName != "" {
+		data["displayName"] = entry.DisplayName
+	}
+	data["aliases"] = normalizedAliases(entry.Aliases)
+	if entry.Description != "" {
+		data["description"] = entry.Description
+	}
 	mergeRaw(data, entry.Extra)
 	return marshalObject(data)
 }
 
 func marshalColumnEntry(entry ColumnEntry) ([]byte, error) {
 	data := map[string]any{}
-	if entry.FolderName != "" { data["folderName"] = entry.FolderName }
-	if entry.DisplayName != "" { data["displayName"] = entry.DisplayName }
-	if entry.Description != "" { data["description"] = entry.Description }
+	if entry.DisplayName != "" {
+		data["displayName"] = entry.DisplayName
+	}
+	data["aliases"] = normalizedAliases(entry.Aliases)
+	if entry.Description != "" {
+		data["description"] = entry.Description
+	}
 	mergeRaw(data, entry.Extra)
 	return marshalObject(data)
 }
 
 func marshalSettingEntry(entry SettingEntry) ([]byte, error) {
 	data := map[string]any{}
-	if entry.DisplayName != "" { data["displayName"] = entry.DisplayName }
-	if entry.Description != "" { data["description"] = entry.Description }
-	if entry.Target != "" { data["target"] = entry.Target }
+	if entry.DisplayName != "" {
+		data["displayName"] = entry.DisplayName
+	}
+	data["aliases"] = normalizedAliases(entry.Aliases)
+	if entry.Description != "" {
+		data["description"] = entry.Description
+	}
+	if entry.Target != "" {
+		data["target"] = entry.Target
+	}
 	mergeRaw(data, entry.Extra)
 	return marshalObject(data)
 }
 
 func marshalModeEntry(entry ModeEntry) ([]byte, error) {
 	data := map[string]any{}
-	if entry.DisplayName != "" { data["displayName"] = entry.DisplayName }
-	if entry.Description != "" { data["description"] = entry.Description }
+	if entry.DisplayName != "" {
+		data["displayName"] = entry.DisplayName
+	}
+	data["aliases"] = normalizedAliases(entry.Aliases)
+	if entry.Description != "" {
+		data["description"] = entry.Description
+	}
 	columns := map[string]any{}
-	for key, selection := range entry.Columns { columns[key] = selection }
-	if len(columns) > 0 { data["columns"] = columns }
+	for key, selection := range entry.Columns {
+		columns[key] = selection
+	}
+	if len(columns) > 0 {
+		data["columns"] = columns
+	}
 	mergeRaw(data, entry.Extra)
 	return marshalObject(data)
 }
 
 func marshalModeColumnSelection(entry ModeColumnSelection) ([]byte, error) {
 	data := map[string]any{}
-	if len(entry.Settings) > 0 { data["settings"] = entry.Settings }
-	if entry.Strategy != "" { data["strategy"] = entry.Strategy }
+	if len(entry.Settings) > 0 {
+		data["settings"] = entry.Settings
+	}
+	if entry.Strategy != "" {
+		data["strategy"] = entry.Strategy
+	}
 	mergeRaw(data, entry.Extra)
 	return marshalObject(data)
 }
@@ -409,6 +523,60 @@ func mergeRaw(dst map[string]any, raw map[string]json.RawMessage) {
 		}
 		dst[key] = json.RawMessage(value)
 	}
+}
+
+func normalizeProjectEntry(entry ProjectEntry, warehouseName string) ProjectEntry {
+	if entry.WarehouseName == "" {
+		entry.WarehouseName = warehouseName
+	}
+	if entry.DisplayName == "" {
+		entry.DisplayName = entry.WarehouseName
+	}
+	entry.Aliases = normalizedAliases(entry.Aliases)
+	return entry
+}
+
+func normalizeColumnEntry(entry ColumnEntry, warehouseName string) ColumnEntry {
+	if entry.WarehouseName == "" {
+		entry.WarehouseName = warehouseName
+	}
+	if entry.DisplayName == "" {
+		entry.DisplayName = entry.WarehouseName
+	}
+	entry.Aliases = normalizedAliases(entry.Aliases)
+	return entry
+}
+
+func normalizeSettingEntry(entry SettingEntry, warehouseName string) SettingEntry {
+	if entry.WarehouseName == "" {
+		entry.WarehouseName = warehouseName
+	}
+	if entry.DisplayName == "" {
+		entry.DisplayName = entry.WarehouseName
+	}
+	entry.Aliases = normalizedAliases(entry.Aliases)
+	return entry
+}
+
+func normalizeModeEntry(entry ModeEntry, warehouseName string) ModeEntry {
+	if entry.WarehouseName == "" {
+		entry.WarehouseName = warehouseName
+	}
+	if entry.DisplayName == "" {
+		entry.DisplayName = entry.WarehouseName
+	}
+	entry.Aliases = normalizedAliases(entry.Aliases)
+	if entry.Columns == nil {
+		entry.Columns = map[string]ModeColumnSelection{}
+	}
+	return entry
+}
+
+func normalizedAliases(aliases []string) []string {
+	if aliases == nil {
+		return []string{}
+	}
+	return aliases
 }
 
 func marshalObject(data map[string]any) ([]byte, error) {
@@ -430,13 +598,21 @@ func marshalObject(data map[string]any) ([]byte, error) {
 func validateNoNilMaps(index any) error {
 	switch v := index.(type) {
 	case ProjectIndex:
-		if v.Projects == nil { return fmt.Errorf("project index projects map is nil") }
+		if v.Projects == nil {
+			return fmt.Errorf("project index projects map is nil")
+		}
 	case ColumnIndex:
-		if v.Columns == nil { return fmt.Errorf("column index columns map is nil") }
+		if v.Columns == nil {
+			return fmt.Errorf("column index columns map is nil")
+		}
 	case SettingIndex:
-		if v.Settings == nil { return fmt.Errorf("setting index settings map is nil") }
+		if v.Settings == nil {
+			return fmt.Errorf("setting index settings map is nil")
+		}
 	case ModeIndex:
-		if v.Modes == nil { return fmt.Errorf("mode index modes map is nil") }
+		if v.Modes == nil {
+			return fmt.Errorf("mode index modes map is nil")
+		}
 	}
 	return nil
 }

@@ -11,7 +11,7 @@ import (
 
 func TestPlanColumnMappingsUsesExplicitAndDefaultTargets(t *testing.T) {
 	project := sampleProject()
-	mappings, err := PlanColumnMappings(project, "opencode.json", []string{"CLAUDE.json", "Special.json"}, PlanOptions{HomeDir: "/home/test", Env: map[string]string{}, OS: "linux"})
+	mappings, err := PlanColumnMappings(project, "config", []string{"claude", "Special.json"}, PlanOptions{HomeDir: "/home/test", Env: map[string]string{}, OS: "linux"})
 	if err != nil {
 		t.Fatalf("plan column mappings: %v", err)
 	}
@@ -29,7 +29,7 @@ func TestPlanColumnMappingsUsesExplicitAndDefaultTargets(t *testing.T) {
 func TestPlanModeMappingsHandlesFullAndIncrementalColumns(t *testing.T) {
 	project := sampleProject()
 	current := []linker.Mapping{{Source: filepath.Join(project.Columns["Skills"].Path, "Skill-Old"), Target: "/tmp/skills/old"}, {Source: filepath.Join(project.Columns["opencode.json"].Path, "GPT.json"), Target: "/home/test/.config/opencode/opencode.json"}}
-	mappings, err := PlanModeMappings(project, "Max", current, PlanOptions{HomeDir: "/home/test", Env: map[string]string{}, OS: "linux"})
+	mappings, err := PlanModeMappings(project, "m", current, PlanOptions{HomeDir: "/home/test", Env: map[string]string{}, OS: "linux"})
 	if err != nil {
 		t.Fatalf("plan mode mappings: %v", err)
 	}
@@ -44,34 +44,40 @@ func TestPlanModeMappingsHandlesFullAndIncrementalColumns(t *testing.T) {
 func sampleProject() warehouse.Project {
 	projectPath := "/warehouse/OpenCode"
 	return warehouse.Project{
-		Name: "OpenCode",
+		Name:          "OpenCode",
+		WarehouseName: "OpenCode",
 		Columns: map[string]warehouse.Column{
 			"opencode.json": {
-				Name: "opencode.json",
-				Path: filepath.Join(projectPath, "Column", "opencode.json"),
-				SettingIndex: index.SettingIndex{DefaultTarget: "~/.config/opencode/opencode.json"},
+				Name:          "opencode.json",
+				WarehouseName: "opencode.json",
+				Path:          filepath.Join(projectPath, "Column", "opencode.json"),
+				Metadata:      index.ColumnEntry{WarehouseName: "opencode.json", Aliases: []string{"config"}},
+				SettingIndex:  index.SettingIndex{DefaultTarget: "~/.config/opencode/opencode.json"},
 				Settings: map[string]warehouse.Setting{
-					"CLAUDE.json": {Name: "CLAUDE.json", Path: filepath.Join(projectPath, "Column", "opencode.json", "CLAUDE.json")},
-					"GPT.json": {Name: "GPT.json", Path: filepath.Join(projectPath, "Column", "opencode.json", "GPT.json")},
-					"Special.json": {Name: "Special.json", Path: filepath.Join(projectPath, "Column", "opencode.json", "Special.json"), Metadata: index.SettingEntry{Target: "~/.config/opencode/special/special.json"}},
+					"CLAUDE.json":  {Name: "CLAUDE.json", WarehouseName: "CLAUDE.json", Path: filepath.Join(projectPath, "Column", "opencode.json", "CLAUDE.json"), Metadata: index.SettingEntry{WarehouseName: "CLAUDE.json", Aliases: []string{"claude"}}},
+					"GPT.json":     {Name: "GPT.json", WarehouseName: "GPT.json", Path: filepath.Join(projectPath, "Column", "opencode.json", "GPT.json"), Metadata: index.SettingEntry{WarehouseName: "GPT.json"}},
+					"Special.json": {Name: "Special.json", WarehouseName: "Special.json", Path: filepath.Join(projectPath, "Column", "opencode.json", "Special.json"), Metadata: index.SettingEntry{WarehouseName: "Special.json", Target: "~/.config/opencode/special/special.json"}},
 				},
 			},
 			"Skills": {
-				Name: "Skills",
-				Path: filepath.Join(projectPath, "Column", "Skills"),
+				Name:          "Skills",
+				WarehouseName: "Skills",
+				Path:          filepath.Join(projectPath, "Column", "Skills"),
+				Metadata:      index.ColumnEntry{WarehouseName: "Skills", Aliases: []string{"skills"}},
 				Settings: map[string]warehouse.Setting{
-					"Skill-A":   {Name: "Skill-A", Path: filepath.Join(projectPath, "Column", "Skills", "Skill-A"), Metadata: index.SettingEntry{Target: "/tmp/skills/a"}},
-					"Skill-Old": {Name: "Skill-Old", Path: filepath.Join(projectPath, "Column", "Skills", "Skill-Old"), Metadata: index.SettingEntry{Target: "/tmp/skills/old"}},
+					"Skill-A":   {Name: "Skill-A", WarehouseName: "Skill-A", Path: filepath.Join(projectPath, "Column", "Skills", "Skill-A"), Metadata: index.SettingEntry{WarehouseName: "Skill-A", Aliases: []string{"alpha"}, Target: "/tmp/skills/a"}},
+					"Skill-Old": {Name: "Skill-Old", WarehouseName: "Skill-Old", Path: filepath.Join(projectPath, "Column", "Skills", "Skill-Old"), Metadata: index.SettingEntry{WarehouseName: "Skill-Old", Target: "/tmp/skills/old"}},
 				},
 			},
 		},
 		Modes: map[string]warehouse.Mode{
 			"Max": {
-				Name: "Max",
+				Name:          "Max",
+				WarehouseName: "Max",
 				Metadata: index.ModeEntry{Columns: map[string]index.ModeColumnSelection{
-					"opencode.json": {Settings: []string{"CLAUDE.json"}, Strategy: "full"},
-					"Skills":        {Settings: []string{"Skill-A"}, Strategy: "incremental"},
-				}},
+					"opencode.json": {Settings: []string{"claude"}, Strategy: "full"},
+					"skills":        {Settings: []string{"alpha"}, Strategy: "incremental"},
+				}, WarehouseName: "Max", Aliases: []string{"m"}},
 			},
 		},
 	}
