@@ -2,14 +2,14 @@ package warehouse
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 
 	"github.com/xenon/ConfigFacilitator/internal/index"
 )
-
-const warehouseDirName = "SettingWarehouse"
 
 // Warehouse stores the parsed warehouse root and all discovered projects.
 type Warehouse struct {
@@ -22,6 +22,7 @@ type Warehouse struct {
 // Project stores one project and its filesystem/index relationships.
 type Project struct {
 	Name             string
+	WarehouseName    string
 	Path             string
 	Missing          bool
 	Metadata         index.ProjectEntry
@@ -41,6 +42,7 @@ type Project struct {
 // Column stores one column and its declared settings.
 type Column struct {
 	Name             string
+	WarehouseName    string
 	Path             string
 	Missing          bool
 	Metadata         index.ColumnEntry
@@ -51,19 +53,21 @@ type Column struct {
 
 // Setting stores one setting entry and its discovered filesystem state.
 type Setting struct {
-	Name     string
-	Path     string
-	Exists   bool
-	Missing  bool
-	IsDir    bool
-	Metadata index.SettingEntry
+	Name          string
+	WarehouseName string
+	Path          string
+	Exists        bool
+	Missing       bool
+	IsDir         bool
+	Metadata      index.SettingEntry
 }
 
 // Mode stores one mode entry and its preserved state markers.
 type Mode struct {
-	Name     string
-	Missing  bool
-	Metadata index.ModeEntry
+	Name          string
+	WarehouseName string
+	Missing       bool
+	Metadata      index.ModeEntry
 }
 
 // DefaultWarehouseRoot returns the warehouse root in the user's config directory.
@@ -72,7 +76,7 @@ func DefaultWarehouseRoot() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(homeDir, ".configfacilitator", warehouseDirName), nil
+	return filepath.Join(homeDir, ".configfacilitator"), nil
 }
 
 // LoadWarehouse loads the warehouse root, project index, and project models.
@@ -89,28 +93,40 @@ func LoadWarehouse(rootPath string) (Warehouse, error) {
 	}
 	warehouse.ProjectIndex = projectIndex
 
-	projectDirs, err := listSubdirectories(rootPath)
+	projectDirs, err := listWarehouseRootDirectories(rootPath)
 	if err != nil {
 		return Warehouse{}, err
 	}
 
 	projectNames := unionStringKeys(mapKeys(projectDirs), mapKeys(projectIndex.Projects))
-	for _, projectName := range projectNames {
-		project, err := loadProject(rootPath, projectName, projectIndex.Projects[projectName], projectDirs[projectName])
+	for _, projectWarehouseName := range projectNames {
+		project, err := loadProject(rootPath, projectWarehouseName, projectIndex.Projects[projectWarehouseName], projectDirs[projectWarehouseName])
 		if err != nil {
 			return Warehouse{}, err
 		}
-		warehouse.Projects[projectName] = project
+		if err := registerProject(warehouse.Projects, project); err != nil {
+			return Warehouse{}, err
+		}
+	}
+	if err := validateProjectScope(warehouse.Projects); err != nil {
+		return Warehouse{}, err
 	}
 
 	return warehouse, nil
 }
 
 // loadProject loads one project model from the warehouse root.
-func loadProject(rootPath string, projectName string, entry index.ProjectEntry, dirPresent bool) (Project, error) {
-	projectPath := filepath.Join(rootPath, projectName)
+func loadProject(rootPath string, projectWarehouseName string, entry index.ProjectEntry, dirPresent bool) (Project, error) {
+	if entry.WarehouseName == "" {
+		entry.WarehouseName = projectWarehouseName
+	}
+	if entry.DisplayName == "" {
+		entry.DisplayName = entry.WarehouseName
+	}
+	projectPath := filepath.Join(rootPath, entry.WarehouseName)
 	project := Project{
-		Name:             projectName,
+		Name:             entry.WarehouseName,
+		WarehouseName:    entry.WarehouseName,
 		Path:             projectPath,
 		Missing:          !dirPresent,
 		Metadata:         entry,
@@ -143,31 +159,53 @@ func loadProject(rootPath string, projectName string, entry index.ProjectEntry, 
 	}
 
 	columnNames := unionStringKeys(mapKeys(columnDirs), mapKeys(columnIndex.Columns))
-	for _, columnName := range columnNames {
-		column, err := loadColumn(project.ColumnDirPath, columnName, columnIndex.Columns[columnName], columnDirs[columnName])
+	for _, columnWarehouseName := range columnNames {
+		column, err := loadColumn(project.ColumnDirPath, columnWarehouseName, columnIndex.Columns[columnWarehouseName], columnDirs[columnWarehouseName])
 		if err != nil {
 			return Project{}, err
 		}
-		project.Columns[columnName] = column
+		if err := registerColumn(project.Columns, column, project.Name); err != nil {
+			return Project{}, err
+		}
 	}
 
-	for _, modeName := range mapKeys(modeIndex.Modes) {
-		modeEntry := modeIndex.Modes[modeName]
-		project.Modes[modeName] = Mode{
-			Name:     modeName,
-			Missing:  hasMissingMarker(modeEntry.Extra),
-			Metadata: modeEntry,
+	for _, modeWarehouseName := range mapKeys(modeIndex.Modes) {
+		modeEntry := modeIndex.Modes[modeWarehouseName]
+		if modeEntry.WarehouseName == "" {
+			modeEntry.WarehouseName = modeWarehouseName
 		}
+		if modeEntry.DisplayName == "" {
+			modeEntry.DisplayName = modeEntry.WarehouseName
+		}
+		mode := Mode{
+			Name:          modeEntry.WarehouseName,
+			WarehouseName: modeEntry.WarehouseName,
+			Missing:       hasMissingMarker(modeEntry.Extra),
+			Metadata:      modeEntry,
+		}
+		if err := registerMode(project.Modes, mode, project.Name); err != nil {
+			return Project{}, err
+		}
+	}
+	if err := validateProjectChildren(project); err != nil {
+		return Project{}, err
 	}
 
 	return project, nil
 }
 
 // loadColumn loads one column model and its setting entries.
-func loadColumn(columnRoot string, columnName string, entry index.ColumnEntry, dirPresent bool) (Column, error) {
-	columnPath := filepath.Join(columnRoot, columnName)
+func loadColumn(columnRoot string, columnWarehouseName string, entry index.ColumnEntry, dirPresent bool) (Column, error) {
+	if entry.WarehouseName == "" {
+		entry.WarehouseName = columnWarehouseName
+	}
+	if entry.DisplayName == "" {
+		entry.DisplayName = entry.WarehouseName
+	}
+	columnPath := filepath.Join(columnRoot, entry.WarehouseName)
 	column := Column{
-		Name:             columnName,
+		Name:             entry.WarehouseName,
+		WarehouseName:    entry.WarehouseName,
 		Path:             columnPath,
 		Missing:          !dirPresent,
 		Metadata:         entry,
@@ -187,20 +225,201 @@ func loadColumn(columnRoot string, columnName string, entry index.ColumnEntry, d
 	}
 
 	settingNames := unionStringKeys(mapKeys(settingEntries), mapKeys(settingIndex.Settings))
-	for _, settingName := range settingNames {
-		metadata := settingIndex.Settings[settingName]
-		exists := settingEntries[settingName].exists
-		column.Settings[settingName] = Setting{
-			Name:     settingName,
-			Path:     filepath.Join(columnPath, settingName),
-			Exists:   exists,
-			Missing:  !exists || hasMissingMarker(metadata.Extra),
-			IsDir:    settingEntries[settingName].isDir,
-			Metadata: metadata,
+	for _, settingWarehouseName := range settingNames {
+		metadata := settingIndex.Settings[settingWarehouseName]
+		if metadata.WarehouseName == "" {
+			metadata.WarehouseName = settingWarehouseName
 		}
+		if metadata.DisplayName == "" {
+			metadata.DisplayName = metadata.WarehouseName
+		}
+		discovered := settingEntries[settingWarehouseName]
+		setting := Setting{
+			Name:          metadata.WarehouseName,
+			WarehouseName: metadata.WarehouseName,
+			Path:          filepath.Join(columnPath, metadata.WarehouseName),
+			Exists:        discovered.exists,
+			Missing:       !discovered.exists || hasMissingMarker(metadata.Extra),
+			IsDir:         discovered.isDir,
+			Metadata:      metadata,
+		}
+		if err := registerSetting(column.Settings, setting, column.Name); err != nil {
+			return Column{}, err
+		}
+	}
+	if err := validateColumnScope(column); err != nil {
+		return Column{}, err
 	}
 
 	return column, nil
+}
+
+// ResolveProject resolves one project by normalized identifier or alias.
+func (warehouse Warehouse) ResolveProject(reference string) (Project, error) {
+	project, err := resolveReference(reference, warehouse.Projects, func(project Project) []string {
+		return entityReferences(project.Name, project.Metadata.Aliases)
+	}, "project")
+	if err != nil {
+		return Project{}, err
+	}
+	return project, nil
+}
+
+// ResolveColumn resolves one column by normalized identifier or alias.
+func (project Project) ResolveColumn(reference string) (Column, error) {
+	column, err := resolveReference(reference, project.Columns, func(column Column) []string {
+		return entityReferences(column.Name, column.Metadata.Aliases)
+	}, "column")
+	if err != nil {
+		return Column{}, fmt.Errorf("project %q: %w", project.Name, err)
+	}
+	return column, nil
+}
+
+// ResolveMode resolves one mode by normalized identifier or alias.
+func (project Project) ResolveMode(reference string) (Mode, error) {
+	mode, err := resolveReference(reference, project.Modes, func(mode Mode) []string {
+		return entityReferences(mode.Name, mode.Metadata.Aliases)
+	}, "mode")
+	if err != nil {
+		return Mode{}, fmt.Errorf("project %q: %w", project.Name, err)
+	}
+	return mode, nil
+}
+
+// ResolveSetting resolves one setting by normalized identifier or alias.
+func (column Column) ResolveSetting(reference string) (Setting, error) {
+	setting, err := resolveReference(reference, column.Settings, func(setting Setting) []string {
+		return entityReferences(setting.Name, setting.Metadata.Aliases)
+	}, "setting")
+	if err != nil {
+		return Setting{}, fmt.Errorf("column %q: %w", column.Name, err)
+	}
+	return setting, nil
+}
+
+func registerProject(projects map[string]Project, project Project) error {
+	if _, exists := projects[project.Name]; exists {
+		return fmt.Errorf("duplicate project identifier %q", project.Name)
+	}
+	projects[project.Name] = project
+	return nil
+}
+
+func registerColumn(columns map[string]Column, column Column, projectName string) error {
+	if _, exists := columns[column.Name]; exists {
+		return fmt.Errorf("project %q: duplicate column identifier %q", projectName, column.Name)
+	}
+	columns[column.Name] = column
+	return nil
+}
+
+func registerMode(modes map[string]Mode, mode Mode, projectName string) error {
+	if _, exists := modes[mode.Name]; exists {
+		return fmt.Errorf("project %q: duplicate mode identifier %q", projectName, mode.Name)
+	}
+	modes[mode.Name] = mode
+	return nil
+}
+
+func registerSetting(settings map[string]Setting, setting Setting, columnName string) error {
+	if _, exists := settings[setting.Name]; exists {
+		return fmt.Errorf("column %q: duplicate setting identifier %q", columnName, setting.Name)
+	}
+	settings[setting.Name] = setting
+	return nil
+}
+
+func resolveReference[T any](reference string, entities map[string]T, refs func(T) []string, kind string) (T, error) {
+	var zero T
+	if reference == "" {
+		return zero, fmt.Errorf("%s reference cannot be empty", kind)
+	}
+	matches := []T{}
+	for _, entity := range entities {
+		for _, candidate := range refs(entity) {
+			if candidate == reference {
+				matches = append(matches, entity)
+				break
+			}
+		}
+	}
+	switch len(matches) {
+	case 0:
+		return zero, fmt.Errorf("%s %q does not exist", kind, reference)
+	case 1:
+		return matches[0], nil
+	default:
+		return zero, fmt.Errorf("%s reference %q is ambiguous", kind, reference)
+	}
+}
+
+func entityReferences(normalizedName string, aliases []string) []string {
+	refs := []string{}
+	seen := map[string]struct{}{}
+	for _, value := range append([]string{normalizedName}, aliases...) {
+		trimmed := strings.TrimSpace(value)
+		if trimmed == "" {
+			continue
+		}
+		if _, exists := seen[trimmed]; exists {
+			continue
+		}
+		seen[trimmed] = struct{}{}
+		refs = append(refs, trimmed)
+	}
+	return refs
+}
+
+func validateProjectScope(projects map[string]Project) error {
+	for _, project := range projects {
+		for _, reference := range entityReferences(project.Name, project.Metadata.Aliases) {
+			if reference == "global" {
+				return fmt.Errorf("project reference %q is reserved", reference)
+			}
+		}
+	}
+	return validateReferenceScope(projects, func(project Project) []string {
+		return entityReferences(project.Name, project.Metadata.Aliases)
+	}, "project")
+}
+
+func validateProjectChildren(project Project) error {
+	if err := validateReferenceScope(project.Columns, func(column Column) []string {
+		return entityReferences(column.Name, column.Metadata.Aliases)
+	}, fmt.Sprintf("project %q column", project.Name)); err != nil {
+		return err
+	}
+	if err := validateReferenceScope(project.Modes, func(mode Mode) []string {
+		return entityReferences(mode.Name, mode.Metadata.Aliases)
+	}, fmt.Sprintf("project %q mode", project.Name)); err != nil {
+		return err
+	}
+	for _, column := range project.Columns {
+		if err := validateColumnScope(column); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateColumnScope(column Column) error {
+	return validateReferenceScope(column.Settings, func(setting Setting) []string {
+		return entityReferences(setting.Name, setting.Metadata.Aliases)
+	}, fmt.Sprintf("column %q setting", column.Name))
+}
+
+func validateReferenceScope[T any](entities map[string]T, refs func(T) []string, scope string) error {
+	seen := map[string]string{}
+	for key, entity := range entities {
+		for _, reference := range refs(entity) {
+			if existing, exists := seen[reference]; exists && existing != key {
+				return fmt.Errorf("%s reference %q collides", scope, reference)
+			}
+			seen[reference] = key
+		}
+	}
+	return nil
 }
 
 // loadProjectIndex loads the optional project index file.
@@ -256,6 +475,26 @@ type discoveredEntry struct {
 	isDir  bool
 }
 
+func isReservedWarehouseRootDirectory(name string) bool {
+	return name == ".cfgfc-session"
+}
+
+// listWarehouseRootDirectories lists direct child project directories at the warehouse root.
+func listWarehouseRootDirectories(path string) (map[string]bool, error) {
+	directories, err := listSubdirectories(path)
+	if err != nil {
+		return nil, err
+	}
+
+	filtered := map[string]bool{}
+	for name, exists := range directories {
+		if !isReservedWarehouseRootDirectory(name) {
+			filtered[name] = exists
+		}
+	}
+	return filtered, nil
+}
+
 // listSubdirectories lists direct child directories, returning an empty map when the path does not exist.
 func listSubdirectories(path string) (map[string]bool, error) {
 	entries, err := os.ReadDir(path)
@@ -268,7 +507,7 @@ func listSubdirectories(path string) (map[string]bool, error) {
 
 	directories := map[string]bool{}
 	for _, entry := range entries {
-		if entry.IsDir() && entry.Name() != ".cfgfc-session" {
+		if entry.IsDir() {
 			directories[entry.Name()] = true
 		}
 	}
