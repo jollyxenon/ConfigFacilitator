@@ -12,6 +12,7 @@
 pixi run test
 pixi run build
 pixi run help
+pixi run install-global
 pixi run bash -lc 'for cmd in new sync switch list apply reset revert; do go run ./cmd/cfgfc "$cmd" --help; done'
 ```
 
@@ -20,6 +21,7 @@ pixi run bash -lc 'for cmd in new sync switch list apply reset revert; do go run
 - 使用 `pixi run test` 运行完整 Go 测试套件。
 - 使用 `pixi run build` 确认项目仍可编译。
 - 使用 `pixi run help` 验证根命令面。
+- 需要直接在命令行使用 `cfgfc` 时，执行 `pixi run install-global`。
 - 使用子命令 help sweep，验证每个已注册命令都能通过 `cfgfc <command> --help` 返回结构化帮助。
 - 如果改动涉及命令行为，还要针对临时的 `~/.configfacilitator/` 做一次真实 CLI smoke test。
 

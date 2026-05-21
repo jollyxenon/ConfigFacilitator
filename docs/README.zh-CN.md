@@ -14,6 +14,7 @@ ConfigFacilitator 是一个便携式 Go CLI，用于管理 `~/.configfacilitator
 ## 关键信息
 
 - 二进制名称：`cfgfc`
+- 全局安装：`pixi run install-global` 或 `go install ./cmd/cfgfc`
 - 仓库根目录：`~/.configfacilitator/`
 - 根目录项目发现：`~/.configfacilitator/` 下的直接项目目录都会参与发现，其中也包括 `SettingWarehouse`
 - 核心实体：`Project`、`Column`、`Setting`、`Mode`
