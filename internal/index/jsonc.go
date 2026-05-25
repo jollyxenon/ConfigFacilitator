@@ -506,7 +506,7 @@ func marshalModeEntry(entry ModeEntry) ([]byte, error) {
 
 func marshalModeColumnSelection(entry ModeColumnSelection) ([]byte, error) {
 	data := map[string]any{}
-	if len(entry.Settings) > 0 {
+	if len(entry.Settings) > 0 || entry.Strategy == "cover" || entry.Strategy == "increment" {
 		data["settings"] = entry.Settings
 	}
 	if entry.Strategy != "" {

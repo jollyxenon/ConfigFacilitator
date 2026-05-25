@@ -169,7 +169,7 @@ func TestParseModeIndexPreservesAdditionalIdentityField(t *testing.T) {
     "columns": {
       "Skills": {
         "settings": ["Skill-A"],
-        "strategy": "incremental",
+        "strategy": "increment",
         "missing": true
       }
     }
@@ -198,7 +198,7 @@ func TestParseModeIndexRetainsMissingMarkersAndUnknownFieldsWithoutLegacyIdentit
     "columns": {
       "Skills": {
         "settings": ["Skill-A"],
-        "strategy": "incremental",
+        "strategy": "increment",
         "missing": true
       }
     }
@@ -226,5 +226,35 @@ func TestParseModeIndexRetainsMissingMarkersAndUnknownFieldsWithoutLegacyIdentit
 	}
 	if got := index.Modes["Max"].Columns["Skills"].Extra["missing"]; len(got) == 0 {
 		t.Fatalf("expected unknown column field to be retained")
+	}
+}
+
+func TestMarshalModeColumnSelectionOmitsSettingsForNoneAndFull(t *testing.T) {
+	for _, selection := range []ModeColumnSelection{{Strategy: "none"}, {Strategy: "full"}} {
+		data, err := json.Marshal(selection)
+		if err != nil {
+			t.Fatalf("Marshal returned error: %v", err)
+		}
+		if bytes.Contains(data, []byte(`"settings"`)) {
+			t.Fatalf("did not expect settings in output for %q, got %s", selection.Strategy, data)
+		}
+		if !bytes.Contains(data, []byte(`"strategy":"`+selection.Strategy+`"`)) {
+			t.Fatalf("expected strategy in output for %q, got %s", selection.Strategy, data)
+		}
+	}
+}
+
+func TestMarshalModeColumnSelectionEmitsEmptySettingsForCoverAndIncrement(t *testing.T) {
+	for _, selection := range []ModeColumnSelection{{Strategy: "cover", Settings: []string{}}, {Strategy: "increment", Settings: []string{}}} {
+		data, err := json.Marshal(selection)
+		if err != nil {
+			t.Fatalf("Marshal returned error: %v", err)
+		}
+		if !bytes.Contains(data, []byte(`"settings":[]`)) {
+			t.Fatalf("expected explicit empty settings for %q, got %s", selection.Strategy, data)
+		}
+		if !bytes.Contains(data, []byte(`"strategy":"`+selection.Strategy+`"`)) {
+			t.Fatalf("expected strategy in output for %q, got %s", selection.Strategy, data)
+		}
 	}
 }
