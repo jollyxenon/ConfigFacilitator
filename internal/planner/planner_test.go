@@ -26,7 +26,7 @@ func TestPlanColumnMappingsUsesExplicitAndDefaultTargets(t *testing.T) {
 	}
 }
 
-func TestPlanModeMappingsHandlesFullAndIncrementalColumns(t *testing.T) {
+func TestPlanModeMappingsHandlesCoverAndIncrementColumns(t *testing.T) {
 	project := sampleProject()
 	current := []linker.Mapping{{Source: filepath.Join(project.Columns["Skills"].Path, "Skill-Old"), Target: "/tmp/skills/old"}, {Source: filepath.Join(project.Columns["opencode.json"].Path, "GPT.json"), Target: "/home/test/.config/opencode/opencode.json"}}
 	mappings, err := PlanModeMappings(project, "m", current, PlanOptions{HomeDir: "/home/test", Env: map[string]string{}, OS: "linux"})
@@ -39,6 +39,54 @@ func TestPlanModeMappingsHandlesFullAndIncrementalColumns(t *testing.T) {
 	assertContainsTarget(t, mappings, "/home/test/.config/opencode/opencode.json", filepath.Join(project.Columns["opencode.json"].Path, "CLAUDE.json"))
 	assertContainsTarget(t, mappings, "/tmp/skills/old", filepath.Join(project.Columns["Skills"].Path, "Skill-Old"))
 	assertContainsTarget(t, mappings, "/tmp/skills/a", filepath.Join(project.Columns["Skills"].Path, "Skill-A"))
+}
+
+func TestPlanModeMappingsHandlesNoneAndFullColumns(t *testing.T) {
+	project := sampleProject()
+	project.Modes["All"] = warehouse.Mode{
+		Name:          "All",
+		WarehouseName: "All",
+		Metadata: index.ModeEntry{Columns: map[string]index.ModeColumnSelection{
+			"opencode.json": {Strategy: "full"},
+			"Skills":        {Strategy: "none"},
+		}, WarehouseName: "All"},
+	}
+	current := []linker.Mapping{{Source: filepath.Join(project.Columns["Skills"].Path, "Skill-Old"), Target: "/tmp/skills/old"}}
+	mappings, err := PlanModeMappings(project, "All", current, PlanOptions{HomeDir: "/home/test", Env: map[string]string{}, OS: "linux"})
+	if err != nil {
+		t.Fatalf("plan mode mappings: %v", err)
+	}
+	if len(mappings) != 2 {
+		t.Fatalf("len(mappings) = %d, want 2", len(mappings))
+	}
+	assertContainsTarget(t, mappings, "/home/test/.config/opencode/opencode.json", filepath.Join(project.Columns["opencode.json"].Path, "GPT.json"))
+	assertContainsTarget(t, mappings, "/home/test/.config/opencode/special/special.json", filepath.Join(project.Columns["opencode.json"].Path, "Special.json"))
+	assertDoesNotContainTarget(t, mappings, "/tmp/skills/old")
+}
+
+func TestPlanModeMappingsRejectsUnknownOrIncompleteStrategies(t *testing.T) {
+	project := sampleProject()
+	project.Modes["Broken"] = warehouse.Mode{
+		Name:          "Broken",
+		WarehouseName: "Broken",
+		Metadata: index.ModeEntry{Columns: map[string]index.ModeColumnSelection{
+			"Skills": {Strategy: "unknown"},
+		}, WarehouseName: "Broken"},
+	}
+	if _, err := PlanModeMappings(project, "Broken", nil, PlanOptions{HomeDir: "/home/test", Env: map[string]string{}, OS: "linux"}); err == nil {
+		t.Fatalf("expected unknown strategy to fail")
+	}
+
+	project.Modes["Empty"] = warehouse.Mode{
+		Name:          "Empty",
+		WarehouseName: "Empty",
+		Metadata: index.ModeEntry{Columns: map[string]index.ModeColumnSelection{
+			"Skills": {Strategy: "cover"},
+		}, WarehouseName: "Empty"},
+	}
+	if _, err := PlanModeMappings(project, "Empty", nil, PlanOptions{HomeDir: "/home/test", Env: map[string]string{}, OS: "linux"}); err == nil {
+		t.Fatalf("expected cover without settings to fail")
+	}
 }
 
 func sampleProject() warehouse.Project {
@@ -75,8 +123,8 @@ func sampleProject() warehouse.Project {
 				Name:          "Max",
 				WarehouseName: "Max",
 				Metadata: index.ModeEntry{Columns: map[string]index.ModeColumnSelection{
-					"opencode.json": {Settings: []string{"claude"}, Strategy: "full"},
-					"skills":        {Settings: []string{"alpha"}, Strategy: "incremental"},
+					"opencode.json": {Settings: []string{"claude"}, Strategy: "cover"},
+					"skills":        {Settings: []string{"alpha"}, Strategy: "increment"},
 				}, WarehouseName: "Max", Aliases: []string{"m"}},
 			},
 		},
@@ -91,4 +139,13 @@ func assertContainsTarget(t *testing.T, mappings []linker.Mapping, target string
 		}
 	}
 	t.Fatalf("missing mapping target=%q source=%q in %#v", target, source, mappings)
+}
+
+func assertDoesNotContainTarget(t *testing.T, mappings []linker.Mapping, target string) {
+	t.Helper()
+	for _, mapping := range mappings {
+		if mapping.Target == target {
+			t.Fatalf("unexpected mapping target=%q in %#v", target, mappings)
+		}
+	}
 }
