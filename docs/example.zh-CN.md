@@ -147,7 +147,7 @@ cfgfc new -p OpenCode -m Max
 
 ### Mode 选择与策略
 
-`ModeIndex.jsonc` 也需要手工编辑。`settings` 用来声明每个 Column 要包含哪些 Setting，`strategy` 用来控制应用时的替换策略。
+`ModeIndex.jsonc` 也需要手工编辑。当策略为 `cover` 或 `increment` 时，`settings` 用来声明每个 Column 要包含哪些 Setting；`strategy` 用来控制该 Column 的应用行为。
 
 ```jsonc
 // OpenCode/Mode/ModeIndex.jsonc
@@ -159,18 +159,18 @@ cfgfc new -p OpenCode -m Max
     "columns": {
       "oh-my-openagent": {
         "settings": ["OMOMax.json"],
-        "strategy": "full"
+        "strategy": "cover"
       },
       "Skills": {
         "settings": ["Skill-A", "Skill-B"],
-        "strategy": "incremental"
+        "strategy": "increment"
       }
     }
   }
 }
 ```
 
-`full` 会先清理该 Column 之前受管的链接，再重新应用；`incremental` 会保留现有链接，并继续追加新的链接。
+`cover` 只应用该 Column 中显式写出的 `settings`；`increment` 会保留现有受管链接并继续追加新的链接；`none` 表示该 Column 本次不建立任何链接；`full` 表示自动链接该 Column 下全部已知 Setting。只有 `none` 和 `full` 可以省略 `settings`。
 
 ## 3. 手工编辑后执行 sync
 
@@ -211,7 +211,7 @@ cfgfc apply -c oh-my-openagent -s OMOLight.json
 cfgfc apply -m Max
 ```
 
-在这个示例里，`apply -m Max` 会先把 `oh-my-openagent` 的目标链接替换成 `OMOMax.json`，因为这个 Column 使用了 `full`；随后再把 `Skill-A` 和 `Skill-B` 的目录链接补上，因为 `Skills` 使用的是 `incremental`。
+在这个示例里，`apply -m Max` 会先把 `oh-my-openagent` 的目标链接替换成 `OMOMax.json`，因为这个 Column 使用了 `cover`；随后再把 `Skill-A` 和 `Skill-B` 的目录链接补上，因为 `Skills` 使用的是 `increment`。
 
 ## 6. 用 revert 或 reset 恢复环境
 

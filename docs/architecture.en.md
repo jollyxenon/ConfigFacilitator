@@ -23,6 +23,6 @@ The warehouse lives under `~/.configfacilitator/`, not beside the shell working 
 ## Behavioral rules
 
 - Setting-level `target` overrides column-level `defaultTarget`.
-- `Mode` can apply `full` or `incremental` column strategies.
+- `Mode` can apply `cover`, `increment`, `none`, or `full` column strategies.
 - `switch` stores a convenience project context by PPID.
 - `revert` restores only the previous apply state.

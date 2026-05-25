@@ -75,4 +75,4 @@ cfgfc revert -p OpenCode
 - After `cfgfc switch`, project-scoped `new`, `sync`, `list`, `apply`, `reset`, and `revert` commands can omit `-p`.
 - `switch` persists the normalized project identifier even when the user typed an alias.
 - After `cfgfc switch global`, the current PPID-scoped project context is cleared; `list` returns to the global project list and `sync` returns to its default full-warehouse fallback.
-- Mode strategies are `full` or `incremental`.
+- Mode strategies are `cover`, `increment`, `none`, and `full`; only `none` and `full` may omit `settings` in `ModeIndex.jsonc`.

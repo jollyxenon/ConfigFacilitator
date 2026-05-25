@@ -35,5 +35,8 @@
 
 ## 模式语义
 
-- `full` 会先清理该 Column 之前的链接，再重新应用。
-- `incremental` 会保留现有链接，并追加新链接。
+- `cover` 只应用该 Column 中显式写出的 `settings`。
+- `increment` 会保留该 Column 现有的受管链接，再追加显式写出的 `settings`。
+- `none` 表示该 Column 本次不建立任何链接。
+- `full` 会自动链接该 Column 下全部已知 Setting。
+- 只有当 `strategy` 为 `none` 或 `full` 时，才可以省略 `settings`。

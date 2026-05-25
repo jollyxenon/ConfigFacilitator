@@ -35,5 +35,8 @@ Indexes are stored as JSONC so generated templates can end with one disposable e
 
 ## Mode semantics
 
-- `full` clears previous links for the column before applying.
-- `incremental` keeps existing links and adds new ones.
+- `cover` applies only the authored `settings` for that column.
+- `increment` keeps existing managed links for that column and then adds the authored `settings`.
+- `none` applies no mappings for that column.
+- `full` links every known Setting in that column.
+- `settings` may be omitted only when `strategy` is `none` or `full`.

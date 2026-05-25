@@ -147,7 +147,7 @@ Paths can use `~`, `${VAR}`, and Windows `%VAR%` forms.
 
 ### Mode selections
 
-Mode membership is also edited by hand in `ModeIndex.jsonc`. Use `settings` to pick the included Settings for each Column, and use `strategy` to control replacement behavior.
+Mode membership is also edited by hand in `ModeIndex.jsonc`. Use `settings` to pick the included Settings for each Column when the strategy is `cover` or `increment`, and use `strategy` to control the column behavior.
 
 ```jsonc
 // OpenCode/Mode/ModeIndex.jsonc
@@ -159,18 +159,18 @@ Mode membership is also edited by hand in `ModeIndex.jsonc`. Use `settings` to p
     "columns": {
       "oh-my-openagent": {
         "settings": ["OMOMax.json"],
-        "strategy": "full"
+        "strategy": "cover"
       },
       "Skills": {
         "settings": ["Skill-A", "Skill-B"],
-        "strategy": "incremental"
+        "strategy": "increment"
       }
     }
   }
 }
 ```
 
-`full` clears previous managed links for that Column before re-applying. `incremental` keeps existing links and adds new ones.
+`cover` applies only the authored `settings` for that Column. `increment` keeps existing managed links and adds new ones. `none` links nothing for that Column. `full` links every known Setting in the Column. Only `none` and `full` may omit `settings`.
 
 ## 3. Sync the warehouse after manual edits
 
@@ -211,7 +211,7 @@ When you want the full workspace again, apply the named Mode:
 cfgfc apply -m Max
 ```
 
-In this example, `apply -m Max` replaces the `oh-my-openagent` link with `OMOMax.json` because that Column uses `full`, then adds the `Skill-A` and `Skill-B` directory links because `Skills` uses `incremental`.
+In this example, `apply -m Max` replaces the `oh-my-openagent` link with `OMOMax.json` because that Column uses `cover`, then adds the `Skill-A` and `Skill-B` directory links because `Skills` uses `increment`.
 
 ## 6. Recover with revert or reset
 

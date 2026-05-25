@@ -23,6 +23,6 @@
 ## 行为规则
 
 - Setting 级别的 `target` 会覆盖 Column 级别的 `defaultTarget`。
-- `Mode` 支持 `full` 和 `incremental` 两种栏目策略。
+- `Mode` 支持 `cover`、`increment`、`none`、`full` 四种栏目策略。
 - `switch` 会按 PPID 保存一个便利用项目上下文。
 - `revert` 只恢复上一次应用状态。

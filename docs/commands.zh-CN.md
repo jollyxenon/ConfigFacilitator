@@ -75,4 +75,4 @@ cfgfc revert -p OpenCode
 - 执行 `cfgfc switch` 后，带项目作用域的 `new`、`sync`、`list`、`apply`、`reset` 与 `revert` 命令都可以省略 `-p`。
 - 即使用户输入的是别名，`switch` 保存到会话里的也始终是规范化后的项目标识符。
 - 执行 `cfgfc switch global` 后，会清除当前 PPID 的活动项目上下文；之后 `list` 会回到全局项目列表，`sync` 会回到默认的全仓同步回退行为。
-- 模式策略只有 `full` 和 `incremental` 两种。
+- 模式策略共有 `cover`、`increment`、`none`、`full` 四种；在 `ModeIndex.jsonc` 中，只有 `none` 和 `full` 可以省略 `settings`。
