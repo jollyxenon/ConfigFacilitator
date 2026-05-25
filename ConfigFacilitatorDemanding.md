@@ -38,7 +38,7 @@
 - **Mode 文件夹规则**：
   - `Mode` 目录下存放 `ModeIndex.jsonc` 文件，由用户通过文本编辑器手动维护（或通过 CLI 生成带末尾示例注释块的模板后填写）。
   - 记录模式的显示名称、别名，及其对应的栏目映射关系。
-  - **数据结构约束与覆盖策略**：针对 Mode 内的每一个 Column，用户可以指定应用的子配置，并选择覆盖策略。如果在模式中未写明某个栏目，则在应用该模式时，该栏目对应的现有链接默认会被**清空（撤销）**。如果声明了栏目，可以指定为“全量覆盖”（清理该栏目旧链接后再应用）或“增量覆盖”（保留该栏目已有链接，仅附加新链接）。
+- **数据结构约束与覆盖策略**：针对 Mode 内的每一个 Column，用户可以指定应用的子配置，并选择覆盖策略。如果在模式中未写明某个栏目，则在应用该模式时，该栏目对应的现有链接默认会被**清空（撤销）**。如果声明了栏目，可以指定 `cover`（只应用显式列出的 Setting）、`increment`（保留该栏目已有受管链接并追加显式 Setting）、`none`（该栏目本次不建立任何链接）或 `full`（自动链接该栏目下全部已知 Setting）。其中只有 `none` 和 `full` 可以省略 `settings` 字段。
 
 ### 目录结构样例
 
@@ -94,18 +94,18 @@ cfgfc
     "columns": {
       "opencode.json": {
         "settings": ["CLAUDE.json"],
-        "strategy": "full"
+        "strategy": "cover"
       },
       "Skills": {
         "settings": ["Skill-A", "Skill-B"],
-        "strategy": "incremental"
+        "strategy": "increment"
       }
     }
   }
 }
 ```
 
-其中 `"full"` 表示对目标栏目执行全量覆盖，`"incremental"` 表示在目标栏目中执行增量叠加。
+其中 `"cover"` 表示只应用显式列出的 Setting，`"increment"` 表示保留已有受管链接并追加新 Setting，`"none"` 表示该栏目本次不建立链接，`"full"` 表示自动链接该栏目中的全部已知 Setting。`"none"` 与 `"full"` 可以省略 `settings`。
 
 ## 核心机制说明
 
@@ -151,7 +151,7 @@ CLI 使用 `cfgfc` 唤起 ConfigFacilitator。
 ### 4. 应用配置 (`apply`)
 
 - **应用模式 (Mode)**：`cfgfc apply -m <ModeName>`
-  - 系统遍历模式中声明的 Column，根据设定的 `strategy` 决定是先清空该栏目的旧链接（全量）还是直接附加（增量）。
+  - 系统遍历模式中声明的 Column，根据设定的 `strategy` 执行 `cover`、`increment`、`none` 或 `full` 对应的栏目行为。
   - 对于模式中未声明的 Column，默认执行清空（撤销）操作。
 - **应用单栏目 (Column)**：`cfgfc apply -c <ColumnName> -s <SettingName>`
   - 如果需要传入多个子配置，可通过逗号分隔，如：`-s "Skill-A,Skill-B"`
