@@ -87,7 +87,7 @@ func CreateMode(rootPath string, projectName string, modeName string) error {
 	}
 	columns := map[string]index.ModeColumnSelection{}
 	for _, columnName := range sortedColumnNames(columnIndex) {
-		columns[columnName] = index.ModeColumnSelection{Settings: []string{}, Strategy: "full", Extra: map[string]json.RawMessage{}}
+		columns[columnName] = index.ModeColumnSelection{Settings: []string{}, Strategy: "cover", Extra: map[string]json.RawMessage{}}
 	}
 	modeIndex.Modes[modeName] = index.ModeEntry{DisplayName: modeName, Aliases: []string{}, Description: "", Columns: columns, Extra: map[string]json.RawMessage{}}
 	return os.WriteFile(modeIndexPath, []byte(modeIndexTemplate(modeIndex)), 0o644)
@@ -286,13 +286,16 @@ Example:
 	    "columns": {
 	      "Skills": {
         "settings": ["Skill-A", "Skill-B"],
-        "strategy": "incremental"
+	        "strategy": "increment"
+	      },
+	      "Agents": {
+	        "strategy": "full"
       }
     }
   }
 }
 
-List modes keyed by mode name. Use "full" to replace a column or "incremental" to append settings.
+List modes keyed by mode name. Use "cover" for explicit replacement, "increment" to append to current managed links, "none" to link nothing, and "full" to link every known setting in a column. The "settings" field may be omitted for "none" and "full".
 */`
 }
 

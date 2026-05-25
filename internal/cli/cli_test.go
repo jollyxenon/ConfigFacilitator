@@ -196,7 +196,7 @@ func TestRunWithExecutableCreatesProjectColumnAndModeScaffolds(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read mode index: %v", err)
 	}
-	assertGeneratedIndexHasTrailingExampleComment(t, modeIndexData, []string{"\"Max\"", "\"Skills\"", "Example:"})
+	assertGeneratedIndexHasTrailingExampleComment(t, modeIndexData, []string{"\"Max\"", "\"Skills\"", "\"settings\": []", "Example:"})
 }
 
 func TestRunWithExecutableSyncsWarehouseIndexes(t *testing.T) {
@@ -421,7 +421,7 @@ func TestRunWithExecutableListUsesDisplayNamesAndCanonicalIdentifiers(t *testing
 	    "columns": {
 	      "Skills": {
 	        "settings": ["Skill-A"],
-	        "strategy": "full"
+	        "strategy": "cover"
 	      }
 	    }
 	  }
@@ -777,7 +777,7 @@ func TestRunWithExecutableListsColumnAndModeDetails(t *testing.T) {
 	if exitCode := RunWithExecutable([]string{"list", "-p", "OpenCode", "-m", "Max"}, &stdout, &stderr, executablePath); exitCode != 0 {
 		t.Fatalf("list mode exit code = %d, stderr=%q", exitCode, stderr.String())
 	}
-	if !bytes.Contains(stdout.Bytes(), []byte("Mode: Max")) || !bytes.Contains(stdout.Bytes(), []byte("Skills: strategy=full")) {
+	if !bytes.Contains(stdout.Bytes(), []byte("Mode: Max")) || !bytes.Contains(stdout.Bytes(), []byte("Skills: strategy=cover")) {
 		t.Fatalf("unexpected mode output %q", stdout.String())
 	}
 }
@@ -822,7 +822,7 @@ func TestRunWithExecutableApplyResetAndRevertEndToEnd(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(warehouseRoot, "Column", "Skills", "SettingIndex.jsonc"), []byte("{\n  \"description\": \"skills\",\n  \"settings\": {\n    \"Skill-A\": {\"target\": \"~/.config/opencode/skills/Skill-A\"},\n    \"Skill-B\": {\"target\": \"~/.config/opencode/skills/Skill-B\"}\n  }\n}\n"), 0o644); err != nil {
 		t.Fatalf("write skills setting index: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(warehouseRoot, "Mode", "ModeIndex.jsonc"), []byte("{\n  \"Max\": {\n    \"displayName\": \"Max\",\n    \"columns\": {\n      \"opencode.json\": {\n        \"settings\": [\"CLAUDE.json\"],\n        \"strategy\": \"full\"\n      },\n      \"Skills\": {\n        \"settings\": [\"Skill-A\", \"Skill-B\"],\n        \"strategy\": \"incremental\"\n      }\n    }\n  }\n}\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(warehouseRoot, "Mode", "ModeIndex.jsonc"), []byte("{\n  \"Max\": {\n    \"displayName\": \"Max\",\n    \"columns\": {\n      \"opencode.json\": {\n        \"settings\": [\"CLAUDE.json\"],\n        \"strategy\": \"cover\"\n      },\n      \"Skills\": {\n        \"settings\": [\"Skill-A\", \"Skill-B\"],\n        \"strategy\": \"increment\"\n      }\n    }\n  }\n}\n"), 0o644); err != nil {
 		t.Fatalf("write mode index: %v", err)
 	}
 
@@ -910,10 +910,10 @@ func TestRunWithExecutableResolvesAliasesAndStoresCanonicalProjectContext(t *tes
 	    "displayName": "Max",
 	    "aliases": ["m"],
     "columns": {
-      "skills": {
-        "settings": ["alpha"],
-        "strategy": "full"
-      }
+	      "skills": {
+	        "settings": ["alpha"],
+	        "strategy": "cover"
+	      }
     }
   }
 }
