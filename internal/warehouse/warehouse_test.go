@@ -70,8 +70,8 @@ func TestLoadWarehouseBuildsProjectColumnAndModeRelationships(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected mode to preserve Skills selection")
 	}
-	if selection.Strategy != "incremental" {
-		t.Fatalf("expected incremental strategy preserved, got %q", selection.Strategy)
+	if selection.Strategy != "increment" {
+		t.Fatalf("expected increment strategy preserved, got %q", selection.Strategy)
 	}
 	if len(selection.Settings) != 2 {
 		t.Fatalf("expected two selected settings, got %d", len(selection.Settings))
