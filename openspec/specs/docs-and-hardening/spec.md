@@ -37,7 +37,7 @@ The project SHALL rerun the final validation workflow once the command surface i
 - **THEN** the repository has passing evidence for the standard test, build, help, command-help, and representative end-to-end workflow checks
 
 ### Requirement: Documentation Parity
-Documentation updates MUST keep the English and Chinese user-facing docs in sync for the same behavioral or workflow change.
+Documentation updates MUST keep the English and Chinese user-facing docs in sync for the same behavioral, workflow, or repository metadata change.
 
 #### Scenario: Workflow documentation changes
 - **WHEN** a developer workflow changes
@@ -47,3 +47,8 @@ Documentation updates MUST keep the English and Chinese user-facing docs in sync
 #### Scenario: Obsolete workflow removal
 - **WHEN** a task or command is removed from the supported workflow
 - **THEN** documentation no longer recommends that removed task or command as a baseline path
+
+#### Scenario: License documentation changes
+- **WHEN** repository license information changes
+- **THEN** matching English and Chinese user-facing documentation are both updated in the same change
+- **AND** both versions name the same license and direct users to the same authoritative license file

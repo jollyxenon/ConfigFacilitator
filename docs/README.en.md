@@ -15,6 +15,7 @@ ConfigFacilitator is a portable Go CLI that manages configuration warehouses in 
 
 - Binary name: `cfgfc`
 - Development build: `pixi run compile` checks all Go packages; `pixi run build` creates `dist/cfgfc`
+- License: MIT License (see [`LICENSE`](../LICENSE))
 - Warehouse root: `~/.configfacilitator/`
 - Root-level project discovery: direct child project directories under `~/.configfacilitator/`, including `SettingWarehouse`, participate in discovery
 - Core entities: `Project`, `Column`, `Setting`, `Mode`

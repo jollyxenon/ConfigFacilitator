@@ -41,6 +41,6 @@ pixi run build
 
 ## License / 开源协议
 
-This repository does not currently include a `LICENSE` file.
+ConfigFacilitator is licensed under the MIT License. See [LICENSE](LICENSE) for the full terms.
 
-本仓库当前未包含 `LICENSE` 文件。
+ConfigFacilitator 使用 MIT License 开源。完整条款见 [LICENSE](LICENSE)。
