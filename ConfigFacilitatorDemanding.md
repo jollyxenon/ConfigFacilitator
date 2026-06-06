@@ -33,8 +33,8 @@
   - `Column` 目录下包含 `ColumnIndex.jsonc` 文件，纯粹用于记录每个栏目的文件夹名、默认显示名及说明（description）。
   - 每个具体的栏目文件夹内除了用户手动放置的配置文件/文件夹外，还包含 `SettingIndex.jsonc` 文件。
   - **`SettingIndex.jsonc` 的目标路径设计**：
-    - `"defaultTarget"`：这是一个主要为了可读性和“单文件替换”场景存在的选项（例如 `~/.config/opencode/opencode.json`）。底下的各个 Setting 若未特别指定 `"target"`，则默认继承此路径。
-    - `"target"`：如果某个栏目包含多个需要分别链接到不同位置的子配置（例如独立的技能 A 和技能 B），则完全可以不配置 `defaultTarget`，而是直接为每个 Setting 单独定义 `"target"`。**如果 Setting 中配置了 `"target"`，则无论是否存在 `defaultTarget`，都会以 Setting 的 `"target"` 为准。**
+    - `"defaultTargetDir"` / `"defaultTargetName"`：Column 级默认目标目录和目标名称数组，两者严格按下标配对。
+    - `"targetDir"` / `"targetName"`：Setting 级目标目录和目标名称数组，按相同下标覆盖默认值。Setting 中的空字符串表示继承默认值；`defaultTargetName` 中的空字符串回退为 Setting 名；`defaultTargetDir` 中的空字符串表示尚未配置，不能执行应用。
 - **Mode 文件夹规则**：
   - `Mode` 目录下存放 `ModeIndex.jsonc` 文件，由用户通过文本编辑器手动维护（或通过 CLI 生成带末尾示例注释块的模板后填写）。
   - 记录模式的显示名称、别名，及其对应的栏目映射关系。
@@ -69,16 +69,18 @@ cfgfc
 ```jsonc
 {
   "description": "这是 OpenCode 的主配置文件栏目，存放不同的模型选项。",
-  "defaultTarget": "~/.config/opencode/opencode.json", 
+  "defaultTargetDir": ["~/.config/opencode"],
+  "defaultTargetName": ["opencode.json"],
   "settings": {
     "GPT.json": {
       "displayName": "GPT 模型",
-      "description": "调用 OpenAI 接口，默认应用到 defaultTarget 路径"
+      "description": "调用 OpenAI 接口，默认应用到 defaultTargetDir/defaultTargetName 路径"
     },
     "Special-Skill.json": {
       "displayName": "特殊技能",
-      "description": "单独放到别处，覆盖 defaultTarget",
-      "target": "~/.config/opencode/special/special.json" 
+      "description": "单独放到别处，覆盖默认目标目录和名称",
+      "targetDir": ["~/.config/opencode/special"],
+      "targetName": ["special.json"]
     }
   }
 }
@@ -112,7 +114,7 @@ cfgfc
 1. **软链接驱动 (Symlink-based) 与防冲突**：所有的 `apply` 操作本质上是在**目标绝对路径**建立指向 `~/.configfacilitator/` 内项目真实文件的软链接。如果程序发现在准备创建软链接的 `target` 路径上，**已经存在非本系统生成的真实物理文件/文件夹**，程序必须挂起并**提示用户**（确认是否覆盖、备份或跳过），绝不能悄无声息地覆盖用户原有数据。
 2. **状态记录与回溯**：在每次 `apply` 前，工具会读取当前项目的 `Backup/current_state.json`，撤销（Unlink）需要清理的旧软链接，然后再生成新的软链接。新生成的链接表会被重新写入该状态文件。
 3. **会话级上下文 (Session Context)**：`switch` 提供的免除输入项目名（省略 `-p`）的上下文状态，通过**绑定终端父进程 ID (PPID)** 来实现。这样即使在多个终端窗口同时维护不同项目时，状态也绝对不会发生污染。
-4. **路径变量解析**：为了保证真正的 Portable，配置中的路径（如 `target`）支持内置的基础路径变量解析，自动转换如 `~`、`${HOME}` 或 Windows 环境下的对应变量，以确保跨平台和跨设备的可用性。
+4. **路径变量解析**：为了保证真正的 Portable，配置中的目标目录支持内置的基础路径变量解析，自动转换如 `~`、`${HOME}` 或 Windows 环境下的对应变量，以确保跨平台和跨设备的可用性。目标名称必须是普通文件名或单层目录名。
 
 ## 使用方法
 
@@ -180,7 +182,7 @@ CLI 使用 `cfgfc` 唤起 ConfigFacilitator。
 
 2. **填充内容与新建模式模板**：
     - 用户打开文件管理器，将 `CLAUDE.json` 和 `GPT.json` 拖入 `~/.configfacilitator/OpenCode/Column/opencode.json/` 目录下。将具体的技能文件夹拖入 `Skills` 目录下。
-    - 用户打开对应的 `SettingIndex.jsonc` 填写 `"defaultTarget"` 或 `"target"`，指定软链接生成的绝对路径（可使用 `~` 等变量）。
+    - 用户打开对应的 `SettingIndex.jsonc` 填写 `"defaultTargetDir"` / `"defaultTargetName"` 或 Setting 内的 `"targetDir"` / `"targetName"`，指定软链接生成的目标目录和名称（目录可使用 `~` 等变量）。
     - 生成模式模板：
 
         ```bash
