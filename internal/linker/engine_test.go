@@ -3,6 +3,7 @@ package linker
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -101,6 +102,103 @@ func TestReplaceMappingsPersistsCurrentStateAndHistory(t *testing.T) {
 	}
 }
 
+func TestLoadCurrentStateReadsLegacyMappingOnlyState(t *testing.T) {
+	engine := New()
+	project, root := newProjectPaths(t)
+	source := writeFile(t, root, "warehouse/source.txt", "alpha")
+	target := filepath.Join(root, "target.txt")
+	legacyState := []byte(fmt.Sprintf("{\n  \"mappings\": [{\"source\": %q, \"target\": %q}]\n}\n", source, target))
+	if err := os.WriteFile(project.CurrentStatePath, legacyState, 0o644); err != nil {
+		t.Fatalf("write legacy state: %v", err)
+	}
+
+	state, err := engine.LoadCurrentState(project)
+	if err != nil {
+		t.Fatalf("load legacy state: %v", err)
+	}
+	if state.Intent != nil {
+		t.Fatalf("legacy state intent = %#v, want nil", state.Intent)
+	}
+	if len(state.Mappings) != 1 || state.Mappings[0].Source != source || state.Mappings[0].Target != target {
+		t.Fatalf("unexpected legacy mappings: %#v", state.Mappings)
+	}
+}
+
+func TestReplaceStatePersistsIntentAndHistory(t *testing.T) {
+	engine := New()
+	engine.now = func() time.Time { return time.Unix(456, 0) }
+	project, root := newProjectPaths(t)
+	firstSource := writeFile(t, root, "warehouse/first.txt", "one")
+	secondSource := writeFile(t, root, "warehouse/second.txt", "two")
+	target := filepath.Join(root, "target.txt")
+	modeIntent := &ApplyIntent{Kind: "mode", Mode: "Max"}
+	columnIntent := &ApplyIntent{Kind: "column", Column: "opencode.json", Settings: []string{"GPT.json"}}
+
+	if err := engine.ReplaceState(project, CurrentState{Mappings: []Mapping{{Source: firstSource, Target: target}}, Intent: modeIntent}); err != nil {
+		t.Fatalf("initial replace state: %v", err)
+	}
+	if err := engine.ReplaceState(project, CurrentState{Mappings: []Mapping{{Source: secondSource, Target: target}}, Intent: columnIntent}); err != nil {
+		t.Fatalf("second replace state: %v", err)
+	}
+
+	state, err := engine.LoadCurrentState(project)
+	if err != nil {
+		t.Fatalf("load current state: %v", err)
+	}
+	if state.Intent == nil || state.Intent.Kind != "column" || state.Intent.Column != "opencode.json" || len(state.Intent.Settings) != 1 || state.Intent.Settings[0] != "GPT.json" {
+		t.Fatalf("unexpected current intent: %#v", state.Intent)
+	}
+	previous, err := engine.LoadPreviousState(project)
+	if err != nil {
+		t.Fatalf("load previous state: %v", err)
+	}
+	if previous.Intent == nil || previous.Intent.Kind != "mode" || previous.Intent.Mode != "Max" {
+		t.Fatalf("unexpected previous intent: %#v", previous.Intent)
+	}
+
+	historyData, err := os.ReadFile(project.HistoryLogPath)
+	if err != nil {
+		t.Fatalf("read history log: %v", err)
+	}
+	entries, err := ReadHistoryEntries(bytes.NewReader(historyData))
+	if err != nil {
+		t.Fatalf("parse history entries: %v", err)
+	}
+	if len(entries) != 2 || entries[1].PreviousIntent == nil || entries[1].NextIntent == nil {
+		t.Fatalf("history did not record intents: %#v", entries)
+	}
+}
+
+func TestResetClearsIntentAndLoadPreviousStateRestoresIt(t *testing.T) {
+	engine := New()
+	project, root := newProjectPaths(t)
+	source := writeFile(t, root, "warehouse/source.txt", "alpha")
+	target := filepath.Join(root, "target.txt")
+	intent := &ApplyIntent{Kind: "mode", Mode: "Max"}
+
+	if err := engine.ReplaceState(project, CurrentState{Mappings: []Mapping{{Source: source, Target: target}}, Intent: intent}); err != nil {
+		t.Fatalf("replace state: %v", err)
+	}
+	if err := engine.Reset(project); err != nil {
+		t.Fatalf("reset: %v", err)
+	}
+
+	state, err := engine.LoadCurrentState(project)
+	if err != nil {
+		t.Fatalf("load state after reset: %v", err)
+	}
+	if state.Intent != nil || len(state.Mappings) != 0 {
+		t.Fatalf("reset state = %#v, want empty without intent", state)
+	}
+	previous, err := engine.LoadPreviousState(project)
+	if err != nil {
+		t.Fatalf("load previous state: %v", err)
+	}
+	if previous.Intent == nil || previous.Intent.Kind != "mode" || previous.Intent.Mode != "Max" {
+		t.Fatalf("previous state did not preserve intent: %#v", previous.Intent)
+	}
+}
+
 func TestReplaceMappingsRejectsUnmanagedTarget(t *testing.T) {
 	engine := New()
 	project, root := newProjectPaths(t)
@@ -111,6 +209,57 @@ func TestReplaceMappingsRejectsUnmanagedTarget(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected unmanaged target conflict")
 	}
+}
+
+func TestReplaceMappingsRejectsDuplicateTargets(t *testing.T) {
+	engine := New()
+	project, root := newProjectPaths(t)
+	firstSource := writeFile(t, root, "warehouse/first.txt", "one")
+	secondSource := writeFile(t, root, "warehouse/second.txt", "two")
+	target := filepath.Join(root, "target.txt")
+
+	err := engine.ReplaceMappings(project, []Mapping{{Source: firstSource, Target: target}, {Source: secondSource, Target: target}})
+	if err == nil {
+		t.Fatal("expected duplicate target to fail")
+	}
+	if _, statErr := os.Lstat(target); !os.IsNotExist(statErr) {
+		t.Fatalf("duplicate target should not be created, err=%v", statErr)
+	}
+}
+
+func TestReplaceMappingsWithForceOverridesUnmanagedTarget(t *testing.T) {
+	engine := New()
+	project, root := newProjectPaths(t)
+	source := writeFile(t, root, "warehouse/source.txt", "alpha")
+	target := writeFile(t, root, "target.txt", "real-file")
+
+	if err := engine.ReplaceMappings(project, []Mapping{{Source: source, Target: target}}, WithForce(true)); err != nil {
+		t.Fatalf("forced replace: %v", err)
+	}
+	assertFileSymlinkTarget(t, target, source)
+}
+
+func TestReplaceStateWithForceRepairsDriftedRecordedTarget(t *testing.T) {
+	engine := New()
+	project, root := newProjectPaths(t)
+	source := writeFile(t, root, "warehouse/source.txt", "alpha")
+	target := filepath.Join(root, "target.txt")
+	manualSource := writeFile(t, root, "warehouse/manual.txt", "manual")
+
+	if err := engine.ReplaceState(project, CurrentState{Mappings: []Mapping{{Source: source, Target: target}}}); err != nil {
+		t.Fatalf("initial replace state: %v", err)
+	}
+	if err := os.Remove(target); err != nil {
+		t.Fatalf("remove owned target: %v", err)
+	}
+	if err := os.Symlink(manualSource, target); err != nil {
+		t.Fatalf("create drifted target: %v", err)
+	}
+
+	if err := engine.ReplaceState(project, CurrentState{Mappings: []Mapping{{Source: source, Target: target}}}, WithForce(true)); err != nil {
+		t.Fatalf("forced replace state: %v", err)
+	}
+	assertFileSymlinkTarget(t, target, source)
 }
 
 func TestReplaceMappingsRollsBackOnHistoryWriteFailure(t *testing.T) {
@@ -175,6 +324,78 @@ func TestResetRemovesOnlyOwnedTargets(t *testing.T) {
 	}
 	if len(state.Mappings) != 0 {
 		t.Fatalf("state mappings after reset = %#v, want empty", state.Mappings)
+	}
+}
+
+func TestResetWithForceRemovesDriftedDirectoryTarget(t *testing.T) {
+	engine := New()
+	project, root := newProjectPaths(t)
+	sourceDir := filepath.Join(root, "warehouse", "Skill-A")
+	targetDir := filepath.Join(root, "target-skill")
+	manualFile := filepath.Join(targetDir, "manual.txt")
+	if err := os.MkdirAll(sourceDir, 0o755); err != nil {
+		t.Fatalf("mkdir source dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(sourceDir, "README.md"), []byte("skill-a"), 0o644); err != nil {
+		t.Fatalf("write source readme: %v", err)
+	}
+
+	if err := engine.ReplaceState(project, CurrentState{Mappings: []Mapping{{Source: sourceDir, Target: targetDir}}}); err != nil {
+		t.Fatalf("initial directory replace: %v", err)
+	}
+	if err := os.Remove(targetDir); err != nil {
+		t.Fatalf("remove owned directory symlink: %v", err)
+	}
+	if err := os.MkdirAll(targetDir, 0o755); err != nil {
+		t.Fatalf("mkdir drifted target dir: %v", err)
+	}
+	if err := os.WriteFile(manualFile, []byte("manual"), 0o644); err != nil {
+		t.Fatalf("write drifted target file: %v", err)
+	}
+
+	if err := engine.Reset(project, WithForce(true)); err != nil {
+		t.Fatalf("forced reset: %v", err)
+	}
+	if _, err := os.Lstat(targetDir); !os.IsNotExist(err) {
+		t.Fatalf("drifted directory target still exists, err=%v", err)
+	}
+}
+
+func TestReplaceMappingsWithForceRollsBackManagedStateOnly(t *testing.T) {
+	engine := New()
+	engine.now = func() time.Time { return time.Unix(123, 0) }
+	project, root := newProjectPaths(t)
+	firstSource := writeFile(t, root, "warehouse/first.txt", "one")
+	secondSource := writeFile(t, root, "warehouse/second.txt", "two")
+	target := filepath.Join(root, "target.txt")
+
+	if err := engine.ReplaceMappings(project, []Mapping{{Source: firstSource, Target: target}}); err != nil {
+		t.Fatalf("initial replace: %v", err)
+	}
+	if err := os.Remove(target); err != nil {
+		t.Fatalf("remove owned target: %v", err)
+	}
+	if err := os.WriteFile(target, []byte("manual"), 0o644); err != nil {
+		t.Fatalf("write unmanaged target: %v", err)
+	}
+
+	defaultWriter := engine.writeFile
+	engine.writeFile = func(path string, data []byte, perm os.FileMode) error {
+		if path == project.HistoryLogPath {
+			return errors.New("boom")
+		}
+		return defaultWriter(path, data, perm)
+	}
+	err := engine.ReplaceMappings(project, []Mapping{{Source: secondSource, Target: target}}, WithForce(true))
+	if err == nil {
+		t.Fatal("expected persistence failure")
+	}
+
+	assertFileSymlinkTarget(t, target, firstSource)
+	if gotContent, readErr := os.ReadFile(target); readErr != nil {
+		t.Fatalf("read target after rollback: %v", readErr)
+	} else if bytes.Equal(gotContent, []byte("manual")) {
+		t.Fatalf("unexpected unmanaged content restored: %q", string(gotContent))
 	}
 }
 

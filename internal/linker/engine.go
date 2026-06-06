@@ -28,22 +28,48 @@ type Mapping struct {
 	Target string `json:"target"`
 }
 
-// CurrentState stores the currently active project-owned mappings.
+// ApplyIntent stores the semantic apply operation that produced the current mappings.
+type ApplyIntent struct {
+	Kind     string   `json:"kind"`
+	Mode     string   `json:"mode,omitempty"`
+	Column   string   `json:"column,omitempty"`
+	Settings []string `json:"settings,omitempty"`
+}
+
+// CurrentState stores the currently active project-owned mappings and optional apply intent.
 type CurrentState struct {
-	Mappings []Mapping `json:"mappings"`
+	Mappings []Mapping    `json:"mappings"`
+	Intent   *ApplyIntent `json:"intent,omitempty"`
 }
 
 // HistoryEntry stores one single-step restore snapshot event.
 type HistoryEntry struct {
-	Timestamp        string    `json:"timestamp"`
-	PreviousMappings []Mapping `json:"previousMappings"`
-	NextMappings     []Mapping `json:"nextMappings"`
+	Timestamp        string       `json:"timestamp"`
+	PreviousMappings []Mapping    `json:"previousMappings"`
+	NextMappings     []Mapping    `json:"nextMappings"`
+	PreviousIntent   *ApplyIntent `json:"previousIntent,omitempty"`
+	NextIntent       *ApplyIntent `json:"nextIntent,omitempty"`
 }
 
 // Engine performs filesystem-safe link lifecycle operations.
 type Engine struct {
 	now       func() time.Time
 	writeFile func(path string, data []byte, perm os.FileMode) error
+}
+
+// replaceOptions controls destructive replace/reset behavior.
+type replaceOptions struct {
+	force bool
+}
+
+// ReplaceOption customizes linker mutation behavior.
+type ReplaceOption func(*replaceOptions)
+
+// WithForce enables destructive target reclamation for one engine operation.
+func WithForce(force bool) ReplaceOption {
+	return func(options *replaceOptions) {
+		options.force = force
+	}
 }
 
 // New returns an engine with default filesystem behavior.
@@ -74,16 +100,25 @@ func (engine Engine) LoadCurrentState(project warehouse.Project) (CurrentState, 
 		state.Mappings = []Mapping{}
 	}
 	return state, nil
-	}
+}
 
 // LoadPreviousSnapshot reads the most recent previous mapping set from history.
 func (engine Engine) LoadPreviousSnapshot(project warehouse.Project) ([]Mapping, error) {
+	state, err := engine.LoadPreviousState(project)
+	if err != nil {
+		return nil, err
+	}
+	return cloneMappings(state.Mappings), nil
+}
+
+// LoadPreviousState reads the most recent previous state from history.
+func (engine Engine) LoadPreviousState(project warehouse.Project) (CurrentState, error) {
 	data, err := os.ReadFile(project.HistoryLogPath)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return []Mapping{}, nil
+			return CurrentState{Mappings: []Mapping{}}, nil
 		}
-		return nil, err
+		return CurrentState{}, err
 	}
 	scanner := bufio.NewScanner(bytes.NewReader(data))
 	var last HistoryEntry
@@ -94,17 +129,17 @@ func (engine Engine) LoadPreviousSnapshot(project warehouse.Project) ([]Mapping,
 			continue
 		}
 		if err := json.Unmarshal(line, &last); err != nil {
-			return nil, err
+			return CurrentState{}, err
 		}
 		found = true
 	}
 	if err := scanner.Err(); err != nil {
-		return nil, err
+		return CurrentState{}, err
 	}
 	if !found {
-		return []Mapping{}, nil
+		return CurrentState{Mappings: []Mapping{}}, nil
 	}
-	return cloneMappings(last.PreviousMappings), nil
+	return cloneState(CurrentState{Mappings: last.PreviousMappings, Intent: last.PreviousIntent}), nil
 }
 
 // InspectOwnership reports whether the target is absent, owned by the exact mapping, or unmanaged.
@@ -130,23 +165,33 @@ func (engine Engine) InspectOwnership(mapping Mapping) (Ownership, error) {
 }
 
 // ReplaceMappings installs a new managed mapping set and persists current state and history.
-func (engine Engine) ReplaceMappings(project warehouse.Project, next []Mapping) error {
+func (engine Engine) ReplaceMappings(project warehouse.Project, next []Mapping, opts ...ReplaceOption) error {
+	return engine.ReplaceState(project, CurrentState{Mappings: next}, opts...)
+}
+
+// ReplaceState installs a new managed state and persists mappings plus optional intent atomically.
+func (engine Engine) ReplaceState(project warehouse.Project, nextState CurrentState, opts ...ReplaceOption) error {
+	options := buildReplaceOptions(opts)
 	currentState, err := engine.LoadCurrentState(project)
 	if err != nil {
 		return err
 	}
-	previous := cloneMappings(currentState.Mappings)
-	if err := engine.validateMappings(next); err != nil {
+	previousState := cloneState(currentState)
+	nextState = cloneState(nextState)
+	if nextState.Mappings == nil {
+		nextState.Mappings = []Mapping{}
+	}
+	if err := engine.validateMappings(nextState.Mappings); err != nil {
 		return err
 	}
-	if err := engine.ensureReplacementAllowed(previous, next); err != nil {
+	if err := engine.ensureReplacementAllowed(previousState.Mappings, nextState.Mappings, options); err != nil {
 		return err
 	}
-	if err := engine.applyMappingSet(previous, next); err != nil {
+	if err := engine.applyMappingSet(previousState.Mappings, nextState.Mappings, options); err != nil {
 		return err
 	}
-	if err := engine.persistState(project, previous, next); err != nil {
-		rollbackErr := engine.applyMappingSet(next, previous)
+	if err := engine.persistState(project, previousState, nextState); err != nil {
+		rollbackErr := engine.applyMappingSet(nextState.Mappings, previousState.Mappings, options)
 		if rollbackErr != nil {
 			return fmt.Errorf("persist state: %w; rollback: %v", err, rollbackErr)
 		}
@@ -155,21 +200,30 @@ func (engine Engine) ReplaceMappings(project warehouse.Project, next []Mapping) 
 	return nil
 }
 
-// Reset removes only the currently owned mappings and persists an empty current state.
-func (engine Engine) Reset(project warehouse.Project) error {
-	return engine.ReplaceMappings(project, []Mapping{})
+// Reset removes the current mappings and persists an empty current state.
+func (engine Engine) Reset(project warehouse.Project, opts ...ReplaceOption) error {
+	return engine.ReplaceState(project, CurrentState{Mappings: []Mapping{}}, opts...)
 }
 
 func (engine Engine) validateMappings(mappings []Mapping) error {
+	seenTargets := map[string]struct{}{}
 	for _, mapping := range mappings {
 		if mapping.Source == "" || mapping.Target == "" {
 			return fmt.Errorf("mapping source and target must both be set")
 		}
+		if _, exists := seenTargets[mapping.Target]; exists {
+			return fmt.Errorf("duplicate target %s", mapping.Target)
+		}
+		seenTargets[mapping.Target] = struct{}{}
 	}
 	return nil
 }
 
-func (engine Engine) ensureReplacementAllowed(previous []Mapping, next []Mapping) error {
+// ensureReplacementAllowed rejects unmanaged or drifted targets unless force is enabled.
+func (engine Engine) ensureReplacementAllowed(previous []Mapping, next []Mapping, options replaceOptions) error {
+	if options.force {
+		return nil
+	}
 	previousByTarget := mappingIndex(previous)
 	for _, mapping := range next {
 		ownership, err := engine.InspectOwnership(mapping)
@@ -205,23 +259,45 @@ func (engine Engine) ensureReplacementAllowed(previous []Mapping, next []Mapping
 	return nil
 }
 
-func (engine Engine) applyMappingSet(previous []Mapping, next []Mapping) error {
+// applyMappingSet removes stale targets and creates the next managed mappings.
+func (engine Engine) applyMappingSet(previous []Mapping, next []Mapping, options replaceOptions) error {
 	previousByTarget := mappingIndex(previous)
 	nextByTarget := mappingIndex(next)
 	for _, mapping := range previous {
 		if _, keep := nextByTarget[mapping.Target]; keep {
 			continue
 		}
-		if err := removeOwnedSymlink(mapping); err != nil {
+		if err := removeManagedTarget(mapping, options.force); err != nil {
 			return err
 		}
 	}
 	for _, mapping := range next {
 		if current, ok := previousByTarget[mapping.Target]; ok {
 			if current.Source == mapping.Source {
+				if !options.force {
+					continue
+				}
+				ownership, err := engine.InspectOwnership(mapping)
+				if err != nil {
+					return err
+				}
+				if ownership == OwnershipOwned {
+					continue
+				}
+				if err := removeTargetPath(mapping.Target); err != nil {
+					return err
+				}
+				if err := createOwnedSymlink(mapping); err != nil {
+					return err
+				}
 				continue
 			}
-			if err := removeOwnedSymlink(current); err != nil {
+			if err := removeManagedTarget(current, options.force); err != nil {
+				return err
+			}
+		}
+		if options.force {
+			if err := removeTargetPath(mapping.Target); err != nil {
 				return err
 			}
 		}
@@ -232,7 +308,18 @@ func (engine Engine) applyMappingSet(previous []Mapping, next []Mapping) error {
 	return nil
 }
 
-func (engine Engine) persistState(project warehouse.Project, previous []Mapping, next []Mapping) error {
+// buildReplaceOptions materializes operation options from variadic setters.
+func buildReplaceOptions(opts []ReplaceOption) replaceOptions {
+	options := replaceOptions{}
+	for _, opt := range opts {
+		if opt != nil {
+			opt(&options)
+		}
+	}
+	return options
+}
+
+func (engine Engine) persistState(project warehouse.Project, previous CurrentState, next CurrentState) error {
 	if err := os.MkdirAll(filepath.Dir(project.CurrentStatePath), 0o755); err != nil {
 		return err
 	}
@@ -244,14 +331,16 @@ func (engine Engine) persistState(project warehouse.Project, previous []Mapping,
 	if err != nil {
 		return err
 	}
-	stateData, err := json.MarshalIndent(CurrentState{Mappings: cloneMappings(next)}, "", "  ")
+	stateData, err := json.MarshalIndent(cloneState(next), "", "  ")
 	if err != nil {
 		return err
 	}
 	historyEntry, err := json.Marshal(HistoryEntry{
 		Timestamp:        engine.now().UTC().Format(time.RFC3339Nano),
-		PreviousMappings: cloneMappings(previous),
-		NextMappings:     cloneMappings(next),
+		PreviousMappings: cloneMappings(previous.Mappings),
+		NextMappings:     cloneMappings(next.Mappings),
+		PreviousIntent:   cloneIntent(previous.Intent),
+		NextIntent:       cloneIntent(next.Intent),
 	})
 	if err != nil {
 		return err
@@ -295,6 +384,32 @@ func removeOwnedSymlink(mapping Mapping) error {
 	return os.Remove(mapping.Target)
 }
 
+// removeManagedTarget removes one recorded target with optional force semantics.
+func removeManagedTarget(mapping Mapping, force bool) error {
+	if force {
+		return removeTargetPath(mapping.Target)
+	}
+	return removeOwnedSymlink(mapping)
+}
+
+// removeTargetPath deletes the exact target path, recursively when it is a directory.
+func removeTargetPath(target string) error {
+	info, err := os.Lstat(target)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		return os.Remove(target)
+	}
+	if info.IsDir() {
+		return os.RemoveAll(target)
+	}
+	return os.Remove(target)
+}
+
 func createOwnedSymlink(mapping Mapping) error {
 	if err := os.MkdirAll(filepath.Dir(mapping.Target), 0o755); err != nil {
 		return err
@@ -325,6 +440,26 @@ func ownedByPrevious(previous []Mapping, target string) bool {
 func cloneMappings(mappings []Mapping) []Mapping {
 	cloned := make([]Mapping, len(mappings))
 	copy(cloned, mappings)
+	return cloned
+}
+
+func cloneIntent(intent *ApplyIntent) *ApplyIntent {
+	if intent == nil {
+		return nil
+	}
+	cloned := *intent
+	cloned.Settings = append([]string{}, intent.Settings...)
+	return &cloned
+}
+
+func cloneState(state CurrentState) CurrentState {
+	cloned := CurrentState{
+		Mappings: cloneMappings(state.Mappings),
+		Intent:   cloneIntent(state.Intent),
+	}
+	if cloned.Mappings == nil {
+		cloned.Mappings = []Mapping{}
+	}
 	return cloned
 }
 
