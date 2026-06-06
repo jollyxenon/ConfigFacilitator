@@ -25,6 +25,7 @@ var commandDescriptions = []struct {
 	{name: "switch", description: "Select the active project context for this session"},
 	{name: "list", description: "Inspect projects, columns, modes, and settings"},
 	{name: "apply", description: "Activate a mode or explicit settings selection"},
+	{name: "update", description: "Refresh the last applied intent from current warehouse metadata"},
 	{name: "reset", description: "Remove the current project's managed links"},
 	{name: "revert", description: "Restore the previous apply state for a project"},
 }
@@ -40,6 +41,21 @@ type commandHelp struct {
 	notes       []string
 	flags       []helpFlag
 	examples    []string
+}
+
+// applyArgs stores parsed flags for the apply workflow.
+type applyArgs struct {
+	projectName   string
+	modeName      string
+	columnName    string
+	settingsInput string
+	force         bool
+}
+
+// projectOptionalArgs stores optional project-scoped command flags.
+type projectOptionalArgs struct {
+	projectName string
+	force       bool
 }
 
 var commandHelpByName = map[string]commandHelp{
@@ -148,8 +164,10 @@ var commandHelpByName = map[string]commandHelp{
 		description: "Activate a mode or explicit settings selection.",
 		usage: []string{
 			"cfgfc apply -p <project> -m <mode>",
+			"cfgfc apply -p <project> -m <mode> --force",
 			"cfgfc apply -m <mode>",
 			"cfgfc apply -p <project> -c <column> -s <settings>",
+			"cfgfc apply -p <project> -c <column> -s <settings> -f",
 			"cfgfc apply -c <column> -s <settings>",
 		},
 		notes: []string{
@@ -157,12 +175,14 @@ var commandHelpByName = map[string]commandHelp{
 			"After `cfgfc switch <project>`, project-scoped apply forms can omit `-p`.",
 			"Project, column, mode, and setting references accept canonical names and aliases.",
 			"`-s` accepts one or more comma-separated setting names for single-column apply.",
+			"`-f` and `--force` reclaim occupied targets by deleting files, symlinks, or directories recursively, and only guarantee restoration of the last confirmed managed state.",
 		},
 		flags: []helpFlag{
 			{usage: "-p <project>", description: "Apply within the named project instead of using switched-project context."},
 			{usage: "-m <mode>", description: "Apply the named mode."},
 			{usage: "-c <column>", description: "Apply one column directly."},
 			{usage: "-s <settings>", description: "Comma-separated settings to apply for the named column."},
+			{usage: "-f, --force", description: "Delete occupied target paths recursively and continue even when targets are unmanaged or drifted."},
 		},
 		examples: []string{
 			"cfgfc apply -p OpenCode -m Max",
@@ -172,19 +192,61 @@ var commandHelpByName = map[string]commandHelp{
 			"cfgfc apply -c opencode.json -s GPT.json,CLAUDE.json",
 		},
 	},
+	"update": {
+		description: "Refresh the last applied intent from current warehouse metadata.",
+		usage: []string{
+			"cfgfc update",
+			"cfgfc update -p <project>",
+			"cfgfc update -p <project> --force",
+			"cfgfc update --project <project>",
+			"cfgfc update -p <project> -c <column>",
+			"cfgfc update -p <project> -c <column> -f",
+			"cfgfc update --all",
+			"cfgfc update -a",
+		},
+		notes: []string{
+			"`update` replans the persisted mode or column apply intent when available, so mode `full` columns can include newly synced settings.",
+			"Legacy mapping-only state is still refreshed by matching active sources back to current metadata.",
+			"Run `cfgfc sync` before `cfgfc update` when newly added files or directories need to be reflected in indexes.",
+			"After `cfgfc switch <project>`, project-scoped update forms can omit `-p`.",
+			"Project and column references accept canonical names and aliases.",
+			"`--all` and `-a` ignore switched-project context and skip projects with no active mappings or intent.",
+			"Use `-c` or `--column` to refresh only one active column while preserving other current mappings.",
+			"`-f` and `--force` reclaim occupied targets by deleting files, symlinks, or directories recursively, and only guarantee restoration of the last confirmed managed state.",
+		},
+		flags: []helpFlag{
+			{usage: "-p <project>", description: "Update the named project instead of using switched-project context."},
+			{usage: "--project <project>", description: "Long form of `-p`."},
+			{usage: "-c <column>", description: "Refresh only the named column's active mappings."},
+			{usage: "--column <column>", description: "Long form of `-c`."},
+			{usage: "--all", description: "Update every project with active mappings and ignore active context."},
+			{usage: "-a", description: "Alias for `--all`."},
+			{usage: "-f, --force", description: "Delete occupied target paths recursively and continue even when targets are unmanaged or drifted."},
+		},
+		examples: []string{
+			"cfgfc update -p OpenCode",
+			"cfgfc switch OpenCode",
+			"cfgfc update",
+			"cfgfc update -c Skills",
+			"cfgfc update --all",
+		},
+	},
 	"reset": {
 		description: "Remove the current project's managed links.",
 		usage: []string{
 			"cfgfc reset",
 			"cfgfc reset -p <project>",
+			"cfgfc reset -p <project> --force",
 		},
 		notes: []string{
 			"After `cfgfc switch <project>`, `reset` can omit `-p` and use the active project context.",
 			"Project references accept canonical names and aliases.",
 			"`reset` removes the resolved project's current managed mappings.",
+			"`-f` and `--force` delete every recorded target path for the project, even when ownership has drifted, and do not restore overwritten unmanaged contents.",
 		},
 		flags: []helpFlag{
 			{usage: "-p <project>", description: "Reset the named project instead of using switched-project context."},
+			{usage: "-f, --force", description: "Delete every recorded target path recursively, even when it is no longer owned by the recorded source."},
 		},
 		examples: []string{
 			"cfgfc reset -p OpenCode",
@@ -197,14 +259,17 @@ var commandHelpByName = map[string]commandHelp{
 		usage: []string{
 			"cfgfc revert",
 			"cfgfc revert -p <project>",
+			"cfgfc revert -p <project> --force",
 		},
 		notes: []string{
 			"After `cfgfc switch <project>`, `revert` can omit `-p` and use the active project context.",
 			"Project references accept canonical names and aliases.",
 			"`revert` restores the most recent previous snapshot recorded for the resolved project.",
+			"`-f` and `--force` reclaim occupied targets recursively and restore only the last confirmed managed snapshot, not overwritten unmanaged contents.",
 		},
 		flags: []helpFlag{
 			{usage: "-p <project>", description: "Revert the named project instead of using switched-project context."},
+			{usage: "-f, --force", description: "Delete occupied target paths recursively and restore the previous managed snapshot despite unmanaged conflicts or drift."},
 		},
 		examples: []string{
 			"cfgfc revert -p OpenCode",
@@ -219,6 +284,13 @@ const globalProjectName = "global"
 type syncArgs struct {
 	projectName string
 	forceAll    bool
+}
+
+type updateArgs struct {
+	projectName string
+	columnName  string
+	forceAll    bool
+	force       bool
 }
 
 // Run executes the cfgfc CLI and returns a process exit code.
@@ -264,6 +336,8 @@ func run(args []string, stdout io.Writer, stderr io.Writer) int {
 		return runList(commandArgs, stdout, stderr, warehouseRoot)
 	case "apply":
 		return runApply(commandArgs, stdout, stderr, warehouseRoot)
+	case "update":
+		return runUpdate(commandArgs, stdout, stderr, warehouseRoot)
 	case "reset":
 		return runReset(commandArgs, stdout, stderr, warehouseRoot)
 	case "revert":
@@ -313,12 +387,14 @@ func writeRootHelp(writer io.Writer) {
 	fmt.Fprintln(writer, "  After `cfgfc switch <project>`, project-scoped commands can omit `-p`.")
 	fmt.Fprintln(writer, "  `cfgfc switch global` clears the active project context for the current session.")
 	fmt.Fprintln(writer, "  `cfgfc sync --all` or `cfgfc sync -a` forces a full-warehouse sync and ignores any active project context.")
+	fmt.Fprintln(writer, "  `cfgfc update --all` or `cfgfc update -a` refreshes all projects with active state and ignores context.")
 	fmt.Fprintln(writer, "  `cfgfc sync` targets the active project when one is set; otherwise it syncs all projects.")
 	fmt.Fprintln(writer)
 	fmt.Fprintln(writer, "Examples:")
 	fmt.Fprintln(writer, "  cfgfc new -p OpenCode")
 	fmt.Fprintln(writer, "  cfgfc switch OpenCode")
 	fmt.Fprintln(writer, "  cfgfc sync --all")
+	fmt.Fprintln(writer, "  cfgfc update --all")
 	fmt.Fprintln(writer)
 	fmt.Fprintln(writer, "Use \"cfgfc <command> --help\" for more information about a command.")
 }
@@ -759,12 +835,12 @@ func displayModeSettings(project warehouse.Project, columnReference string, sett
 }
 
 func runApply(args []string, stdout io.Writer, stderr io.Writer, warehouseRoot string) int {
-	projectName, modeName, columnName, settingsInput, err := parseApplyArgs(args)
+	parsed, err := parseApplyArgs(args)
 	if err != nil {
 		fmt.Fprintf(stderr, "%v\n", err)
 		return 1
 	}
-	project, err := resolveProjectForCommand(warehouseRoot, projectName)
+	project, err := resolveProjectForCommand(warehouseRoot, parsed.projectName)
 	if err != nil {
 		fmt.Fprintf(stderr, "%v\n", err)
 		return 1
@@ -783,28 +859,33 @@ func runApply(args []string, stdout io.Writer, stderr io.Writer, warehouseRoot s
 	planOptions := planner.PlanOptions{HomeDir: homeDir, Env: envMap(), OS: runtime.GOOS}
 	var mappings []linker.Mapping
 	switch {
-	case modeName != "" && columnName == "" && settingsInput == "":
-		mode, resolveErr := project.ResolveMode(modeName)
+	case parsed.modeName != "" && parsed.columnName == "" && parsed.settingsInput == "":
+		mode, resolveErr := project.ResolveMode(parsed.modeName)
 		if resolveErr != nil {
 			fmt.Fprintf(stderr, "%v\n", resolveErr)
 			return 1
 		}
-		mappings, err = planner.PlanModeMappings(project, modeName, currentState.Mappings, planOptions)
+		mappings, err = planner.PlanModeMappings(project, mode.Name, currentState.Mappings, planOptions)
 		if err == nil {
-			err = engine.ReplaceMappings(project, mappings)
+			err = engine.ReplaceState(project, linker.CurrentState{Mappings: mappings, Intent: &linker.ApplyIntent{Kind: "mode", Mode: mode.Name}}, linker.WithForce(parsed.force))
 		}
 		if err == nil {
 			fmt.Fprintf(stdout, "Applied mode %q for project %q\n", displayStatusName(mode.Metadata.DisplayName, mode.Name), displayStatusName(project.Metadata.DisplayName, project.Name))
 		}
-	case modeName == "" && columnName != "" && settingsInput != "":
-		column, resolveErr := project.ResolveColumn(columnName)
+	case parsed.modeName == "" && parsed.columnName != "" && parsed.settingsInput != "":
+		column, resolveErr := project.ResolveColumn(parsed.columnName)
 		if resolveErr != nil {
 			fmt.Fprintf(stderr, "%v\n", resolveErr)
 			return 1
 		}
-		mappings, err = planner.PlanColumnMappings(project, columnName, planner.ParseSettingList(settingsInput), planOptions)
+		settingNames, resolveErr := canonicalSettingNames(column, planner.ParseSettingList(parsed.settingsInput))
+		if resolveErr != nil {
+			fmt.Fprintf(stderr, "%v\n", resolveErr)
+			return 1
+		}
+		mappings, err = planner.PlanColumnMappings(project, column.Name, settingNames, planOptions)
 		if err == nil {
-			err = engine.ReplaceMappings(project, mappings)
+			err = engine.ReplaceState(project, linker.CurrentState{Mappings: mappings, Intent: &linker.ApplyIntent{Kind: "column", Column: column.Name, Settings: settingNames}}, linker.WithForce(parsed.force))
 		}
 		if err == nil {
 			fmt.Fprintf(stdout, "Applied column %q for project %q\n", displayStatusName(column.Metadata.DisplayName, column.Name), displayStatusName(project.Metadata.DisplayName, project.Name))
@@ -820,18 +901,153 @@ func runApply(args []string, stdout io.Writer, stderr io.Writer, warehouseRoot s
 	return 0
 }
 
+func runUpdate(args []string, stdout io.Writer, stderr io.Writer, warehouseRoot string) int {
+	parsed, err := parseUpdateArgs(args)
+	if err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 1
+	}
+	if err := validateProjectName(parsed.projectName); err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 1
+	}
+	if parsed.forceAll {
+		return runUpdateAll(stdout, stderr, warehouseRoot, parsed.force)
+	}
+	project, err := resolveProjectForCommand(warehouseRoot, parsed.projectName)
+	if err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 1
+	}
+	return updateProject(project, parsed.columnName, parsed.force, stdout, stderr)
+}
+
+// runUpdateAll refreshes all projects that currently have active managed mappings.
+func runUpdateAll(stdout io.Writer, stderr io.Writer, warehouseRoot string, force bool) int {
+	loaded, err := warehouse.LoadWarehouse(warehouseRoot)
+	if err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 1
+	}
+	projectNames := sortedKeys(loaded.Projects)
+	updated := 0
+	for _, projectName := range projectNames {
+		project := loaded.Projects[projectName]
+		currentState, loadErr := linker.New().LoadCurrentState(project)
+		if loadErr != nil {
+			fmt.Fprintf(stderr, "%v\n", loadErr)
+			return 1
+		}
+		if len(currentState.Mappings) == 0 && currentState.Intent == nil {
+			continue
+		}
+		if exitCode := updateProject(project, "", force, stdout, stderr); exitCode != 0 {
+			return exitCode
+		}
+		updated++
+	}
+	fmt.Fprintf(stdout, "Updated %d project(s) in %s\n", updated, warehouseRoot)
+	return 0
+}
+
+// updateProject recomputes the current project mapping set and commits it through the linker engine.
+func updateProject(project warehouse.Project, columnName string, force bool, stdout io.Writer, stderr io.Writer) int {
+	engine := linker.New()
+	currentState, err := engine.LoadCurrentState(project)
+	if err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 1
+	}
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		fmt.Fprintf(stderr, "resolve home directory: %v\n", err)
+		return 1
+	}
+	planOptions := planner.PlanOptions{HomeDir: homeDir, Env: envMap(), OS: runtime.GOOS}
+	if columnName != "" {
+		column, resolveErr := project.ResolveColumn(columnName)
+		if resolveErr != nil {
+			fmt.Fprintf(stderr, "%v\n", resolveErr)
+			return 1
+		}
+		mappings, planErr := planUpdateColumnMappings(project, column.Name, currentState, planOptions)
+		if planErr != nil {
+			fmt.Fprintf(stderr, "%v\n", planErr)
+			return 1
+		}
+		if replaceErr := engine.ReplaceState(project, linker.CurrentState{Mappings: mappings, Intent: cloneApplyIntent(currentState.Intent)}, linker.WithForce(force)); replaceErr != nil {
+			fmt.Fprintf(stderr, "%v\n", replaceErr)
+			return 1
+		}
+		fmt.Fprintf(stdout, "Updated column %q for project %q\n", displayStatusName(column.Metadata.DisplayName, column.Name), displayStatusName(project.Metadata.DisplayName, project.Name))
+		return 0
+	}
+	mappings, err := planUpdateMappings(project, currentState, planOptions)
+	if err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 1
+	}
+	if err := engine.ReplaceState(project, linker.CurrentState{Mappings: mappings, Intent: cloneApplyIntent(currentState.Intent)}, linker.WithForce(force)); err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 1
+	}
+	fmt.Fprintf(stdout, "Updated project %q\n", displayStatusName(project.Metadata.DisplayName, project.Name))
+	return 0
+}
+
+// planUpdateMappings chooses intent-aware update planning when current state has persisted intent.
+func planUpdateMappings(project warehouse.Project, currentState linker.CurrentState, options planner.PlanOptions) ([]linker.Mapping, error) {
+	if currentState.Intent != nil {
+		return planner.PlanIntentUpdateMappings(project, *currentState.Intent, currentState.Mappings, options)
+	}
+	return planner.PlanUpdateMappings(project, currentState.Mappings, options)
+}
+
+// planUpdateColumnMappings refreshes one column using intent metadata when available.
+func planUpdateColumnMappings(project warehouse.Project, columnName string, currentState linker.CurrentState, options planner.PlanOptions) ([]linker.Mapping, error) {
+	if currentState.Intent != nil {
+		return planner.PlanIntentColumnUpdateMappings(project, *currentState.Intent, columnName, currentState.Mappings, options)
+	}
+	return planner.PlanColumnUpdateMappings(project, columnName, currentState.Mappings, options)
+}
+
+// cloneApplyIntent copies persisted apply intent before writing refreshed state.
+func cloneApplyIntent(intent *linker.ApplyIntent) *linker.ApplyIntent {
+	if intent == nil {
+		return nil
+	}
+	clone := *intent
+	if intent.Settings != nil {
+		clone.Settings = append([]string{}, intent.Settings...)
+	}
+	return &clone
+}
+
+// canonicalSettingNames resolves setting references to canonical names for persisted column intent.
+func canonicalSettingNames(column warehouse.Column, settingReferences []string) ([]string, error) {
+	settings := make([]string, 0, len(settingReferences))
+	for _, reference := range settingReferences {
+		setting, err := column.ResolveSetting(reference)
+		if err != nil {
+			return nil, err
+		}
+		settings = append(settings, setting.Name)
+	}
+	return settings, nil
+}
+
 func runReset(args []string, stdout io.Writer, stderr io.Writer, warehouseRoot string) int {
-	projectName, err := parseProjectOptionalArgs(args)
+	parsed, err := parseProjectOptionalArgs(args)
 	if err != nil {
 		fmt.Fprintf(stderr, "%v\n", err)
 		return 1
 	}
-	project, err := resolveProjectForCommand(warehouseRoot, projectName)
+	project, err := resolveProjectForCommand(warehouseRoot, parsed.projectName)
 	if err != nil {
 		fmt.Fprintf(stderr, "%v\n", err)
 		return 1
 	}
-	if err := linker.New().Reset(project); err != nil {
+	if err := linker.New().Reset(project, linker.WithForce(parsed.force)); err != nil {
 		fmt.Fprintf(stderr, "%v\n", err)
 		return 1
 	}
@@ -840,23 +1056,23 @@ func runReset(args []string, stdout io.Writer, stderr io.Writer, warehouseRoot s
 }
 
 func runRevert(args []string, stdout io.Writer, stderr io.Writer, warehouseRoot string) int {
-	projectName, err := parseProjectOptionalArgs(args)
+	parsed, err := parseProjectOptionalArgs(args)
 	if err != nil {
 		fmt.Fprintf(stderr, "%v\n", err)
 		return 1
 	}
-	project, err := resolveProjectForCommand(warehouseRoot, projectName)
+	project, err := resolveProjectForCommand(warehouseRoot, parsed.projectName)
 	if err != nil {
 		fmt.Fprintf(stderr, "%v\n", err)
 		return 1
 	}
 	engine := linker.New()
-	previous, err := engine.LoadPreviousSnapshot(project)
+	previous, err := engine.LoadPreviousState(project)
 	if err != nil {
 		fmt.Fprintf(stderr, "%v\n", err)
 		return 1
 	}
-	if err := engine.ReplaceMappings(project, previous); err != nil {
+	if err := engine.ReplaceState(project, previous, linker.WithForce(parsed.force)); err != nil {
 		fmt.Fprintf(stderr, "%v\n", err)
 		return 1
 	}
@@ -864,52 +1080,98 @@ func runRevert(args []string, stdout io.Writer, stderr io.Writer, warehouseRoot 
 	return 0
 }
 
-func parseApplyArgs(args []string) (string, string, string, string, error) {
-	var projectName, modeName, columnName, settingsInput string
+// parseApplyArgs parses flags for the apply workflow.
+func parseApplyArgs(args []string) (applyArgs, error) {
+	var parsed applyArgs
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
 		case "-p":
 			if i+1 >= len(args) {
-				return "", "", "", "", fmt.Errorf("-p requires a value")
+				return applyArgs{}, fmt.Errorf("-p requires a value")
 			}
-			projectName = args[i+1]
+			parsed.projectName = args[i+1]
 			i++
 		case "-m":
 			if i+1 >= len(args) {
-				return "", "", "", "", fmt.Errorf("-m requires a value")
+				return applyArgs{}, fmt.Errorf("-m requires a value")
 			}
-			modeName = args[i+1]
+			parsed.modeName = args[i+1]
 			i++
 		case "-c":
 			if i+1 >= len(args) {
-				return "", "", "", "", fmt.Errorf("-c requires a value")
+				return applyArgs{}, fmt.Errorf("-c requires a value")
 			}
-			columnName = args[i+1]
+			parsed.columnName = args[i+1]
 			i++
 		case "-s":
 			if i+1 >= len(args) {
-				return "", "", "", "", fmt.Errorf("-s requires a value")
+				return applyArgs{}, fmt.Errorf("-s requires a value")
 			}
-			settingsInput = args[i+1]
+			parsed.settingsInput = args[i+1]
 			i++
+		case "-f", "--force":
+			parsed.force = true
 		default:
-			return "", "", "", "", fmt.Errorf("unexpected arg %q", args[i])
+			return applyArgs{}, fmt.Errorf("unexpected arg %q", args[i])
 		}
 	}
-	return projectName, modeName, columnName, settingsInput, nil
+	return parsed, nil
 }
 
-func parseProjectOptionalArgs(args []string) (string, error) {
-	if len(args) == 0 {
-		return "", nil
+func parseUpdateArgs(args []string) (updateArgs, error) {
+	var parsed updateArgs
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "-p", "--project":
+			if i+1 >= len(args) {
+				return updateArgs{}, fmt.Errorf("%s requires a value", args[i])
+			}
+			if parsed.forceAll {
+				return updateArgs{}, fmt.Errorf("update does not accept --all or -a together with -p/--project or -c/--column")
+			}
+			parsed.projectName = args[i+1]
+			i++
+		case "-c", "--column":
+			if i+1 >= len(args) {
+				return updateArgs{}, fmt.Errorf("%s requires a value", args[i])
+			}
+			if parsed.forceAll {
+				return updateArgs{}, fmt.Errorf("update does not accept --all or -a together with -p/--project or -c/--column")
+			}
+			parsed.columnName = args[i+1]
+			i++
+		case "--all", "-a":
+			if parsed.projectName != "" || parsed.columnName != "" {
+				return updateArgs{}, fmt.Errorf("update does not accept --all or -a together with -p/--project or -c/--column")
+			}
+			parsed.forceAll = true
+		case "-f", "--force":
+			parsed.force = true
+		default:
+			return updateArgs{}, fmt.Errorf("unexpected arg %q", args[i])
+		}
 	}
-	if len(args) == 2 && args[0] == "-p" {
-		return args[1], nil
+	return parsed, nil
+}
+
+// parseProjectOptionalArgs parses project-scoped command flags that may omit -p.
+func parseProjectOptionalArgs(args []string) (projectOptionalArgs, error) {
+	var parsed projectOptionalArgs
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "-p":
+			if i+1 >= len(args) {
+				return projectOptionalArgs{}, fmt.Errorf("-p requires a value")
+			}
+			parsed.projectName = args[i+1]
+			i++
+		case "-f", "--force":
+			parsed.force = true
+		default:
+			return projectOptionalArgs{}, fmt.Errorf("command accepts only -p <project> and optional -f/--force")
+		}
 	}
-	if len(args) > 0 && args[0] == "-p" && len(args) < 2 {
-		return "", fmt.Errorf("-p requires a value")
-	}
-	return "", fmt.Errorf("command accepts either no args or -p <project>")
+	return parsed, nil
 }
 
 func resolveProjectForCommand(warehouseRoot string, explicitProject string) (warehouse.Project, error) {
