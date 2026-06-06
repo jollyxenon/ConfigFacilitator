@@ -200,7 +200,7 @@ func columnIndexTemplate() string {
 }
 
 func settingIndexTemplate() string {
-	return formatJSONCWithExample("{\n  \"description\": \"\",\n  \"defaultTarget\": \"\",\n  \"settings\": {}\n}", settingIndexExampleComment())
+	return formatJSONCWithExample("{\n  \"description\": \"\",\n  \"defaultTargetDir\": [\"\"],\n  \"defaultTargetName\": [\"\"],\n  \"settings\": {}\n}", settingIndexExampleComment())
 }
 
 func modeIndexTemplate(modeIndex index.ModeIndex) string {
@@ -259,18 +259,20 @@ func settingIndexExampleComment() string {
 Example:
 {
   "description": "Optional note about this column",
-  "defaultTarget": "~/.config/opencode/opencode.json",
+  "defaultTargetDir": ["~/.config/opencode/skills"],
+  "defaultTargetName": [""],
   "settings": {
     "ExampleSetting": {
 	      "displayName": "Example Setting",
 	      "aliases": [],
 	      "description": "Optional note about this setting",
-	      "target": "~/.config/opencode/special/special.json"
+	      "targetDir": [""],
+	      "targetName": ["ExampleSetting"]
     }
   }
 }
 
-Use "description" for permanent notes. Set "target" only when one setting needs a custom destination.
+Use "description" for permanent notes. Empty setting target entries inherit defaults; empty defaultTargetName falls back to the setting folder/file name. Set targetName to map variants to a shared target-side name.
 */`
 }
 

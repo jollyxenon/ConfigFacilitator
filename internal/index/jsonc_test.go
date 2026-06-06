@@ -3,6 +3,7 @@ package index
 import (
 	"bytes"
 	"encoding/json"
+	"reflect"
 	"testing"
 )
 
@@ -10,12 +11,15 @@ func TestParseSettingIndexStripsCommentsAndPreservesDescription(t *testing.T) {
 	input := []byte(`{
   // comment
   "description": "perm note",
-  "defaultTarget": "~/.config/opencode/opencode.json",
+  "defaultTargetDir": ["~/.config/opencode", "~/.config/opencode"],
+  "defaultTargetName": ["opencode.json", "alt.json"],
   "settings": {
     "GPT.json": {
       // disposable
       "displayName": "GPT",
-      "description": "keep me"
+      "description": "keep me",
+      "targetDir": [""],
+      "targetName": ["gpt.json"]
     }
   }
 }
@@ -38,8 +42,35 @@ Example block that should be ignored during parsing.
 	if index.Settings["GPT.json"].Aliases == nil {
 		t.Fatalf("expected aliases normalized to empty slice")
 	}
-	if index.DefaultTarget != "~/.config/opencode/opencode.json" {
-		t.Fatalf("expected defaultTarget preserved, got %q", index.DefaultTarget)
+	if !reflect.DeepEqual(index.DefaultTargetDir, []string{"~/.config/opencode", "~/.config/opencode"}) {
+		t.Fatalf("expected defaultTargetDir preserved, got %#v", index.DefaultTargetDir)
+	}
+	if !reflect.DeepEqual(index.DefaultTargetName, []string{"opencode.json", "alt.json"}) {
+		t.Fatalf("expected defaultTargetName preserved, got %#v", index.DefaultTargetName)
+	}
+	if !reflect.DeepEqual(index.Settings["GPT.json"].TargetDir, []string{""}) {
+		t.Fatalf("expected setting targetDir preserved, got %#v", index.Settings["GPT.json"].TargetDir)
+	}
+	if !reflect.DeepEqual(index.Settings["GPT.json"].TargetName, []string{"gpt.json"}) {
+		t.Fatalf("expected setting targetName preserved, got %#v", index.Settings["GPT.json"].TargetName)
+	}
+}
+
+func TestParseSettingIndexRejectsScalarTargets(t *testing.T) {
+	if _, err := ParseSettingIndex([]byte(`{"defaultTargetDir":"~/.config/opencode","settings":{}}`)); err == nil {
+		t.Fatalf("expected scalar defaultTargetDir to be rejected")
+	}
+	if _, err := ParseSettingIndex([]byte(`{"settings":{"GPT.json":{"targetName":"gpt.json"}}}`)); err == nil {
+		t.Fatalf("expected scalar setting targetName to be rejected")
+	}
+}
+
+func TestParseSettingIndexRejectsLegacyTargets(t *testing.T) {
+	if _, err := ParseSettingIndex([]byte(`{"defaultTarget":["~/.config/opencode/opencode.json"],"settings":{}}`)); err == nil {
+		t.Fatalf("expected legacy defaultTarget to be rejected")
+	}
+	if _, err := ParseSettingIndex([]byte(`{"settings":{"GPT.json":{"target":["~/.config/opencode/gpt.json"]}}}`)); err == nil {
+		t.Fatalf("expected legacy setting target to be rejected")
 	}
 }
 
@@ -78,14 +109,16 @@ func TestParseProjectAndColumnIndexesPreserveAdditionalIdentityShapedFields(t *t
 
 func TestSettingIndexPreservesUnknownFieldsOnMarshal(t *testing.T) {
 	index := SettingIndex{
-		Description:   "perm note",
-		DefaultTarget: "~/.config/opencode/opencode.json",
+		Description:       "perm note",
+		DefaultTargetDir:  []string{"~/.config/opencode"},
+		DefaultTargetName: []string{"opencode.json"},
 		Settings: map[string]SettingEntry{
 			"GPT.json": {
-				DisplayName:   "GPT",
-				Aliases:       []string{"gpt"},
-				Description:   "keep me",
-				Target:        "~/.config/opencode/special.json",
+				DisplayName: "GPT",
+				Aliases:     []string{"gpt"},
+				Description: "keep me",
+				TargetDir:   []string{"~/.config/opencode"},
+				TargetName:  []string{"special.json"},
 				Extra: map[string]json.RawMessage{
 					"custom": json.RawMessage(`{"x":1}`),
 				},
@@ -118,6 +151,18 @@ func TestSettingIndexPreservesUnknownFieldsOnMarshal(t *testing.T) {
 	}
 	if !bytes.Contains(data, []byte(`"custom":{"x":1}`)) {
 		t.Fatalf("expected nested extra field in output, got %s", data)
+	}
+	if !bytes.Contains(data, []byte(`"defaultTargetDir":["~/.config/opencode"]`)) {
+		t.Fatalf("expected array defaultTargetDir in output, got %s", data)
+	}
+	if !bytes.Contains(data, []byte(`"defaultTargetName":["opencode.json"]`)) {
+		t.Fatalf("expected array defaultTargetName in output, got %s", data)
+	}
+	if !bytes.Contains(data, []byte(`"targetDir":["~/.config/opencode"]`)) {
+		t.Fatalf("expected array targetDir in output, got %s", data)
+	}
+	if !bytes.Contains(data, []byte(`"targetName":["special.json"]`)) {
+		t.Fatalf("expected array targetName in output, got %s", data)
 	}
 }
 

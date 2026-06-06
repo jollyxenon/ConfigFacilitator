@@ -41,10 +41,11 @@ type ColumnEntry struct {
 
 // SettingIndex stores column-local setting metadata and targets.
 type SettingIndex struct {
-	Description   string
-	DefaultTarget string
-	Settings      map[string]SettingEntry
-	Extra         map[string]json.RawMessage
+	Description       string
+	DefaultTargetDir  []string
+	DefaultTargetName []string
+	Settings          map[string]SettingEntry
+	Extra             map[string]json.RawMessage
 }
 
 // SettingEntry stores a single setting record.
@@ -53,7 +54,8 @@ type SettingEntry struct {
 	DisplayName   string
 	Aliases       []string
 	Description   string
-	Target        string
+	TargetDir     []string
+	TargetName    []string
 	Extra         map[string]json.RawMessage
 }
 
@@ -169,7 +171,17 @@ func parseSettingIndex(raw map[string]json.RawMessage) (SettingIndex, error) {
 				return SettingIndex{}, err
 			}
 		case "defaultTarget":
-			if err := json.Unmarshal(value, &index.DefaultTarget); err != nil {
+			return SettingIndex{}, fmt.Errorf("setting index uses unsupported field %q; use defaultTargetDir and defaultTargetName", key)
+		case "defaultTargetDir":
+			var err error
+			index.DefaultTargetDir, err = parseStringArrayField("defaultTargetDir", value)
+			if err != nil {
+				return SettingIndex{}, err
+			}
+		case "defaultTargetName":
+			var err error
+			index.DefaultTargetName, err = parseStringArrayField("defaultTargetName", value)
+			if err != nil {
 				return SettingIndex{}, err
 			}
 		case "settings":
@@ -297,7 +309,17 @@ func parseSettingEntry(warehouseName string, raw json.RawMessage) (SettingEntry,
 				return SettingEntry{}, err
 			}
 		case "target":
-			if err := json.Unmarshal(value, &entry.Target); err != nil {
+			return SettingEntry{}, fmt.Errorf("setting entry %q uses unsupported field %q; use targetDir and targetName", warehouseName, key)
+		case "targetDir":
+			var err error
+			entry.TargetDir, err = parseStringArrayField("targetDir", value)
+			if err != nil {
+				return SettingEntry{}, err
+			}
+		case "targetName":
+			var err error
+			entry.TargetName, err = parseStringArrayField("targetName", value)
+			if err != nil {
 				return SettingEntry{}, err
 			}
 		default:
@@ -401,8 +423,11 @@ func marshalSettingIndex(index SettingIndex) ([]byte, error) {
 	if index.Description != "" {
 		data["description"] = index.Description
 	}
-	if index.DefaultTarget != "" {
-		data["defaultTarget"] = index.DefaultTarget
+	if len(index.DefaultTargetDir) > 0 {
+		data["defaultTargetDir"] = index.DefaultTargetDir
+	}
+	if len(index.DefaultTargetName) > 0 {
+		data["defaultTargetName"] = index.DefaultTargetName
 	}
 	settings := map[string]any{}
 	for key, entry := range index.Settings {
@@ -477,8 +502,11 @@ func marshalSettingEntry(entry SettingEntry) ([]byte, error) {
 	if entry.Description != "" {
 		data["description"] = entry.Description
 	}
-	if entry.Target != "" {
-		data["target"] = entry.Target
+	if len(entry.TargetDir) > 0 {
+		data["targetDir"] = entry.TargetDir
+	}
+	if len(entry.TargetName) > 0 {
+		data["targetName"] = entry.TargetName
 	}
 	mergeRaw(data, entry.Extra)
 	return marshalObject(data)
@@ -570,6 +598,14 @@ func normalizeModeEntry(entry ModeEntry, warehouseName string) ModeEntry {
 		entry.Columns = map[string]ModeColumnSelection{}
 	}
 	return entry
+}
+
+func parseStringArrayField(field string, value json.RawMessage) ([]string, error) {
+	var targets []string
+	if err := json.Unmarshal(value, &targets); err != nil {
+		return nil, fmt.Errorf("%s must be an array of strings", field)
+	}
+	return targets, nil
 }
 
 func normalizedAliases(aliases []string) []string {

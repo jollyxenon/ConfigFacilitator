@@ -3,6 +3,7 @@ package warehouse
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 )
 
@@ -47,8 +48,11 @@ func TestLoadWarehouseBuildsProjectColumnAndModeRelationships(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected opencode.json column to be present")
 	}
-	if column.SettingIndex.DefaultTarget != "~/.config/opencode/opencode.json" {
-		t.Fatalf("expected defaultTarget preserved, got %q", column.SettingIndex.DefaultTarget)
+	if !reflect.DeepEqual(column.SettingIndex.DefaultTargetDir, []string{"~/.config/opencode"}) {
+		t.Fatalf("expected defaultTargetDir preserved, got %#v", column.SettingIndex.DefaultTargetDir)
+	}
+	if !reflect.DeepEqual(column.SettingIndex.DefaultTargetName, []string{"opencode.json"}) {
+		t.Fatalf("expected defaultTargetName preserved, got %#v", column.SettingIndex.DefaultTargetName)
 	}
 	if !column.Settings["GPT.json"].Exists {
 		t.Fatalf("expected GPT.json setting to exist on disk")
@@ -254,7 +258,8 @@ func TestLoadWarehouseExposesCanonicalIdentityAndAliases(t *testing.T) {
 		t.Fatalf("write column index: %v", err)
 	}
 	if err := os.WriteFile(filepath.Join(projectRoot, "Column", "skills-dir", "SettingIndex.jsonc"), []byte(`{
-  "defaultTarget": "~/.config/test",
+  "defaultTargetDir": ["~/.config"],
+  "defaultTargetName": ["test"],
   "settings": {
     "Skill-A": {
 	      "displayName": "Skill A",
