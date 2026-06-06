@@ -39,6 +39,26 @@ pixi run compile
 pixi run build
 ```
 
+## npm install / npm 安装
+
+After a tagged GitHub Release is published, the CLI can be installed through npm:
+
+```bash
+npm install -g @jollyxenon/cfgfc
+cfgfc --help
+```
+
+The npm package is a thin wrapper. During installation it downloads the matching prebuilt Go binary from the GitHub Release whose tag matches the npm package version, then exposes it through npm's `cfgfc` command.
+
+在发布带 tag 的 GitHub Release 后，可以通过 npm 安装 CLI：
+
+```bash
+npm install -g @jollyxenon/cfgfc
+cfgfc --help
+```
+
+npm 包只是一个很薄的包装层。安装时它会从与 npm 包版本匹配的 GitHub Release 下载对应平台的预编译 Go 二进制文件，并通过 npm 的 `cfgfc` 命令暴露出来。
+
 ## License / 开源协议
 
 ConfigFacilitator is licensed under the MIT License. See [LICENSE](LICENSE) for the full terms.

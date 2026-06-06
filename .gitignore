@@ -1,5 +1,7 @@
 openspec/
 dist/
+npm/bin/cfgfc
+npm/bin/cfgfc.exe
 .codenomad/
 .sisyphus/
 .opencode/

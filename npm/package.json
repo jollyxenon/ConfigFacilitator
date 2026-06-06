@@ -1,0 +1,39 @@
+{
+  "name": "@jollyxenon/cfgfc",
+  "version": "0.1.0",
+  "description": "ConfigFacilitator CLI for managing local configuration warehouses.",
+  "license": "MIT",
+  "homepage": "https://github.com/jollyxenon/ConfigFacilitator#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+ssh://git@github.com/jollyxenon/ConfigFacilitator.git"
+  },
+  "bugs": {
+    "url": "https://github.com/jollyxenon/ConfigFacilitator/issues"
+  },
+  "bin": {
+    "cfgfc": "bin/cli.js"
+  },
+  "files": [
+    "bin/cli.js",
+    "install.js",
+    "README.md"
+  ],
+  "scripts": {
+    "postinstall": "node install.js",
+    "smoke": "node bin/cli.js --help",
+    "test:unsupported-platform": "CFGFC_TEST_PLATFORM=freebsd CFGFC_TEST_ARCH=x64 node install.js"
+  },
+  "os": [
+    "darwin",
+    "linux",
+    "win32"
+  ],
+  "cpu": [
+    "x64",
+    "arm64"
+  ],
+  "engines": {
+    "node": ">=18"
+  }
+}

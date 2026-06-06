@@ -14,6 +14,7 @@ ConfigFacilitator is a portable Go CLI that manages configuration warehouses in 
 ## Quick facts
 
 - Binary name: `cfgfc`
+- npm install: `npm install -g @jollyxenon/cfgfc`
 - Development build: `pixi run compile` checks all Go packages; `pixi run build` creates `dist/cfgfc`
 - License: MIT License (see [`LICENSE`](../LICENSE))
 - Warehouse root: `~/.configfacilitator/`
@@ -24,6 +25,17 @@ ConfigFacilitator is a portable Go CLI that manages configuration warehouses in 
 ## What it does
 
 It scaffolds warehouses, reconciles indexes with filesystem reality, stores PPID-scoped convenience context, applies symlink-backed configurations, and supports `reset` and single-step `revert`.
+
+## Installation
+
+After maintainers publish a tagged GitHub Release and the matching npm package, install the CLI with:
+
+```bash
+npm install -g @jollyxenon/cfgfc
+cfgfc --help
+```
+
+The npm package is only an installation wrapper. It downloads the prebuilt Go binary from the GitHub Release whose tag matches the npm package version, then exposes that binary through npm's `cfgfc` command.
 
 ## Identity model
 

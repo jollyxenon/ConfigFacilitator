@@ -14,6 +14,7 @@ ConfigFacilitator 是一个便携式 Go CLI，用于管理 `~/.configfacilitator
 ## 关键信息
 
 - 二进制名称：`cfgfc`
+- npm 安装：`npm install -g @jollyxenon/cfgfc`
 - 开发构建：`pixi run compile` 检查所有 Go package；`pixi run build` 生成 `dist/cfgfc`
 - 开源协议：MIT License（见 [`LICENSE`](../LICENSE)）
 - 仓库根目录：`~/.configfacilitator/`
@@ -24,6 +25,17 @@ ConfigFacilitator 是一个便携式 Go CLI，用于管理 `~/.configfacilitator
 ## 项目作用
 
 它负责搭建仓库骨架、同步索引与磁盘实体、保存基于 PPID 的便利上下文、应用符号链接配置，并支持 `reset` 和单步 `revert`。
+
+## 安装
+
+维护者发布带 tag 的 GitHub Release 和匹配版本的 npm 包后，可以这样安装 CLI：
+
+```bash
+npm install -g @jollyxenon/cfgfc
+cfgfc --help
+```
+
+npm 包只是安装包装层。它会从与 npm 包版本匹配的 GitHub Release 下载预编译 Go 二进制文件，然后通过 npm 的 `cfgfc` 命令暴露该二进制文件。
 
 ## 标识模型
 

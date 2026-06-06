@@ -6,6 +6,7 @@
 - Language: Go
 - Environment manager: pixi-managed Go toolchain
 - Entry point: `cmd/cfgfc/main.go`
+- npm distribution package: `npm/`, wrapping prebuilt Go release binaries for `npm install -g @jollyxenon/cfgfc`
 
 ## Implemented Command Surface
 
@@ -26,6 +27,9 @@
 - `pixi run build`
 - `pixi run help`
 - `pixi run bash -lc 'for cmd in new sync switch list apply update reset revert; do go run ./cmd/cfgfc "$cmd" --help; done'`
+- `cd npm && npm pack --dry-run`
+- `pixi run build && cd npm && CFGFC_BINARY_PATH=../dist/cfgfc npm install -g . && cfgfc --help`
+- `cd npm && CFGFC_TEST_PLATFORM=freebsd CFGFC_TEST_ARCH=x64 node install.js` (expected failure path for unsupported tuple messaging)
 
 ## Verification Expectations
 
@@ -34,12 +38,14 @@
 - Use `pixi run build` to create the local CLI binary at `dist/cfgfc`.
 - Use `pixi run help` to verify the root command surface.
 - Use a subcommand help sweep to verify every registered command returns structured help through the pixi-managed Go toolchain.
+- For npm packaging changes, use `npm pack --dry-run`, a local install with `CFGFC_BINARY_PATH=../dist/cfgfc`, and an unsupported-platform installer smoke test.
 - For command changes, also run a real CLI smoke test against a temp `~/.configfacilitator/`; for `update`, cover mode apply with a `full` column, sync a newly added source, then update to verify the new source is linked.
 - For destructive command changes, include a smoke path that verifies `-f` / `--force` can reclaim both file-backed and directory-backed targets.
 
 ## Documentation Expectations
 
 - Sync documentation after every modification that changes user-facing behavior, command surface, project structure, or developer workflow.
+- Keep `README.md`, `docs/`, and the `cfgfc --help` output synchronized whenever user-facing commands, flags, examples, installation steps, or workflows change.
 - Keep non-root project documentation under `docs/`.
 - Maintain English and Chinese document parity when updating docs.
 
