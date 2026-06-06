@@ -9,5 +9,6 @@ go = ">=1.24.4,<1.25"
 [tasks]
 test = "go test ./..."
 compile = "go build ./..."
-build = "go build -o dist/cfgfc ./cmd/cfgfc"
+build = "bash scripts/build.sh"
+build-version = "bash scripts/build.sh $CFGFC_VERSION"
 help = "go run ./cmd/cfgfc --help"

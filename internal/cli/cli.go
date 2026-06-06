@@ -16,6 +16,9 @@ import (
 	"github.com/xenon/ConfigFacilitator/internal/warehouse"
 )
 
+// version is the current version of the cfgfc CLI, injected at build time via ldflags.
+var version = "dev"
+
 var commandDescriptions = []struct {
 	name        string
 	description string
@@ -305,6 +308,12 @@ func RunWithExecutable(args []string, stdout io.Writer, stderr io.Writer, execut
 }
 
 func run(args []string, stdout io.Writer, stderr io.Writer) int {
+	// Check for version flag before any other processing.
+	if len(args) > 0 && isVersionArg(args[0]) {
+		fmt.Fprintln(stdout, version)
+		return 0
+	}
+
 	if len(args) >= 2 && args[0] == "help" {
 		return writeNamedHelp(args[1], stdout, stderr)
 	}
@@ -360,6 +369,11 @@ func isHelpArg(arg string) bool {
 	return arg == "--help" || arg == "-h" || arg == "help"
 }
 
+// isVersionArg reports whether the argument is a version flag.
+func isVersionArg(arg string) bool {
+	return arg == "--version" || arg == "-v"
+}
+
 // hasHelpArg reports whether the provided argument list contains an explicit help request.
 func hasHelpArg(args []string) bool {
 	for _, arg := range args {
@@ -389,6 +403,9 @@ func writeRootHelp(writer io.Writer) {
 	fmt.Fprintln(writer, "  `cfgfc sync --all` or `cfgfc sync -a` forces a full-warehouse sync and ignores any active project context.")
 	fmt.Fprintln(writer, "  `cfgfc update --all` or `cfgfc update -a` refreshes all projects with active state and ignores context.")
 	fmt.Fprintln(writer, "  `cfgfc sync` targets the active project when one is set; otherwise it syncs all projects.")
+	fmt.Fprintln(writer)
+	fmt.Fprintln(writer, "Flags:")
+	fmt.Fprintln(writer, "  --version, -v   Print the version and exit.")
 	fmt.Fprintln(writer)
 	fmt.Fprintln(writer, "Development:")
 	fmt.Fprintln(writer, "  Use `pixi run compile` to verify all Go packages compile.")

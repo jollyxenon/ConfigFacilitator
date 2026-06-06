@@ -6,6 +6,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/xenon/ConfigFacilitator/internal/linker"
@@ -1515,5 +1516,91 @@ func assertFileSymlinkPointsTo(t *testing.T, path string, want string) {
 	}
 	if !bytes.Equal(gotContent, wantContent) {
 		t.Fatalf("file content via symlink %s = %q, want source content %q", path, string(gotContent), string(wantContent))
+	}
+}
+
+func TestRunShowsVersionWithVersionFlag(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	exitCode := Run([]string{"--version"}, &stdout, &stderr)
+
+	if exitCode != 0 {
+		t.Fatalf("expected exit code 0, got %d", exitCode)
+	}
+
+	output := stdout.String()
+	if !bytes.Contains(stdout.Bytes(), []byte("dev")) {
+		t.Fatalf("expected version output to contain 'dev', got %q", output)
+	}
+
+	if stderr.Len() != 0 {
+		t.Fatalf("expected empty stderr, got %q", stderr.String())
+	}
+}
+
+func TestRunShowsVersionWithVFlag(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	exitCode := Run([]string{"-v"}, &stdout, &stderr)
+
+	if exitCode != 0 {
+		t.Fatalf("expected exit code 0, got %d", exitCode)
+	}
+
+	output := stdout.String()
+	if !bytes.Contains(stdout.Bytes(), []byte("dev")) {
+		t.Fatalf("expected version output to contain 'dev', got %q", output)
+	}
+
+	if stderr.Len() != 0 {
+		t.Fatalf("expected empty stderr, got %q", stderr.String())
+	}
+}
+
+func TestVersionFlagTakesPrecedence(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	// Test that --version takes precedence over --help
+	exitCode := Run([]string{"--version", "--help"}, &stdout, &stderr)
+
+	if exitCode != 0 {
+		t.Fatalf("expected exit code 0, got %d", exitCode)
+	}
+
+	output := stdout.String()
+	if !bytes.Contains(stdout.Bytes(), []byte("dev")) {
+		t.Fatalf("expected version output to contain 'dev', got %q", output)
+	}
+
+	// Should not contain help text
+	if bytes.Contains(stdout.Bytes(), []byte("cfgfc manages portable configuration warehouses.")) {
+		t.Fatalf("expected version output, not help text, got %q", output)
+	}
+
+	if stderr.Len() != 0 {
+		t.Fatalf("expected empty stderr, got %q", stderr.String())
+	}
+}
+
+func TestDefaultVersionIsDev(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	exitCode := Run([]string{"--version"}, &stdout, &stderr)
+
+	if exitCode != 0 {
+		t.Fatalf("expected exit code 0, got %d", exitCode)
+	}
+
+	output := strings.TrimSpace(stdout.String())
+	if output != "dev" {
+		t.Fatalf("expected default version 'dev', got %q", output)
+	}
+
+	if stderr.Len() != 0 {
+		t.Fatalf("expected empty stderr, got %q", stderr.String())
 	}
 }
