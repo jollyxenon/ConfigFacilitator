@@ -4,7 +4,7 @@
 ## Current Stack
 
 - Language: Go
-- Environment manager: pixi
+- Environment manager: pixi-managed Go toolchain
 - Entry point: `cmd/cfgfc/main.go`
 
 ## Implemented Command Surface
@@ -22,6 +22,7 @@
 ## Baseline Commands
 
 - `pixi run test`
+- `pixi run compile`
 - `pixi run build`
 - `pixi run help`
 - `pixi run bash -lc 'for cmd in new sync switch list apply update reset revert; do go run ./cmd/cfgfc "$cmd" --help; done'`
@@ -29,9 +30,10 @@
 ## Verification Expectations
 
 - Use `pixi run test` for the full Go test suite.
-- Use `pixi run build` to confirm the project still compiles.
+- Use `pixi run compile` to confirm the project still compiles.
+- Use `pixi run build` to create the local CLI binary at `dist/cfgfc`.
 - Use `pixi run help` to verify the root command surface.
-- Use a subcommand help sweep to verify every registered command returns structured help from `cfgfc <command> --help`.
+- Use a subcommand help sweep to verify every registered command returns structured help through the pixi-managed Go toolchain.
 - For command changes, also run a real CLI smoke test against a temp `~/.configfacilitator/`; for `update`, cover mode apply with a `full` column, sync a newly added source, then update to verify the new source is linked.
 - For destructive command changes, include a smoke path that verifies `-f` / `--force` can reclaim both file-backed and directory-backed targets.
 

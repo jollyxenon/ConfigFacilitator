@@ -1,4 +1,5 @@
 openspec/
+dist/
 .codenomad/
 .sisyphus/
 .opencode/

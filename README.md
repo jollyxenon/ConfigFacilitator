@@ -13,35 +13,35 @@ Project directories are discovered directly under `~/.configfacilitator/`, inclu
 - English docs: [docs/README.en.md](docs/README.en.md)
 - 中文文档: [docs/README.zh-CN.md](docs/README.zh-CN.md)
 
-## Installation / 安装
+## Development build / 开发构建
 
-Build locally:
+Use pixi to run the Go toolchain. Check compilation with:
+
+```bash
+pixi run compile
+```
+
+Build a local CLI binary at `dist/cfgfc` with:
 
 ```bash
 pixi run build
 ```
 
-Install `cfgfc` as a global command:
+End-user installation is intended to be handled by future package-manager releases such as Scoop or npm, not by pixi tasks.
+
+使用 pixi 运行 Go 工具链。检查编译：
 
 ```bash
-pixi run install-global
+pixi run compile
 ```
 
-If `cfgfc` is still not found, add `GOBIN` or `$(go env GOPATH)/bin` to your `PATH`.
-
-本地构建：
+在 `dist/cfgfc` 生成本地 CLI 二进制文件：
 
 ```bash
 pixi run build
 ```
 
-将 `cfgfc` 安装为全局命令：
-
-```bash
-pixi run install-global
-```
-
-如果执行后仍然找不到 `cfgfc`，请把 `GOBIN` 或 `$(go env GOPATH)/bin` 加到 `PATH` 中。
+面向普通用户的安装将通过未来的 Scoop 或 npm 等包管理器发布完成，而不是通过 pixi task。
 
 ## License / 开源协议
 
