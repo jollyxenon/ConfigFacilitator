@@ -26,6 +26,15 @@ func TestDefaultWarehouseRootUsesHomeConfigDirectory(t *testing.T) {
 	}
 }
 
+func TestDefaultWarehouseRootForHomeUsesProfileRelativeDirectory(t *testing.T) {
+	homeDir := filepath.Join("C:", "Users", "cfgfc")
+	got := defaultWarehouseRootForHome(homeDir)
+	want := filepath.Join(homeDir, ".configfacilitator")
+	if got != want {
+		t.Fatalf("expected warehouse path %q, got %q", want, got)
+	}
+}
+
 func TestLoadWarehouseBuildsProjectColumnAndModeRelationships(t *testing.T) {
 	root := filepath.Join("testdata", "basic")
 	warehouse, err := LoadWarehouse(root)

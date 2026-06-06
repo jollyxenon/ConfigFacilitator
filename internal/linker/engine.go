@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"time"
 
 	"github.com/xenon/ConfigFacilitator/internal/warehouse"
@@ -414,10 +415,41 @@ func createOwnedSymlink(mapping Mapping) error {
 	if err := os.MkdirAll(filepath.Dir(mapping.Target), 0o755); err != nil {
 		return err
 	}
-	if err := os.Symlink(mapping.Source, mapping.Target); err != nil {
+	if err := createSymlink(mapping.Source, mapping.Target); err != nil {
 		return err
 	}
 	return nil
+}
+
+// createSymlink creates a real filesystem symlink after confirming that the
+// source exists. This keeps source kind implicit so Windows can infer whether
+// the target should be a file or directory symlink without persisting that kind.
+func createSymlink(source string, target string) error {
+	return createSymlinkForOS(source, target, runtime.GOOS, os.Lstat, os.Symlink)
+}
+
+// createSymlinkForOS is the testable core for symlink creation and platform
+// diagnostics. It never attempts hardlinks, junctions, copies, or shell fallbacks.
+func createSymlinkForOS(source string, target string, operatingSystem string, lstat func(string) (os.FileInfo, error), symlink func(string, string) error) error {
+	if _, err := lstat(source); err != nil {
+		if os.IsNotExist(err) {
+			return wrapSymlinkErrorForOS(operatingSystem, fmt.Errorf("symlink source %s does not exist: %w", source, err))
+		}
+		return wrapSymlinkErrorForOS(operatingSystem, fmt.Errorf("inspect symlink source %s: %w", source, err))
+	}
+	if err := symlink(source, target); err != nil {
+		return wrapSymlinkErrorForOS(operatingSystem, fmt.Errorf("create symlink %s -> %s: %w", target, source, err))
+	}
+	return nil
+}
+
+// wrapSymlinkErrorForOS adds native Windows guidance while preserving the
+// original failure. Non-Windows platforms keep the original error unchanged.
+func wrapSymlinkErrorForOS(operatingSystem string, err error) error {
+	if operatingSystem != "windows" || err == nil {
+		return err
+	}
+	return fmt.Errorf("%w; ConfigFacilitator uses real symlinks only and did not try hardlinks, junctions, copies, or shell fallbacks; on Windows, enable Developer Mode or run as Administrator to allow symlink creation", err)
 }
 
 func mappingIndex(mappings []Mapping) map[string]Mapping {

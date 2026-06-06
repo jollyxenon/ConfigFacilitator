@@ -2,7 +2,9 @@ package planner
 
 import (
 	"fmt"
+	"path"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 
@@ -217,9 +219,21 @@ func resolveSettingMappings(column warehouse.Column, setting warehouse.Setting, 
 		if err := validateTargetName(setting, column, resolvedName); err != nil {
 			return nil, err
 		}
-		mappings = append(mappings, linker.Mapping{Source: setting.Path, Target: filepath.Clean(filepath.Join(resolvedDir, resolvedName))})
+		mappings = append(mappings, linker.Mapping{Source: setting.Path, Target: cleanJoinedPathForOS(options.OS, resolvedDir, resolvedName)})
 	}
 	return appendUniqueMappings(nil, mappings)
+}
+
+// cleanJoinedPathForOS keeps planned target syntax aligned with PlanOptions.OS
+// rather than the host OS running the test suite.
+func cleanJoinedPathForOS(operatingSystem string, dir string, name string) string {
+	if operatingSystem == "" {
+		operatingSystem = runtime.GOOS
+	}
+	if operatingSystem == "windows" {
+		return filepath.Clean(filepath.Join(dir, name))
+	}
+	return path.Clean(path.Join(dir, name))
 }
 
 func effectiveTargetParts(column warehouse.Column, setting warehouse.Setting) ([]string, []string, error) {

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"os"
+	"path"
 	"path/filepath"
 	"testing"
 
@@ -842,12 +843,11 @@ func TestRunWithExecutableListsColumnAndModeDetails(t *testing.T) {
 func TestRunWithExecutableApplyResetAndRevertEndToEnd(t *testing.T) {
 	workspace := t.TempDir()
 	executablePath := filepath.Join(workspace, "cfgfc")
-	homeDir := filepath.Join(workspace, "home")
+	homeDir := setTempHome(t, workspace)
 	configDir := filepath.Join(homeDir, ".config", "opencode")
 	if err := os.MkdirAll(configDir, 0o755); err != nil {
 		t.Fatalf("mkdir config dir: %v", err)
 	}
-	t.Setenv("HOME", homeDir)
 
 	mustRun(t, executablePath, []string{"new", "-p", "OpenCode"})
 	mustRun(t, executablePath, []string{"new", "-p", "OpenCode", "-c", "opencode.json"})
@@ -1218,8 +1218,8 @@ func setupUpdateFixture(t *testing.T) updateFixture {
 
 func writeUpdateFixtureIndexes(t *testing.T, projectRoot string, configTarget string) {
 	t.Helper()
-	configTargetDir := filepath.Dir(configTarget)
-	configTargetName := filepath.Base(configTarget)
+	configTargetDir := path.Dir(configTarget)
+	configTargetName := path.Base(configTarget)
 	if err := os.WriteFile(filepath.Join(projectRoot, "Column", "ColumnIndex.jsonc"), []byte(`{
   "opencode.json": {
     "displayName": "Config",
@@ -1234,8 +1234,8 @@ func writeUpdateFixtureIndexes(t *testing.T, projectRoot string, configTarget st
 		t.Fatalf("write column index: %v", err)
 	}
 	if err := os.WriteFile(filepath.Join(projectRoot, "Column", "opencode.json", "SettingIndex.jsonc"), []byte(`{
-  "defaultTargetDir": ["`+configTargetDir+`"],
-  "defaultTargetName": ["`+configTargetName+`"],
+  "defaultTargetDir": [`+jsonString(t, configTargetDir)+`],
+  "defaultTargetName": [`+jsonString(t, configTargetName)+`],
   "settings": {
     "GPT.json": {"displayName": "GPT"}
   }
@@ -1276,6 +1276,15 @@ func writeUpdateFixtureIndexes(t *testing.T, projectRoot string, configTarget st
 `), 0o644); err != nil {
 		t.Fatalf("write mode index: %v", err)
 	}
+}
+
+func jsonString(t *testing.T, value string) string {
+	t.Helper()
+	data, err := json.Marshal(value)
+	if err != nil {
+		t.Fatalf("marshal JSON string: %v", err)
+	}
+	return string(data)
 }
 
 func writeUpdateFixtureFullSkillsIndexes(t *testing.T, projectRoot string, configTarget string, includeNewSkill bool) {

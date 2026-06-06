@@ -2,6 +2,7 @@ package pathvars
 
 import (
 	"fmt"
+	"path"
 	"path/filepath"
 	"regexp"
 	"runtime"
@@ -30,7 +31,7 @@ func Expand(input string, options Options) (string, error) {
 		if options.HomeDir == "" {
 			return "", fmt.Errorf("cannot expand ~ without a home directory")
 		}
-		resolved = filepath.Join(options.HomeDir, strings.TrimPrefix(resolved, "~/"))
+		resolved = joinPathForOS(operatingSystem, options.HomeDir, strings.TrimPrefix(resolved, "~/"))
 	}
 
 	var err error
@@ -51,6 +52,16 @@ func Expand(input string, options Options) (string, error) {
 	}
 
 	return resolved, nil
+}
+
+// joinPathForOS joins path fragments using the semantics requested by Options.OS
+// instead of the host test runner's OS. Native Windows keeps filepath semantics;
+// Unix-like planning keeps slash-separated paths even when tests run on Windows.
+func joinPathForOS(operatingSystem string, elements ...string) string {
+	if operatingSystem == "windows" {
+		return filepath.Join(elements...)
+	}
+	return path.Join(elements...)
 }
 
 // replacePattern expands one variable pattern against the provided environment map.

@@ -14,11 +14,11 @@
 - `internal/session`：保存基于 PPID 的项目上下文。
 - `internal/pathvars`：展开可移植路径变量。
 - `internal/planner`：把命令意图转换为链接映射。
-- `internal/linker`：执行符号链接的应用、重置和回退。
+- `internal/linker`：执行符号链接的应用、重置和回退；创建链接前会检查 source 是否存在，并始终只调用真实 symlink 创建逻辑。
 
 ## 存储模型
 
-仓库固定放在 `~/.configfacilitator/` 下，而不是当前 shell 目录旁边。项目目录下包含 `Column/`、`Mode/` 和 `Backup/`，主要持久化文件是 `ProjectIndex.jsonc`、`ColumnIndex.jsonc`、`SettingIndex.jsonc`、`ModeIndex.jsonc`、`current_state.json` 和 `history.log`。
+仓库固定放在当前用户 home/profile 下的 `.configfacilitator/` 中（原生 Windows 为 `%USERPROFILE%/.configfacilitator`），而不是当前 shell 目录旁边。项目目录下包含 `Column/`、`Mode/` 和 `Backup/`，主要持久化文件是 `ProjectIndex.jsonc`、`ColumnIndex.jsonc`、`SettingIndex.jsonc`、`ModeIndex.jsonc`、`current_state.json` 和 `history.log`。
 
 ## 行为规则
 

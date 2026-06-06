@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -237,6 +238,69 @@ func TestReplaceMappingsWithForceOverridesUnmanagedTarget(t *testing.T) {
 		t.Fatalf("forced replace: %v", err)
 	}
 	assertFileSymlinkTarget(t, target, source)
+}
+
+func TestReplaceMappingsFailsClearlyWhenSourceIsMissing(t *testing.T) {
+	engine := New()
+	project, root := newProjectPaths(t)
+	source := filepath.Join(root, "warehouse", "missing.txt")
+	target := filepath.Join(root, "target.txt")
+
+	err := engine.ReplaceMappings(project, []Mapping{{Source: source, Target: target}})
+	if err == nil {
+		t.Fatal("expected missing source failure")
+	}
+	if !strings.Contains(err.Error(), "symlink source") || !strings.Contains(err.Error(), source) || !strings.Contains(err.Error(), "does not exist") {
+		t.Fatalf("missing source error = %q", err.Error())
+	}
+	if _, statErr := os.Lstat(target); !os.IsNotExist(statErr) {
+		t.Fatalf("missing source should not create target, err=%v", statErr)
+	}
+}
+
+func TestCreateSymlinkForOSWrapsWindowsCreationFailures(t *testing.T) {
+	root := t.TempDir()
+	source := writeFile(t, root, "warehouse/source.txt", "alpha")
+	target := filepath.Join(root, "target.txt")
+	creationErr := errors.New("privilege not held")
+
+	err := createSymlinkForOS(source, target, "windows", os.Lstat, func(string, string) error {
+		return creationErr
+	})
+	if err == nil {
+		t.Fatal("expected Windows symlink creation failure")
+	}
+	message := err.Error()
+	for _, want := range []string{"privilege not held", "real symlinks only", "hardlinks", "junctions", "copies", "shell fallbacks", "Developer Mode", "Administrator"} {
+		if !strings.Contains(message, want) {
+			t.Fatalf("Windows symlink error %q missing %q", message, want)
+		}
+	}
+}
+
+func TestReplaceMappingsCreatesDirectorySymlink(t *testing.T) {
+	engine := New()
+	project, root := newProjectPaths(t)
+	sourceDir := filepath.Join(root, "warehouse", "Skill-A")
+	targetDir := filepath.Join(root, "target-skill")
+	if err := os.MkdirAll(sourceDir, 0o755); err != nil {
+		t.Fatalf("mkdir source dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(sourceDir, "README.md"), []byte("skill-a"), 0o644); err != nil {
+		t.Fatalf("write source readme: %v", err)
+	}
+
+	if err := engine.ReplaceMappings(project, []Mapping{{Source: sourceDir, Target: targetDir}}); err != nil {
+		t.Fatalf("replace directory mapping: %v", err)
+	}
+	assertSymlinkTarget(t, targetDir, sourceDir)
+	got, err := os.ReadFile(filepath.Join(targetDir, "README.md"))
+	if err != nil {
+		t.Fatalf("read through directory symlink: %v", err)
+	}
+	if string(got) != "skill-a" {
+		t.Fatalf("directory symlink content = %q, want skill-a", string(got))
+	}
 }
 
 func TestReplaceStateWithForceRepairsDriftedRecordedTarget(t *testing.T) {

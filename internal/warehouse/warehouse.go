@@ -70,13 +70,22 @@ type Mode struct {
 	Metadata      index.ModeEntry
 }
 
-// DefaultWarehouseRoot returns the warehouse root in the user's config directory.
+// DefaultWarehouseRoot returns the warehouse root in the user's profile-backed
+// config directory. On native Windows os.UserHomeDir resolves %USERPROFILE%, so
+// the default becomes %USERPROFILE%/.configfacilitator; Unix-like platforms use
+// the current user's home directory.
 func DefaultWarehouseRoot() (string, error) {
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(homeDir, ".configfacilitator"), nil
+	return defaultWarehouseRootForHome(homeDir), nil
+}
+
+// defaultWarehouseRootForHome keeps default root joining testable without
+// depending on the host OS-specific os.UserHomeDir implementation.
+func defaultWarehouseRootForHome(homeDir string) string {
+	return filepath.Join(homeDir, ".configfacilitator")
 }
 
 // LoadWarehouse loads the warehouse root, project index, and project models.
