@@ -2,6 +2,7 @@ package syncer
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 
@@ -109,9 +110,57 @@ func rewriteSettingIndex(column warehouse.Column) error {
 		if setting.Missing {
 			entry.Extra = withMissingMarker(entry.Extra)
 		}
+		entry, err := withGeneratedTargetFields(column, setting, entry)
+		if err != nil {
+			return err
+		}
 		settingIndex.Settings[setting.Name] = entry
 	}
 	return writeJSON(settingIndex, column.SettingIndexPath)
+}
+
+func withGeneratedTargetFields(column warehouse.Column, setting warehouse.Setting, entry index.SettingEntry) (index.SettingEntry, error) {
+	targetCount, err := generatedTargetCount(column.SettingIndex)
+	if err != nil {
+		return index.SettingEntry{}, err
+	}
+	if len(entry.TargetDir) == 0 {
+		entry.TargetDir = repeatedString("", targetCount)
+	}
+	if len(entry.TargetName) == 0 {
+		entry.TargetName = generatedTargetNames(column.SettingIndex, setting.WarehouseName, targetCount)
+	}
+	return entry, nil
+}
+
+func generatedTargetCount(settingIndex index.SettingIndex) (int, error) {
+	if len(settingIndex.DefaultTargetDir) != len(settingIndex.DefaultTargetName) {
+		return 0, fmt.Errorf("defaultTargetDir and defaultTargetName lengths differ")
+	}
+	if len(settingIndex.DefaultTargetDir) > 0 {
+		return len(settingIndex.DefaultTargetDir), nil
+	}
+	return 1, nil
+}
+
+func generatedTargetNames(settingIndex index.SettingIndex, settingName string, targetCount int) []string {
+	names := make([]string, targetCount)
+	for index := range names {
+		if index < len(settingIndex.DefaultTargetName) && settingIndex.DefaultTargetName[index] != "" {
+			names[index] = ""
+		} else {
+			names[index] = settingName
+		}
+	}
+	return names
+}
+
+func repeatedString(value string, count int) []string {
+	values := make([]string, count)
+	for index := range values {
+		values[index] = value
+	}
+	return values
 }
 
 func writeJSON(value any, path string) error {
