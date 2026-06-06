@@ -206,7 +206,7 @@ var commandHelpByName = map[string]commandHelp{
 		},
 		notes: []string{
 			"`update` replans the persisted mode or column apply intent when available, so mode `full` columns can include newly synced settings.",
-			"Legacy mapping-only state is still refreshed by matching active sources back to current metadata.",
+			"When no apply intent is recorded, `update` refreshes current mappings by matching active sources back to current metadata.",
 			"Run `cfgfc sync` before `cfgfc update` when newly added files or directories need to be reflected in indexes.",
 			"After `cfgfc switch <project>`, project-scoped update forms can omit `-p`.",
 			"Project and column references accept canonical names and aliases.",
@@ -389,6 +389,10 @@ func writeRootHelp(writer io.Writer) {
 	fmt.Fprintln(writer, "  `cfgfc sync --all` or `cfgfc sync -a` forces a full-warehouse sync and ignores any active project context.")
 	fmt.Fprintln(writer, "  `cfgfc update --all` or `cfgfc update -a` refreshes all projects with active state and ignores context.")
 	fmt.Fprintln(writer, "  `cfgfc sync` targets the active project when one is set; otherwise it syncs all projects.")
+	fmt.Fprintln(writer)
+	fmt.Fprintln(writer, "Development:")
+	fmt.Fprintln(writer, "  Use `pixi run compile` to verify all Go packages compile.")
+	fmt.Fprintln(writer, "  Use `pixi run build` to create the local CLI binary at `dist/cfgfc`.")
 	fmt.Fprintln(writer)
 	fmt.Fprintln(writer, "Examples:")
 	fmt.Fprintln(writer, "  cfgfc new -p OpenCode")

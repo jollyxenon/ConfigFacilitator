@@ -27,8 +27,6 @@ Build a local CLI binary at `dist/cfgfc` with:
 pixi run build
 ```
 
-End-user installation is intended to be handled by future package-manager releases such as Scoop or npm, not by pixi tasks.
-
 使用 pixi 运行 Go 工具链。检查编译：
 
 ```bash
@@ -40,8 +38,6 @@ pixi run compile
 ```bash
 pixi run build
 ```
-
-面向普通用户的安装将通过未来的 Scoop 或 npm 等包管理器发布完成，而不是通过 pixi task。
 
 ## License / 开源协议
 

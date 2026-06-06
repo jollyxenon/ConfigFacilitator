@@ -1,5 +1,7 @@
 # 命令参考
 
+开发命令使用 pixi 管理的 Go 工具链：`pixi run compile` 检查所有 Go package，`pixi run build` 在 `dist/cfgfc` 生成本地 CLI 二进制文件。
+
 ## `new`
 
 搭建项目、栏目和模式模板。
@@ -58,7 +60,7 @@ cfgfc apply -p OpenCode -c opencode.json -s GPT.json
 
 根据当前仓库元数据刷新上一次应用意图。`update` 会读取项目的 `Backup/current_state.json`；如果当前状态记录了模式应用或单栏目应用意图，`update` 会用当前索引重新规划该意图并提交刷新后的映射集合。因此，当某个模式栏目使用 `full` 策略时，原始 `apply` 之后新同步进索引的设置也能被纳入刷新结果。
 
-当已经应用过配置后又修改了仍处于活动状态的配置元数据时，可以使用 `update`。例如：先执行过 `apply`，之后新增技能目录或调整设置目标；这时如果新文件或目录需要写入索引，应先运行 `cfgfc sync`，再运行 `cfgfc update` 刷新活动状态。旧的仅映射状态仍受支持：如果状态中没有应用意图，`update` 会把活动 source 匹配回当前元数据，并只刷新这些已有映射。
+当已经应用过配置后又修改了仍处于活动状态的配置元数据时，可以使用 `update`。例如：先执行过 `apply`，之后新增技能目录或调整设置目标；这时如果新文件或目录需要写入索引，应先运行 `cfgfc sync`，再运行 `cfgfc update` 刷新活动状态。如果当前状态没有记录应用意图，`update` 会把活动 source 匹配回当前元数据，并只刷新这些已有映射。
 
 执行 `cfgfc switch <project>` 后，项目作用域的 `update` 形式可以省略 `-p`。项目和栏目引用支持仓库侧标识符和别名。`cfgfc update --all` 与 `cfgfc update -a` 会忽略当前活动上下文，枚举所有项目，并跳过既没有活动映射也没有应用意图的项目。`cfgfc update -c <column>` 或 `cfgfc update --column <column>` 只刷新所选栏目，同时保留其它栏目的当前映射；当状态中存在模式意图时，所选栏目会按该模式策略重新规划，因此 `full` 可以纳入新同步的设置。`-f` / `--force` 会递归回收已占用的目标路径，即使当前目标已失管或不再匹配记录所有权，也继续刷新。
 
@@ -92,6 +94,6 @@ cfgfc revert -p OpenCode
 - 执行 `cfgfc switch` 后，带项目作用域的 `new`、`sync`、`list`、`apply`、`update`、`reset` 与 `revert` 命令都可以省略 `-p`。
 - 即使用户输入的是别名，`switch` 保存到会话里的也始终是规范化后的项目标识符。
 - 执行 `cfgfc switch global` 后，会清除当前 PPID 的活动项目上下文；之后 `list` 会回到全局项目列表，`sync` 会回到默认的全仓同步回退行为。
-- 使用 `sync` 同步索引，使用 `apply` 选择应当激活的配置，使用 `update` 在 source 元数据变化后重新规划已持久化的应用意图。旧的仅映射状态会按映射逐项刷新。
+- 使用 `sync` 同步索引，使用 `apply` 选择应当激活的配置，使用 `update` 在 source 元数据变化后重新规划已持久化的应用意图。如果当前状态没有记录应用意图，则按映射逐项刷新当前映射。
 - 模式策略共有 `cover`、`increment`、`none`、`full` 四种；在 `ModeIndex.jsonc` 中，只有 `none` 和 `full` 可以省略 `settings`。
 - 强制操作只保证恢复到“上一次确认的受管状态”，不会备份或重建被覆盖的外部文件或目录内容。

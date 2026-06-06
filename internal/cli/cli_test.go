@@ -56,7 +56,7 @@ func TestRunShowsRootHelpWithoutArguments(t *testing.T) {
 	}
 
 	output := stdout.String()
-	for _, required := range []string{"cfgfc manages portable configuration warehouses.", "new", "sync", "switch", "list", "apply", "update", "reset", "revert"} {
+	for _, required := range []string{"cfgfc manages portable configuration warehouses.", "new", "sync", "switch", "list", "apply", "update", "reset", "revert", "Development:", "pixi run compile", "pixi run build", "dist/cfgfc"} {
 		if !bytes.Contains(stdout.Bytes(), []byte(required)) {
 			t.Fatalf("expected help output to contain %q, got %q", required, output)
 		}
@@ -79,7 +79,7 @@ func TestRunShowsCommandHelpForRegisteredCommands(t *testing.T) {
 		{name: "switch --help", args: []string{"switch", "--help"}, want: []string{"Select the active project context for this session.", "cfgfc switch global", "Notes:", "PPID-scoped", "Examples:", "cfgfc switch OpenCode"}},
 		{name: "list --help", args: []string{"list", "--help"}, want: []string{"Inspect projects, columns, modes, and settings.", "cfgfc list -p <project> -m <mode>", "`list` accepts only one detailed target at a time: `-c` or `-m`.", "cfgfc list -p OpenCode -c Skills"}},
 		{name: "apply --help", args: []string{"apply", "--help"}, want: []string{"Activate a mode or explicit settings selection.", "cfgfc apply -p <project> -m <mode>", "-s <settings>", "-f, --force", "last confirmed managed state", "cfgfc apply -p OpenCode -c opencode.json -s GPT.json"}},
-		{name: "update --help", args: []string{"update", "--help"}, want: []string{"Refresh the last applied intent from current warehouse metadata.", "cfgfc update --project <project>", "--column <column>", "--all", "-f, --force", "persisted mode or column apply intent", "Legacy mapping-only state", "cfgfc update -c Skills"}},
+		{name: "update --help", args: []string{"update", "--help"}, want: []string{"Refresh the last applied intent from current warehouse metadata.", "cfgfc update --project <project>", "--column <column>", "--all", "-f, --force", "persisted mode or column apply intent", "no apply intent is recorded", "cfgfc update -c Skills"}},
 		{name: "reset --help", args: []string{"reset", "--help"}, want: []string{"Remove the current project's managed links.", "cfgfc reset -p <project>", "-f, --force", "recorded target path", "cfgfc reset -p OpenCode"}},
 		{name: "revert --help", args: []string{"revert", "--help"}, want: []string{"Restore the previous apply state for a project.", "cfgfc revert -p <project>", "-f, --force", "overwritten unmanaged contents", "cfgfc revert -p OpenCode"}},
 	}

@@ -14,11 +14,11 @@ ConfigFacilitator is a portable Go CLI that manages configuration warehouses in 
 ## Quick facts
 
 - Binary name: `cfgfc`
-- Development build: `pixi run build` creates `dist/cfgfc`; future user installation will use package-manager releases such as Scoop or npm
+- Development build: `pixi run compile` checks all Go packages; `pixi run build` creates `dist/cfgfc`
 - Warehouse root: `~/.configfacilitator/`
 - Root-level project discovery: direct child project directories under `~/.configfacilitator/`, including `SettingWarehouse`, participate in discovery
 - Core entities: `Project`, `Column`, `Setting`, `Mode`
-- Commands: `new`, `sync`, `switch`, `list`, `apply`, `reset`, `revert`
+- Commands: `new`, `sync`, `switch`, `list`, `apply`, `update`, `reset`, `revert`
 
 ## What it does
 
