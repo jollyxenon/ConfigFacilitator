@@ -47,16 +47,33 @@ cfgfc list -p OpenCode -m Max
 
 ## `apply`
 
-Activate a mode or explicit settings selection. `apply` accepts either mode apply (`-m`) or single-column apply (`-c` with `-s`). After `cfgfc switch <project>`, project-scoped apply forms can omit `-p`. Project, column, mode, and setting references accept warehouse-side identifiers and aliases. `-s` accepts one or more comma-separated setting names.
+Activate a mode or explicit settings selection. `apply` accepts either mode apply (`-m`) or single-column apply (`-c` with `-s`). After `cfgfc switch <project>`, project-scoped apply forms can omit `-p`. Project, column, mode, and setting references accept warehouse-side identifiers and aliases. `-s` accepts one or more comma-separated setting names. `-f` / `--force` deletes occupied target files, symlinks, or directories recursively so the requested managed state can be re-applied even when targets are unmanaged or drifted.
 
 ```bash
 cfgfc apply -p OpenCode -m Max
 cfgfc apply -p OpenCode -c opencode.json -s GPT.json
 ```
 
+## `update`
+
+Refresh the last applied intent from the current warehouse metadata. `update` reads the project's `Backup/current_state.json`; when the state records a mode or direct-column apply intent, `update` replans that intent against current indexes and commits the refreshed mapping set. This lets a mode column using `full` include newly synced settings after the original `apply`.
+
+Use `update` after changing metadata for already active configuration, for example after adding a new skill directory or retargeting a setting following an earlier `apply`. Run `cfgfc sync` first when newly added files or directories need to be reflected in indexes, then run `cfgfc update` to refresh the active state. Legacy mapping-only state remains supported: if no apply intent is present, `update` matches active sources back to current metadata and refreshes those mappings only.
+
+After `cfgfc switch <project>`, project-scoped update forms can omit `-p`. Project and column references accept warehouse-side identifiers and aliases. `cfgfc update --all` and `cfgfc update -a` ignore any switched context, enumerate all projects, and skip projects with no active mappings or intent. `cfgfc update -c <column>` or `cfgfc update --column <column>` refreshes only the selected column while preserving other current mappings; with mode intent, the selected column is replanned from the mode strategy, so `full` can include newly synced settings. `-f` / `--force` reclaims occupied target paths recursively and continues even when current targets are unmanaged or no longer match recorded ownership.
+
+```bash
+cfgfc update -p OpenCode
+cfgfc switch OpenCode
+cfgfc update
+cfgfc update -c Skills
+cfgfc update --all
+cfgfc update -a
+```
+
 ## `reset`
 
-Remove the current project's managed links. After `cfgfc switch <project>`, `reset` can omit `-p` and use the active project context.
+Remove the current project's managed links. After `cfgfc switch <project>`, `reset` can omit `-p` and use the active project context. `cfgfc reset -f` / `cfgfc reset --force` deletes every target path recorded in the current project state, even when the path has drifted away from the recorded source.
 
 ```bash
 cfgfc reset -p OpenCode
@@ -64,7 +81,7 @@ cfgfc reset -p OpenCode
 
 ## `revert`
 
-Restore the previous apply state for a project. After `cfgfc switch <project>`, `revert` can omit `-p` and use the active project context.
+Restore the previous apply state for a project. After `cfgfc switch <project>`, `revert` can omit `-p` and use the active project context. `cfgfc revert -f` / `cfgfc revert --force` reclaims occupied target paths recursively so the previous managed snapshot can be restored despite unmanaged conflicts or drift.
 
 ```bash
 cfgfc revert -p OpenCode
@@ -72,7 +89,9 @@ cfgfc revert -p OpenCode
 
 ## Notes
 
-- After `cfgfc switch`, project-scoped `new`, `sync`, `list`, `apply`, `reset`, and `revert` commands can omit `-p`.
+- After `cfgfc switch`, project-scoped `new`, `sync`, `list`, `apply`, `update`, `reset`, and `revert` commands can omit `-p`.
 - `switch` persists the normalized project identifier even when the user typed an alias.
 - After `cfgfc switch global`, the current PPID-scoped project context is cleared; `list` returns to the global project list and `sync` returns to its default full-warehouse fallback.
+- Use `sync` to reconcile indexes, `apply` to choose what should be active, and `update` to replan the persisted apply intent after source metadata changes. Legacy mapping-only state is refreshed mapping-by-mapping.
 - Mode strategies are `cover`, `increment`, `none`, and `full`; only `none` and `full` may omit `settings` in `ModeIndex.jsonc`.
+- Forced operations restore only the last confirmed managed state. They do not back up or reconstruct overwritten unmanaged file or directory contents.

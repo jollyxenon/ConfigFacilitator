@@ -22,7 +22,7 @@ The warehouse lives under `~/.configfacilitator/`, not beside the shell working 
 
 ## Behavioral rules
 
-- Setting-level `target` overrides column-level `defaultTarget`.
+- Setting target paths are resolved from zipped directory/name arrays: `targetDir` / `targetName` override `defaultTargetDir` / `defaultTargetName` by index.
 - `Mode` can apply `cover`, `increment`, `none`, or `full` column strategies.
 - `switch` stores a convenience project context by PPID.
 - `revert` restores only the previous apply state.

@@ -100,13 +100,14 @@ The top-level key is the canonical identity. `displayName` and `aliases` stay av
 
 ### Setting targets
 
-`defaultTarget` is the Column-level default destination. A Setting-level `target` overrides it.
+Targets are split into directory and name arrays. `defaultTargetDir` / `defaultTargetName` define Column-level defaults, while `targetDir` / `targetName` can override them per Setting by matching index. Empty setting entries inherit defaults; an empty default target name falls back to the Setting warehouse name.
 
 ```jsonc
 // OpenCode/Column/oh-my-openagent/SettingIndex.jsonc
 {
   "description": "Main config settings",
-  "defaultTarget": "~/.config/opencode/oh-my-openagent.jsonc",
+  "defaultTargetDir": ["~/.config/opencode"],
+  "defaultTargetName": ["oh-my-openagent.jsonc"],
   "settings": {
     "OMOMax.json": {
       "displayName": "OMOMax Config",
@@ -126,24 +127,28 @@ The top-level key is the canonical identity. `displayName` and `aliases` stay av
 // OpenCode/Column/Skills/SettingIndex.jsonc
 {
   "description": "Skills column",
+  "defaultTargetDir": ["~/.config/opencode/skills"],
+  "defaultTargetName": [""],
   "settings": {
     "Skill-A": {
       "displayName": "Skill A",
       "aliases": ["a"],
       "description": "First skill directory",
-      "target": "~/.config/opencode/skills/Skill-A"
+      "targetDir": [""],
+      "targetName": ["Skill-A"]
     },
     "Skill-B": {
       "displayName": "Skill B",
       "aliases": ["b"],
       "description": "Second skill directory",
-      "target": "~/.config/opencode/skills/Skill-B"
+      "targetDir": [""],
+      "targetName": ["Skill-B"]
     }
   }
 }
 ```
 
-Paths can use `~`, `${VAR}`, and Windows `%VAR%` forms.
+Target directories can use `~`, `${VAR}`, and Windows `%VAR%` forms. Target names must be normal single-component file or directory names. After expansion, every target path in the planned state must be unique.
 
 ### Mode selections
 
@@ -215,14 +220,14 @@ In this example, `apply -m Max` replaces the `oh-my-openagent` link with `OMOMax
 
 ## 6. Recover with revert or reset
 
-Use `revert` when you want to restore the previous apply state, and use `reset` when you want to remove the current project's managed links entirely.
+Use `revert` when you want to restore the previous apply state, and use `reset` when you want to remove the current project's managed links entirely. Add `-f` / `--force` when you intentionally want `cfgfc` to reclaim occupied files or directories recursively instead of stopping on unmanaged targets or drift.
 
 ```bash
 cfgfc revert
 cfgfc reset
 ```
 
-`revert` is single-step only: it restores the previous apply snapshot, not an arbitrary point in history. `reset` removes the currently managed mappings and clears the current state for that project.
+`revert` is single-step only: it restores the previous apply snapshot, not an arbitrary point in history. `reset` removes the currently managed mappings and clears the current state for that project. Forced `apply`, `update`, `reset`, or `revert` only restore the last confirmed managed state—they do not reconstruct overwritten unmanaged file or directory contents.
 
 ## When to read the reference docs
 

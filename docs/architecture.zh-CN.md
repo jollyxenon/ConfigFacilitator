@@ -22,7 +22,7 @@
 
 ## 行为规则
 
-- Setting 级别的 `target` 会覆盖 Column 级别的 `defaultTarget`。
+- Setting 目标路径由目录 / 名称数组按下标 zip 得出：`targetDir` / `targetName` 会按下标覆盖 `defaultTargetDir` / `defaultTargetName`。
 - `Mode` 支持 `cover`、`increment`、`none`、`full` 四种栏目策略。
 - `switch` 会按 PPID 保存一个便利用项目上下文。
 - `revert` 只恢复上一次应用状态。

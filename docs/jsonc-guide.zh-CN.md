@@ -28,10 +28,12 @@
 
 ## 目标路径解析
 
-- `defaultTarget` 是 Column 级别的默认路径。
-- Setting 级别的 `target` 会覆盖 `defaultTarget`。
-- 路径支持 `~`、`${VAR}` 和 Windows `%VAR%` 写法。
-- `target` 与规范化后的持久化标识和仓库侧源名称保持解耦。
+- `defaultTargetDir` 与 `defaultTargetName` 是 Column 级别的默认目标目录 / 名称数组。
+- `targetDir` 与 `targetName` 是 Setting 级别的目标目录 / 名称数组，会按相同下标覆盖默认值。
+- 目录数组和名称数组严格按下标 zip；继承展开后长度必须一致。
+- 在 Setting 条目中，`""` 表示继承对应下标的默认值；在 `defaultTargetName` 中，`""` 会回退为 Setting 的仓库侧名称；在 `defaultTargetDir` 中，`""` 表示未配置，不能执行 apply。
+- 目标目录支持 `~`、`${VAR}` 和 Windows `%VAR%` 写法。目标名称必须展开为普通文件名或单层目录名。
+- 展开后的目标路径必须非空，并且在同一个规划状态中唯一。
 
 ## 模式语义
 

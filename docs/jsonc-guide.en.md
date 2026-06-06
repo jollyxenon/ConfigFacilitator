@@ -28,10 +28,12 @@ Indexes are stored as JSONC so generated templates can end with one disposable e
 
 ## Target resolution
 
-- `defaultTarget` is the column-level default path.
-- A setting-level `target` overrides `defaultTarget`.
-- Paths can use `~`, `${VAR}`, and Windows `%VAR%` forms.
-- `target` stays independent from normalized persisted identity and warehouse-side source names.
+- `defaultTargetDir` and `defaultTargetName` are column-level default target directory/name arrays.
+- `targetDir` and `targetName` are setting-level directory/name arrays that override defaults by matching index.
+- Directory and name arrays are strictly zipped; lengths must match after inheritance.
+- In setting entries, `""` means inherit the matching default. In `defaultTargetName`, `""` falls back to the setting warehouse name. In `defaultTargetDir`, `""` means unconfigured and cannot be applied.
+- Target directories can use `~`, `${VAR}`, and Windows `%VAR%` forms. Target names must resolve to one normal file name or single-level directory name.
+- Expanded target paths must be non-empty and unique in the planned state.
 
 ## Mode semantics
 

@@ -100,13 +100,14 @@ cfgfc new -p OpenCode -m Max
 
 ### Setting 的目标路径
 
-`defaultTarget` 是 Column 级默认目标路径。Setting 级的 `target` 会覆盖它。
+目标路径拆成目录和名称数组。`defaultTargetDir` / `defaultTargetName` 定义 Column 级默认值，`targetDir` / `targetName` 可以在 Setting 级按相同下标覆盖。Setting 内的空字符串表示继承默认值；空的默认目标名称会回退为 Setting 的仓库侧名称。
 
 ```jsonc
 // OpenCode/Column/oh-my-openagent/SettingIndex.jsonc
 {
   "description": "主配置集合",
-  "defaultTarget": "~/.config/opencode/oh-my-openagent.jsonc",
+  "defaultTargetDir": ["~/.config/opencode"],
+  "defaultTargetName": ["oh-my-openagent.jsonc"],
   "settings": {
     "OMOMax.json": {
       "displayName": "OMOMax 配置",
@@ -126,24 +127,28 @@ cfgfc new -p OpenCode -m Max
 // OpenCode/Column/Skills/SettingIndex.jsonc
 {
   "description": "Skills 栏目",
+  "defaultTargetDir": ["~/.config/opencode/skills"],
+  "defaultTargetName": [""],
   "settings": {
     "Skill-A": {
       "displayName": "Skill A",
       "aliases": ["a"],
       "description": "第一个技能目录",
-      "target": "~/.config/opencode/skills/Skill-A"
+      "targetDir": [""],
+      "targetName": ["Skill-A"]
     },
     "Skill-B": {
       "displayName": "Skill B",
       "aliases": ["b"],
       "description": "第二个技能目录",
-      "target": "~/.config/opencode/skills/Skill-B"
+      "targetDir": [""],
+      "targetName": ["Skill-B"]
     }
   }
 }
 ```
 
-路径支持 `~`、`${VAR}` 和 Windows `%VAR%` 形式。
+目标目录可以使用 `~`、`${VAR}` 和 Windows `%VAR%` 形式。目标名称必须是普通的单层文件名或目录名。展开后，同一个规划状态中的所有目标路径必须非空且唯一。
 
 ### Mode 选择与策略
 
@@ -215,14 +220,14 @@ cfgfc apply -m Max
 
 ## 6. 用 revert 或 reset 恢复环境
 
-如果你想恢复到上一次 `apply` 之前的状态，用 `revert`；如果你想把当前项目的受管链接全部移除，用 `reset`。
+如果你想恢复到上一次 `apply` 之前的状态，用 `revert`；如果你想把当前项目的受管链接全部移除，用 `reset`。如果你是有意让 `cfgfc` 递归回收已占用的文件或目录，而不是在失管目标或状态漂移时停下，可以额外加 `-f` / `--force`。
 
 ```bash
 cfgfc revert
 cfgfc reset
 ```
 
-`revert` 只支持单步回退：它恢复的是上一次 `apply` 的快照，而不是任意历史点。`reset` 会移除当前项目受管的映射，并清空该项目的当前状态。
+`revert` 只支持单步回退：它恢复的是上一次 `apply` 的快照，而不是任意历史点。`reset` 会移除当前项目受管的映射，并清空该项目的当前状态。强制 `apply`、`update`、`reset` 或 `revert` 只会恢复到上一次确认的受管状态，不会重建被覆盖的外部文件或目录内容。
 
 ## 什么时候再去看参考文档
 
