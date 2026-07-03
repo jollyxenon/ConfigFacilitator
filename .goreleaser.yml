@@ -25,7 +25,7 @@ archives:
     ids:
       - cfgfc
     name_template: >-
-      cfgfc_{{ trimPrefix .Version "v" }}_{{ .Os }}_{{ .Arch }}
+      cfgfc_{{ .Version }}_{{ .Os }}_{{ .Arch }}
     format_overrides:
       - goos: windows
         formats:
