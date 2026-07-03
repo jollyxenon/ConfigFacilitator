@@ -198,6 +198,39 @@ cfgfc list -c Skills
 cfgfc list -m Max
 ```
 
+在切换上下文之前，同一个仓库级 `cfgfc list` 会在每个项目后面追加一个使用状态摘要：
+
+```text
+OpenCode (None)
+```
+
+执行 `cfgfc switch OpenCode` 之后，直接运行 `cfgfc list` 就会进入项目作用域，并在每个 Column 后面追加一个使用状态标签：
+
+```text
+Project: OpenCode
+Columns:
+  - Main Config [oh-my-openagent] (None)
+  - Skills (None)
+Modes:
+  - Max
+```
+
+`cfgfc list -c Skills` 仍然会把这个 Column 里的所有已知 Setting 都列出来；如果存在 missing entries，它们也会继续显示：
+
+```text
+Column: Skills
+  - Skill A [Skill-A] (present)
+  - Skill B [Skill-B] (present)
+```
+
+`cfgfc list -m Max` 仍然会显示这个 Mode 声明的策略和 Setting：
+
+```text
+Mode: Max
+  - Main Config [oh-my-openagent]: strategy=cover settings=OMOMax Config [OMOMax.json]
+  - Skills: strategy=increment settings=Skill A [Skill-A],Skill B [Skill-B]
+```
+
 执行 `cfgfc switch OpenCode` 之后，后续带项目作用域的 `new`、`sync`、`list`、`apply`、`reset`、`revert` 才可以省略 `-p`。`cfgfc switch global` 会清除这个基于 PPID 的便利上下文，让后续命令重新回到全局解析模式。
 
 ## 5. 应用单个 Setting，或应用完整 Mode
@@ -217,6 +250,14 @@ cfgfc apply -m Max
 ```
 
 在这个示例里，`apply -m Max` 会先把 `oh-my-openagent` 的目标链接替换成 `OMOMax.json`，因为这个 Column 使用了 `cover`；随后再把 `Skill-A` 和 `Skill-B` 的目录链接补上，因为 `Skills` 使用的是 `increment`。
+
+完成这次 mode apply 之后，`cfgfc list` 会把两个 Column 都显示成已完整覆盖，终端会高亮当前活动的 `Max` mode，而 `cfgfc list -c Skills` 会高亮当前启用的 settings。如果你清掉切换上下文再回到全局视图，那么项目后面的括号会显示匹配到的持久化 mode 名：
+
+```text
+OpenCode (Max)
+```
+
+如果某个项目仍然有活动映射，但它们已经不再匹配任何当前 Mode，那么这里的全局摘要就会显示成 `Unmatched`。
 
 ## 6. 用 revert 或 reset 恢复环境
 

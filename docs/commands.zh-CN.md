@@ -39,10 +39,13 @@ cfgfc switch global
 
 ## `list`
 
-查看项目、栏目、模式和子配置。如果当前没有有效项目，`list` 会输出仓库中的项目列表。执行 `cfgfc switch <project>` 后，项目作用域的 `list` 形式可以省略 `-p`。项目、栏目和模式引用都支持仓库侧标识符和别名。`list` 一次只接受一个详细目标：`-c` 或 `-m`。
+查看项目、栏目、模式和子配置。如果当前没有有效项目，`list` 会输出仓库中的项目列表，并在每个项目后面追加一个括号包裹的使用状态摘要：当已持久化的 mode 意图仍然能匹配当前 mode 时，显示该 mode 名；否则显示 `Unmatched` 或 `None`。当存在有效项目时，直接执行 `list` 会显示该项目的栏目和模式，并在每个栏目后面追加一个括号包裹的 `Full`、`Partial` 或 `None` 标签，表示基于已持久化受管映射计算出的当前覆盖状态。执行 `cfgfc switch <project>` 后，项目作用域的 `list` 形式可以省略 `-p`。项目、栏目和模式引用都支持仓库侧标识符和别名。`list` 一次只接受一个详细目标：`-c` 或 `-m`。
+
+当终端支持颜色输出时，项目作用域 `list` 里的活动 mode，以及 `list -c` 里当前启用的 settings 会被高亮显示。`list -c` 仍然会显示 missing entries。
 
 ```bash
 cfgfc list
+cfgfc list -p OpenCode
 cfgfc list -p OpenCode -c Skills
 cfgfc list -p OpenCode -m Max
 ```

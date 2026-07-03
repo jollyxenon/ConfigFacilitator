@@ -16,6 +16,15 @@ import (
 	"github.com/xenon/ConfigFacilitator/internal/warehouse"
 )
 
+type cliEmphasis string
+
+const (
+	cliEmphasisGreen  cliEmphasis = "\033[32m"
+	cliEmphasisYellow cliEmphasis = "\033[33m"
+	cliEmphasisRed    cliEmphasis = "\033[31m"
+	cliEmphasisReset  cliEmphasis = "\033[0m"
+)
+
 // version is the current version of the cfgfc CLI, injected at build time via ldflags.
 var version = "dev"
 
@@ -26,7 +35,7 @@ var commandDescriptions = []struct {
 	{name: "new", description: "Scaffold project, column, and mode templates"},
 	{name: "sync", description: "Reconcile warehouse indexes with filesystem state"},
 	{name: "switch", description: "Select the active project context for this session"},
-	{name: "list", description: "Inspect projects, columns, modes, and settings"},
+	{name: "list", description: "Inspect projects, columns, modes, and current usage status"},
 	{name: "apply", description: "Activate a mode or explicit settings selection"},
 	{name: "update", description: "Refresh the last applied intent from current warehouse metadata"},
 	{name: "reset", description: "Remove the current project's managed links"},
@@ -139,7 +148,7 @@ var commandHelpByName = map[string]commandHelp{
 		},
 	},
 	"list": {
-		description: "Inspect projects, columns, modes, and settings.",
+		description: "Inspect projects, columns, modes, and current usage status.",
 		usage: []string{
 			"cfgfc list",
 			"cfgfc list -p <project>",
@@ -147,8 +156,10 @@ var commandHelpByName = map[string]commandHelp{
 			"cfgfc list -p <project> -m <mode>",
 		},
 		notes: []string{
-			"Without an effective project, `list` shows the available projects in the warehouse.",
+			"Without an effective project, `cfgfc list` shows each project's persisted mode name when available, or `(Unmatched)` / `(None)` when no mode summary can be resolved.",
 			"After `cfgfc switch <project>`, project-scoped `list` forms can omit `-p`.",
+			"Project-scoped `cfgfc list` adds `(Full)` / `(Partial)` / `(None)` to each column and highlights the active mode when terminal output supports color.",
+			"`cfgfc list -c <column>` highlights enabled settings when terminal output supports color and still prints missing index entries as `(missing)`.",
 			"Project, column, and mode references accept canonical names and aliases.",
 			"`list` accepts only one detailed target at a time: `-c` or `-m`.",
 		},
@@ -159,7 +170,9 @@ var commandHelpByName = map[string]commandHelp{
 		},
 		examples: []string{
 			"cfgfc list",
-			"cfgfc list -p OpenCode -c Skills",
+			"cfgfc list -p OpenCode",
+			"cfgfc switch OpenCode",
+			"cfgfc list -c Skills",
 			"cfgfc list -p OpenCode -m Max",
 		},
 	},
@@ -680,21 +693,27 @@ func runList(args []string, stdout io.Writer, stderr io.Writer, warehouseRoot st
 		fmt.Fprintf(stderr, "%v\n", err)
 		return 1
 	}
+	statusContext := newListStatusContext()
 	if effectiveProject == "" {
-		return renderProjectList(loaded, stdout)
+		return renderProjectList(loaded, statusContext, stdout, stderr)
 	}
 	project, err := loaded.ResolveProject(effectiveProject)
 	if err != nil {
 		fmt.Fprintf(stderr, "%v\n", err)
 		return 1
 	}
+	currentState, err := linker.New().LoadCurrentState(project)
+	if err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 1
+	}
 	if columnName != "" {
-		return renderColumn(project, columnName, stdout, stderr)
+		return renderColumn(project, currentState, columnName, statusContext, stdout, stderr)
 	}
 	if modeName != "" {
 		return renderMode(project, modeName, stdout, stderr)
 	}
-	return renderProject(project, stdout)
+	return renderProject(project, currentState, statusContext, stdout)
 }
 
 func parseSwitchArgs(args []string) (string, error) {
@@ -748,10 +767,17 @@ func parseListArgs(args []string) (string, string, string, error) {
 	return projectName, columnName, modeName, nil
 }
 
-func renderProjectList(loaded warehouse.Warehouse, stdout io.Writer) int {
+func renderProjectList(loaded warehouse.Warehouse, statusContext listStatusContext, stdout io.Writer, stderr io.Writer) int {
+	engine := linker.New()
 	names := make([]string, 0, len(loaded.Projects))
 	for _, project := range loaded.Projects {
-		names = append(names, displayLabel(project.Metadata.DisplayName, project.Name))
+		currentState, err := engine.LoadCurrentState(project)
+		if err != nil {
+			fmt.Fprintf(stderr, "%v\n", err)
+			return 1
+		}
+		name := displayLabel(project.Metadata.DisplayName, project.Name)
+		names = append(names, fmt.Sprintf("%s %s", name, projectUsageSummary(project, currentState, statusContext, stdout)))
 	}
 	sort.Strings(names)
 	for _, name := range names {
@@ -760,29 +786,36 @@ func renderProjectList(loaded warehouse.Warehouse, stdout io.Writer) int {
 	return 0
 }
 
-func renderProject(project warehouse.Project, stdout io.Writer) int {
+func renderProject(project warehouse.Project, currentState linker.CurrentState, statusContext listStatusContext, stdout io.Writer) int {
+	currentMappings := mappingSet(currentState.Mappings)
+	activeMode, hasActiveMode := matchedModeIntent(project, currentState, statusContext)
 	fmt.Fprintf(stdout, "Project: %s\n", displayLabel(project.Metadata.DisplayName, project.Name))
 	fmt.Fprintln(stdout, "Columns:")
 	columnNames := sortedKeys(project.Columns)
 	for _, name := range columnNames {
 		column := project.Columns[name]
-		fmt.Fprintf(stdout, "  - %s\n", displayLabel(column.Metadata.DisplayName, column.Name))
+		fmt.Fprintf(stdout, "  - %s %s\n", displayLabel(column.Metadata.DisplayName, column.Name), columnUsageSummary(project, column, currentMappings, statusContext, stdout))
 	}
 	fmt.Fprintln(stdout, "Modes:")
 	modeNames := sortedKeys(project.Modes)
 	for _, name := range modeNames {
 		mode := project.Modes[name]
-		fmt.Fprintf(stdout, "  - %s\n", displayLabel(mode.Metadata.DisplayName, mode.Name))
+		line := fmt.Sprintf("  - %s", displayLabel(mode.Metadata.DisplayName, mode.Name))
+		if hasActiveMode && mode.Name == activeMode.Name {
+			line = emphasizeText(stdout, cliEmphasisGreen, line)
+		}
+		fmt.Fprintln(stdout, line)
 	}
 	return 0
 }
 
-func renderColumn(project warehouse.Project, columnName string, stdout io.Writer, stderr io.Writer) int {
+func renderColumn(project warehouse.Project, currentState linker.CurrentState, columnName string, statusContext listStatusContext, stdout io.Writer, stderr io.Writer) int {
 	column, err := project.ResolveColumn(columnName)
 	if err != nil {
 		fmt.Fprintf(stderr, "%v\n", err)
 		return 1
 	}
+	currentMappings := mappingSet(currentState.Mappings)
 	fmt.Fprintf(stdout, "Column: %s\n", displayLabel(column.Metadata.DisplayName, column.Name))
 	for _, name := range sortedKeys(column.Settings) {
 		setting := column.Settings[name]
@@ -790,7 +823,11 @@ func renderColumn(project warehouse.Project, columnName string, stdout io.Writer
 		if setting.Missing {
 			status = "missing"
 		}
-		fmt.Fprintf(stdout, "  - %s (%s)\n", displayLabel(setting.Metadata.DisplayName, setting.Name), status)
+		line := fmt.Sprintf("  - %s (%s)", displayLabel(setting.Metadata.DisplayName, setting.Name), status)
+		if settingCoverage(project, column, setting, currentMappings, statusContext) == coverageFull {
+			line = emphasizeText(stdout, cliEmphasisGreen, line)
+		}
+		fmt.Fprintln(stdout, line)
 	}
 	return 0
 }
@@ -807,6 +844,194 @@ func renderMode(project warehouse.Project, modeName string, stdout io.Writer, st
 		fmt.Fprintf(stdout, "  - %s: strategy=%s settings=%s\n", displayModeColumn(project, name), selection.Strategy, strings.Join(displayModeSettings(project, name, selection.Settings), ","))
 	}
 	return 0
+}
+
+type listStatusContext struct {
+	planOptions planner.PlanOptions
+	canPlan     bool
+}
+
+type coverageStatus int
+
+const (
+	coverageNone coverageStatus = iota
+	coveragePartial
+	coverageFull
+)
+
+type mappingPair struct {
+	Source string
+	Target string
+}
+
+// newListStatusContext captures the environment required for conservative list status replanning.
+func newListStatusContext() listStatusContext {
+	statusContext := listStatusContext{
+		planOptions: planner.PlanOptions{Env: envMap(), OS: runtime.GOOS},
+	}
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return statusContext
+	}
+	statusContext.planOptions.HomeDir = homeDir
+	statusContext.canPlan = true
+	return statusContext
+}
+
+// projectUsageSummary renders one project's persisted usage summary for the global list view.
+func projectUsageSummary(project warehouse.Project, currentState linker.CurrentState, statusContext listStatusContext, stdout io.Writer) string {
+	mode, ok := matchedModeIntent(project, currentState, statusContext)
+	if ok {
+		return emphasizeParenthesized(stdout, cliEmphasisGreen, displayLabel(mode.Metadata.DisplayName, mode.Name))
+	}
+	if len(currentState.Mappings) > 0 || currentState.Intent != nil {
+		return emphasizeParenthesized(stdout, cliEmphasisRed, "Unmatched")
+	}
+	return emphasizeParenthesized(stdout, cliEmphasisRed, "None")
+}
+
+// columnUsageSummary renders one column's active-setting coverage label for the project view.
+func columnUsageSummary(project warehouse.Project, column warehouse.Column, currentMappings map[mappingPair]struct{}, statusContext listStatusContext, stdout io.Writer) string {
+	totalSettings := 0
+	fullyCoveredSettings := 0
+	for _, setting := range column.Settings {
+		if setting.Missing {
+			continue
+		}
+		totalSettings++
+		switch settingCoverage(project, column, setting, currentMappings, statusContext) {
+		case coverageFull:
+			fullyCoveredSettings++
+		case coveragePartial:
+			return emphasizeParenthesized(stdout, cliEmphasisYellow, "Partial")
+		}
+	}
+	switch {
+	case fullyCoveredSettings == 0:
+		return emphasizeParenthesized(stdout, cliEmphasisRed, "None")
+	case fullyCoveredSettings == totalSettings:
+		return emphasizeParenthesized(stdout, cliEmphasisGreen, "Full")
+	default:
+		return emphasizeParenthesized(stdout, cliEmphasisYellow, "Partial")
+	}
+}
+
+// matchedModeIntent resolves one persisted mode intent only when its current mappings still match replanned metadata.
+func matchedModeIntent(project warehouse.Project, currentState linker.CurrentState, statusContext listStatusContext) (warehouse.Mode, bool) {
+	if currentState.Intent == nil || currentState.Intent.Kind != "mode" || strings.TrimSpace(currentState.Intent.Mode) == "" {
+		return warehouse.Mode{}, false
+	}
+	mode, err := project.ResolveMode(currentState.Intent.Mode)
+	if err != nil {
+		return warehouse.Mode{}, false
+	}
+	if !statusContext.canPlan {
+		return warehouse.Mode{}, false
+	}
+	plannedMappings, err := planner.PlanModeMappings(project, mode.Name, currentState.Mappings, statusContext.planOptions)
+	if err != nil {
+		return warehouse.Mode{}, false
+	}
+	if !sameMappingSet(plannedMappings, currentState.Mappings) {
+		return warehouse.Mode{}, false
+	}
+	return mode, true
+}
+
+// settingCoverage reports whether one setting's full current metadata mapping set is present in current state.
+func settingCoverage(project warehouse.Project, column warehouse.Column, setting warehouse.Setting, currentMappings map[mappingPair]struct{}, statusContext listStatusContext) coverageStatus {
+	if setting.Missing || !statusContext.canPlan {
+		return coverageNone
+	}
+	expectedMappings, ok := plannedSettingMappings(project, column, setting, statusContext)
+	if !ok || len(expectedMappings) == 0 {
+		return coverageNone
+	}
+	matchedMappings := 0
+	for _, mapping := range expectedMappings {
+		if _, exists := currentMappings[mappingPair{Source: mapping.Source, Target: mapping.Target}]; exists {
+			matchedMappings++
+		}
+	}
+	switch {
+	case matchedMappings == 0:
+		return coverageNone
+	case matchedMappings == len(expectedMappings):
+		return coverageFull
+	default:
+		return coveragePartial
+	}
+}
+
+// plannedSettingMappings replans one setting's complete source-target mapping set from current metadata.
+func plannedSettingMappings(project warehouse.Project, column warehouse.Column, setting warehouse.Setting, statusContext listStatusContext) ([]linker.Mapping, bool) {
+	if !statusContext.canPlan {
+		return nil, false
+	}
+	mappings, err := planner.PlanColumnMappings(project, column.Name, []string{setting.Name}, statusContext.planOptions)
+	if err != nil {
+		return nil, false
+	}
+	return mappings, true
+}
+
+// sameMappingSet compares two mapping slices as unordered source-target sets.
+func sameMappingSet(left []linker.Mapping, right []linker.Mapping) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	leftSet := mappingSet(left)
+	rightSet := mappingSet(right)
+	if len(leftSet) != len(left) || len(rightSet) != len(right) {
+		return false
+	}
+	for pair := range leftSet {
+		if _, exists := rightSet[pair]; !exists {
+			return false
+		}
+	}
+	return true
+}
+
+// mappingSet converts one mapping slice into a source-target lookup set.
+func mappingSet(mappings []linker.Mapping) map[mappingPair]struct{} {
+	currentMappings := make(map[mappingPair]struct{}, len(mappings))
+	for _, mapping := range mappings {
+		currentMappings[mappingPair{Source: mapping.Source, Target: mapping.Target}] = struct{}{}
+	}
+	return currentMappings
+}
+
+// emphasizeParenthesized colorizes one parenthesized label when the output target supports ANSI.
+func emphasizeParenthesized(stdout io.Writer, emphasis cliEmphasis, label string) string {
+	return emphasizeText(stdout, emphasis, fmt.Sprintf("(%s)", label))
+}
+
+// emphasizeText wraps one text fragment in ANSI color only for color-capable terminal outputs.
+func emphasizeText(stdout io.Writer, emphasis cliEmphasis, text string) string {
+	if text == "" || !shouldUseColor(stdout) {
+		return text
+	}
+	return string(emphasis) + text + string(cliEmphasisReset)
+}
+
+// shouldUseColor reports whether this CLI output should emit ANSI color codes.
+func shouldUseColor(stdout io.Writer) bool {
+	if strings.TrimSpace(os.Getenv("NO_COLOR")) != "" {
+		return false
+	}
+	if strings.EqualFold(strings.TrimSpace(os.Getenv("TERM")), "dumb") {
+		return false
+	}
+	file, ok := stdout.(*os.File)
+	if !ok {
+		return false
+	}
+	info, err := file.Stat()
+	if err != nil {
+		return false
+	}
+	return info.Mode()&os.ModeCharDevice != 0
 }
 
 // displayLabel formats one display-facing entity label while preserving the normalized callable identifier when it differs.

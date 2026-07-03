@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/xenon/ConfigFacilitator/internal/linker"
+	"github.com/xenon/ConfigFacilitator/internal/warehouse"
 )
 
 func assertGeneratedIndexHasTrailingExampleComment(t *testing.T, data []byte, want []string) {
@@ -78,7 +79,7 @@ func TestRunShowsCommandHelpForRegisteredCommands(t *testing.T) {
 		{name: "new -h", args: []string{"new", "-h"}, want: []string{"Scaffold project, column, and mode templates.", "cfgfc new -c <column>"}},
 		{name: "sync --help", args: []string{"sync", "--help"}, want: []string{"Reconcile warehouse indexes with filesystem state.", "cfgfc sync --all", "Flags:", "--all", "-a", "Examples:", "cfgfc sync -a"}},
 		{name: "switch --help", args: []string{"switch", "--help"}, want: []string{"Select the active project context for this session.", "cfgfc switch global", "Notes:", "PPID-scoped", "Examples:", "cfgfc switch OpenCode"}},
-		{name: "list --help", args: []string{"list", "--help"}, want: []string{"Inspect projects, columns, modes, and settings.", "cfgfc list -p <project> -m <mode>", "`list` accepts only one detailed target at a time: `-c` or `-m`.", "cfgfc list -p OpenCode -c Skills"}},
+		{name: "list --help", args: []string{"list", "--help"}, want: []string{"Inspect projects, columns, modes, and current usage status.", "cfgfc list -p <project>", "persisted mode name", "(Unmatched)", "`(Full)` / `(Partial)` / `(None)`", "highlights enabled settings", "cfgfc list -c Skills"}},
 		{name: "apply --help", args: []string{"apply", "--help"}, want: []string{"Activate a mode or explicit settings selection.", "cfgfc apply -p <project> -m <mode>", "-s <settings>", "-f, --force", "last confirmed managed state", "cfgfc apply -p OpenCode -c opencode.json -s GPT.json"}},
 		{name: "update --help", args: []string{"update", "--help"}, want: []string{"Refresh the last applied intent from current warehouse metadata.", "cfgfc update --project <project>", "--column <column>", "--all", "-f, --force", "persisted mode or column apply intent", "no apply intent is recorded", "cfgfc update -c Skills"}},
 		{name: "reset --help", args: []string{"reset", "--help"}, want: []string{"Remove the current project's managed links.", "cfgfc reset -p <project>", "-f, --force", "recorded target path", "cfgfc reset -p OpenCode"}},
@@ -841,6 +842,165 @@ func TestRunWithExecutableListsColumnAndModeDetails(t *testing.T) {
 	}
 }
 
+func TestRunWithExecutableGlobalListShowsUsageSummariesWithoutANSI(t *testing.T) {
+	fixture := setupListStatusFixture(t)
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	if exitCode := RunWithExecutable([]string{"list"}, &stdout, &stderr, fixture.executablePath); exitCode != 0 {
+		t.Fatalf("list exit=%d stderr=%q", exitCode, stderr.String())
+	}
+
+	output := stdout.String()
+	for _, required := range []string{"Open Code [OpenCode] (Max)", "Manual (Unmatched)", "Empty (None)"} {
+		if !strings.Contains(output, required) {
+			t.Fatalf("expected global list output to contain %q, got %q", required, output)
+		}
+	}
+	assertNoANSI(t, output)
+}
+
+func TestRunWithExecutableProjectListShowsColumnUsageSummariesWithoutANSI(t *testing.T) {
+	fixture := setupListStatusFixture(t)
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	if exitCode := RunWithExecutable([]string{"list", "-p", "OpenCode"}, &stdout, &stderr, fixture.executablePath); exitCode != 0 {
+		t.Fatalf("list -p OpenCode exit=%d stderr=%q", exitCode, stderr.String())
+	}
+
+	output := stdout.String()
+	for _, required := range []string{"Config [opencode.json] (Full)", "Skills (Partial)", "Extras (None)"} {
+		if !strings.Contains(output, required) {
+			t.Fatalf("expected project list output to contain %q, got %q", required, output)
+		}
+	}
+	assertNoANSI(t, output)
+}
+
+func TestRunWithExecutableProjectListShowsActiveModeWithoutANSI(t *testing.T) {
+	fixture := setupListStatusFixture(t)
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	if exitCode := RunWithExecutable([]string{"list", "-p", "OpenCode"}, &stdout, &stderr, fixture.executablePath); exitCode != 0 {
+		t.Fatalf("list -p OpenCode exit=%d stderr=%q", exitCode, stderr.String())
+	}
+
+	output := stdout.String()
+	if !strings.Contains(output, "Modes:") || !strings.Contains(output, "  - Max") {
+		t.Fatalf("expected active mode to remain readable in plain text, got %q", output)
+	}
+	assertNoANSI(t, output)
+}
+
+func TestRunWithExecutableColumnListShowsEnabledAndMissingSettingsWithoutANSI(t *testing.T) {
+	fixture := setupListStatusFixture(t)
+	mustRun(t, fixture.executablePath, []string{"switch", "OpenCode"})
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	if exitCode := RunWithExecutable([]string{"list", "-c", "Skills"}, &stdout, &stderr, fixture.executablePath); exitCode != 0 {
+		t.Fatalf("list -c Skills exit=%d stderr=%q", exitCode, stderr.String())
+	}
+
+	output := stdout.String()
+	for _, required := range []string{"Column: Skills", "Skill A [Skill-A] (present)", "Skill B [Skill-B] (present)", "Skill Missing [Skill-Missing] (missing)"} {
+		if !strings.Contains(output, required) {
+			t.Fatalf("expected column list output to contain %q, got %q", required, output)
+		}
+	}
+	assertNoANSI(t, output)
+}
+
+func TestRunWithExecutableGlobalListShowsModeDriftAsUnmatchedWithoutANSI(t *testing.T) {
+	fixture := setupUpdateFixture(t)
+	mustRun(t, fixture.executablePath, []string{"apply", "-p", "OpenCode", "-m", "Max"})
+	writeUpdateFixtureIndexes(t, fixture.projectRoot, "~/.config/opencode/opencode.drifted.json")
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	if exitCode := RunWithExecutable([]string{"list"}, &stdout, &stderr, fixture.executablePath); exitCode != 0 {
+		t.Fatalf("list exit=%d stderr=%q", exitCode, stderr.String())
+	}
+
+	output := stdout.String()
+	if !strings.Contains(output, "Open Code [OpenCode] (Unmatched)") {
+		t.Fatalf("expected mode drift to render as unmatched, got %q", output)
+	}
+	if strings.Contains(output, "Open Code [OpenCode] (Max)") {
+		t.Fatalf("did not expect drifted mode to remain matched, got %q", output)
+	}
+	assertNoANSI(t, output)
+}
+
+func TestRunWithExecutableProjectListShowsMultiTargetPartialColumnCoverageWithoutANSI(t *testing.T) {
+	fixture := setupUpdateFixture(t)
+	writeMultiTargetConfigSettingIndex(t, fixture.projectRoot)
+	writeProjectCurrentState(t, fixture.projectRoot, linker.CurrentState{
+		Mappings: []linker.Mapping{{
+			Source: filepath.Join(fixture.projectRoot, "Column", "opencode.json", "GPT.json"),
+			Target: filepath.Join(fixture.configDir, "opencode.primary.json"),
+		}},
+	})
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	if exitCode := RunWithExecutable([]string{"list", "-p", "OpenCode"}, &stdout, &stderr, fixture.executablePath); exitCode != 0 {
+		t.Fatalf("list -p OpenCode exit=%d stderr=%q", exitCode, stderr.String())
+	}
+
+	output := stdout.String()
+	if !strings.Contains(output, "Config [opencode.json] (Partial)") {
+		t.Fatalf("expected multi-target partial column coverage, got %q", output)
+	}
+	assertNoANSI(t, output)
+}
+
+func TestRunWithExecutableColumnListKeepsMultiTargetPartialSettingUnhighlightedWithoutANSI(t *testing.T) {
+	fixture := setupUpdateFixture(t)
+	state := linker.CurrentState{
+		Mappings: []linker.Mapping{{
+			Source: filepath.Join(fixture.projectRoot, "Column", "opencode.json", "GPT.json"),
+			Target: filepath.Join(fixture.configDir, "opencode.primary.json"),
+		}},
+	}
+	writeMultiTargetConfigSettingIndex(t, fixture.projectRoot)
+	writeProjectCurrentState(t, fixture.projectRoot, state)
+
+	loaded, err := warehouse.LoadWarehouse(filepath.Dir(fixture.projectRoot))
+	if err != nil {
+		t.Fatalf("load warehouse: %v", err)
+	}
+	project, err := loaded.ResolveProject("OpenCode")
+	if err != nil {
+		t.Fatalf("resolve project: %v", err)
+	}
+	column, err := project.ResolveColumn("opencode.json")
+	if err != nil {
+		t.Fatalf("resolve column: %v", err)
+	}
+	setting, err := column.ResolveSetting("GPT.json")
+	if err != nil {
+		t.Fatalf("resolve setting: %v", err)
+	}
+	if got := settingCoverage(project, column, setting, mappingSet(state.Mappings), newListStatusContext()); got != coveragePartial {
+		t.Fatalf("expected multi-target partial setting coverage, got %v", got)
+	}
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	if exitCode := RunWithExecutable([]string{"list", "-p", "OpenCode", "-c", "opencode.json"}, &stdout, &stderr, fixture.executablePath); exitCode != 0 {
+		t.Fatalf("list -c opencode.json exit=%d stderr=%q", exitCode, stderr.String())
+	}
+
+	output := stdout.String()
+	if !strings.Contains(output, "GPT [GPT.json] (present)") {
+		t.Fatalf("expected partial setting to remain listed, got %q", output)
+	}
+	assertNoANSI(t, output)
+}
+
 func TestRunWithExecutableApplyResetAndRevertEndToEnd(t *testing.T) {
 	workspace := t.TempDir()
 	executablePath := filepath.Join(workspace, "cfgfc")
@@ -1179,6 +1339,11 @@ type updateFixture struct {
 	configDir      string
 }
 
+type listStatusFixture struct {
+	updateFixture
+	warehouseRoot string
+}
+
 func setupUpdateFixture(t *testing.T) updateFixture {
 	t.Helper()
 	workspace := t.TempDir()
@@ -1215,6 +1380,35 @@ func setupUpdateFixture(t *testing.T) updateFixture {
 	writeUpdateFixtureIndexes(t, projectRoot, "~/.config/opencode/opencode.json")
 	mustRun(t, executablePath, []string{"sync", "-p", "OpenCode"})
 	return updateFixture{executablePath: executablePath, projectRoot: projectRoot, configDir: configDir}
+}
+
+// setupListStatusFixture provisions list-focused state for global, project, and column status assertions.
+func setupListStatusFixture(t *testing.T) listStatusFixture {
+	t.Helper()
+	fixture := setupUpdateFixture(t)
+	warehouseRoot := filepath.Dir(fixture.projectRoot)
+
+	mustRun(t, fixture.executablePath, []string{"apply", "-p", "OpenCode", "-m", "Max"})
+	writeListStatusFixtureIndexes(t, fixture.projectRoot)
+	mustRun(t, fixture.executablePath, []string{"new", "-p", "Manual"})
+	mustRun(t, fixture.executablePath, []string{"new", "-p", "Empty"})
+
+	if err := os.WriteFile(filepath.Join(warehouseRoot, "ProjectIndex.jsonc"), []byte(`{
+  "OpenCode": {
+    "displayName": "Open Code",
+    "aliases": ["oc"]
+  },
+  "Manual": {},
+  "Empty": {}
+}
+`), 0o644); err != nil {
+		t.Fatalf("write list project index: %v", err)
+	}
+	writeProjectCurrentState(t, filepath.Join(warehouseRoot, "Manual"), linker.CurrentState{
+		Mappings: []linker.Mapping{{Source: "manual-source", Target: "manual-target"}},
+		Intent:   &linker.ApplyIntent{Kind: "column", Column: "Solo", Settings: []string{"One"}},
+	})
+	return listStatusFixture{updateFixture: fixture, warehouseRoot: warehouseRoot}
 }
 
 func writeUpdateFixtureIndexes(t *testing.T, projectRoot string, configTarget string) {
@@ -1276,6 +1470,92 @@ func writeUpdateFixtureIndexes(t *testing.T, projectRoot string, configTarget st
 }
 `), 0o644); err != nil {
 		t.Fatalf("write mode index: %v", err)
+	}
+}
+
+func writeMultiTargetConfigSettingIndex(t *testing.T, projectRoot string) {
+	t.Helper()
+	if err := os.WriteFile(filepath.Join(projectRoot, "Column", "opencode.json", "SettingIndex.jsonc"), []byte(`{
+  "defaultTargetDir": ["~/.config/opencode", "~/.config/opencode"],
+  "defaultTargetName": ["opencode.primary.json", "opencode.secondary.json"],
+  "settings": {
+    "GPT.json": {"displayName": "GPT"}
+  }
+}
+`), 0o644); err != nil {
+		t.Fatalf("write multi-target config setting index: %v", err)
+	}
+}
+
+// writeListStatusFixtureIndexes expands the OpenCode metadata so list can report full, partial, none, and missing states.
+func writeListStatusFixtureIndexes(t *testing.T, projectRoot string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Join(projectRoot, "Column", "Extras"), 0o755); err != nil {
+		t.Fatalf("mkdir Extras column: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(projectRoot, "Column", "Skills", "Skill-B"), 0o755); err != nil {
+		t.Fatalf("mkdir Skill-B: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(projectRoot, "Column", "Skills", "Skill-B", "README.md"), []byte("skill-b"), 0o644); err != nil {
+		t.Fatalf("write Skill-B readme: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(projectRoot, "Column", "Extras", "Extra-A"), []byte("extra-a"), 0o644); err != nil {
+		t.Fatalf("write Extra-A: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(projectRoot, "Column", "ColumnIndex.jsonc"), []byte(`{
+  "opencode.json": {
+    "displayName": "Config",
+    "aliases": ["config"]
+  },
+  "Skills": {
+    "displayName": "Skills",
+    "aliases": ["skills"]
+  },
+  "Extras": {
+    "displayName": "Extras",
+    "aliases": ["extras"]
+  }
+}
+`), 0o644); err != nil {
+		t.Fatalf("write list column index: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(projectRoot, "Column", "Skills", "SettingIndex.jsonc"), []byte(`{
+  "defaultTargetDir": ["~/.config/opencode/skills"],
+  "defaultTargetName": [""],
+  "settings": {
+    "Skill-A": {
+      "displayName": "Skill A",
+      "aliases": ["alpha"],
+      "targetDir": [""],
+      "targetName": ["Skill-A"]
+    },
+    "Skill-B": {
+      "displayName": "Skill B",
+      "targetDir": [""],
+      "targetName": ["Skill-B"]
+    },
+    "Skill-Missing": {
+      "displayName": "Skill Missing",
+      "missing": true
+    }
+  }
+}
+`), 0o644); err != nil {
+		t.Fatalf("write list skills setting index: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(projectRoot, "Column", "Extras", "SettingIndex.jsonc"), []byte(`{
+  "defaultTargetDir": ["~/.config/opencode/extras"],
+  "defaultTargetName": [""],
+  "settings": {
+    "Extra-A": {
+      "displayName": "Extra A",
+      "targetDir": [""],
+      "targetName": ["Extra-A"]
+    }
+  }
+}
+`), 0o644); err != nil {
+		t.Fatalf("write extras setting index: %v", err)
 	}
 }
 
@@ -1345,6 +1625,26 @@ func readCurrentState(t *testing.T, projectRoot string) linker.CurrentState {
 		t.Fatalf("parse current state: %v", err)
 	}
 	return state
+}
+
+// writeProjectCurrentState stores one explicit current_state payload for list-focused state coverage.
+func writeProjectCurrentState(t *testing.T, projectRoot string, state linker.CurrentState) {
+	t.Helper()
+	data, err := json.MarshalIndent(state, "", "  ")
+	if err != nil {
+		t.Fatalf("marshal current state: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(projectRoot, "Backup", "current_state.json"), append(data, '\n'), 0o644); err != nil {
+		t.Fatalf("write current state: %v", err)
+	}
+}
+
+// assertNoANSI verifies that one plain-writer test path does not emit terminal color escapes.
+func assertNoANSI(t *testing.T, output string) {
+	t.Helper()
+	if strings.Contains(output, "\x1b[") {
+		t.Fatalf("expected plain-text output without ANSI escapes, got %q", output)
+	}
 }
 
 func TestRunWithExecutableResolvesAliasesAndStoresCanonicalProjectContext(t *testing.T) {
@@ -1516,6 +1816,25 @@ func assertFileSymlinkPointsTo(t *testing.T, path string, want string) {
 	}
 	if !bytes.Equal(gotContent, wantContent) {
 		t.Fatalf("file content via symlink %s = %q, want source content %q", path, string(gotContent), string(wantContent))
+	}
+}
+
+func TestShouldUseColorHonorsNoColorAndPipe(t *testing.T) {
+	t.Setenv("TERM", "xterm-256color")
+	t.Setenv("NO_COLOR", "1")
+	if shouldUseColor(os.Stdout) {
+		t.Fatalf("expected NO_COLOR to disable ANSI output")
+	}
+
+	t.Setenv("NO_COLOR", "")
+	reader, writer, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("create pipe: %v", err)
+	}
+	defer reader.Close()
+	defer writer.Close()
+	if shouldUseColor(writer) {
+		t.Fatalf("expected pipe writer to disable ANSI output")
 	}
 }
 

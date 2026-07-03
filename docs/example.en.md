@@ -198,6 +198,39 @@ cfgfc list -c Skills
 cfgfc list -m Max
 ```
 
+Before switching, the same warehouse-wide view would append one usage summary per project:
+
+```text
+OpenCode (None)
+```
+
+After `cfgfc switch OpenCode`, plain `cfgfc list` becomes project-scoped and appends one usage label per Column:
+
+```text
+Project: OpenCode
+Columns:
+  - Main Config [oh-my-openagent] (None)
+  - Skills (None)
+Modes:
+  - Max
+```
+
+`cfgfc list -c Skills` still shows every known Setting in the Column. Missing entries remain visible when they exist:
+
+```text
+Column: Skills
+  - Skill A [Skill-A] (present)
+  - Skill B [Skill-B] (present)
+```
+
+`cfgfc list -m Max` continues to show the Mode's declared strategies and Settings:
+
+```text
+Mode: Max
+  - Main Config [oh-my-openagent]: strategy=cover settings=OMOMax Config [OMOMax.json]
+  - Skills: strategy=increment settings=Skill A [Skill-A],Skill B [Skill-B]
+```
+
 After `cfgfc switch OpenCode`, later project-scoped `new`, `sync`, `list`, `apply`, `reset`, and `revert` commands can omit `-p`. `cfgfc switch global` clears that PPID-scoped convenience context and returns later commands to global resolution.
 
 ## 5. Apply one setting or a full mode
@@ -217,6 +250,14 @@ cfgfc apply -m Max
 ```
 
 In this example, `apply -m Max` replaces the `oh-my-openagent` link with `OMOMax.json` because that Column uses `cover`, then adds the `Skill-A` and `Skill-B` directory links because `Skills` uses `increment`.
+
+After that mode apply, `cfgfc list` shows both Columns as fully covered, the terminal highlights the active `Max` mode, and `cfgfc list -c Skills` highlights the enabled settings. If you clear the switched context, the global view shows the matched persisted mode name in parentheses:
+
+```text
+OpenCode (Max)
+```
+
+If a project still has active mappings but they no longer match any current Mode, that same global summary becomes `Unmatched`.
 
 ## 6. Recover with revert or reset
 
