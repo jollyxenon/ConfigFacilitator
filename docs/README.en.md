@@ -1,6 +1,6 @@
 # ConfigFacilitator Documentation
 
-ConfigFacilitator is a portable Go CLI that manages configuration warehouses in `~/.configfacilitator/`.
+ConfigFacilitator is a portable Go CLI that manages configuration warehouses whose default root is `~/.configfacilitator/`.
 
 ## Start here
 
@@ -17,14 +17,14 @@ ConfigFacilitator is a portable Go CLI that manages configuration warehouses in 
 - npm install: `npm install -g @jollyxenon/cfgfc`
 - Development build: `pixi run compile` checks all Go packages; `pixi run build` creates `dist/cfgfc`
 - License: MIT License (see [`LICENSE`](../LICENSE))
-- Warehouse root: `~/.configfacilitator/`
-- Root-level project discovery: direct child project directories under `~/.configfacilitator/`, including `SettingWarehouse`, participate in discovery
+- Warehouse root: default `~/.configfacilitator/`; use `cfgfc root` to inspect and `cfgfc root <path>` to persist a different root
+- Root-level project discovery: direct child project directories under the effective warehouse root, including `SettingWarehouse`, participate in discovery
 - Core entities: `Project`, `Column`, `Setting`, `Mode`
-- Commands: `new`, `sync`, `switch`, `list`, `apply`, `update`, `reset`, `revert`
+- Commands: `new`, `sync`, `switch`, `root`, `list`, `apply`, `update`, `reset`, `revert`
 
 ## What it does
 
-It scaffolds warehouses, reconciles indexes with filesystem reality, stores PPID-scoped convenience context, applies symlink-backed configurations, and supports `reset` and single-step `revert`.
+It scaffolds warehouses, reconciles indexes with filesystem reality, stores PPID-scoped convenience context, applies symlink-backed configurations, supports persistent warehouse-root switching with `cfgfc root`, and supports `reset` and single-step `revert`.
 
 ## Installation
 

@@ -6,7 +6,7 @@
 
 ## 包划分
 
-- `internal/warehouse`：解析 `~/.configfacilitator/` 并加载仓库模型。
+- `internal/warehouse`：解析当前生效的仓库根目录（默认 `~/.configfacilitator/`，也支持持久化 override）并加载仓库模型。
 - `internal/index`：解析和写入 JSONC 索引文件。
 - `internal/jsonc`：移除注释并规范化 JSONC 内容。
 - `internal/scaffold`：创建项目、栏目和模式模板。
@@ -18,7 +18,7 @@
 
 ## 存储模型
 
-仓库固定放在当前用户 home/profile 下的 `.configfacilitator/` 中（原生 Windows 为 `%USERPROFILE%/.configfacilitator`），而不是当前 shell 目录旁边。项目目录下包含 `Column/`、`Mode/` 和 `Backup/`，主要持久化文件是 `ProjectIndex.jsonc`、`ColumnIndex.jsonc`、`SettingIndex.jsonc`、`ModeIndex.jsonc`、`current_state.json` 和 `history.log`。
+仓库位于当前生效的仓库根目录下，而不是当前 shell 目录旁边。默认根目录是当前用户 home/profile 下的 `.configfacilitator/`（原生 Windows 为 `%USERPROFILE%/.configfacilitator`），但也可以通过 `cfgfc root <path>` 在仓库外的用户作用域 bootstrap 文件里持久化切换。项目目录下包含 `Column/`、`Mode/` 和 `Backup/`，主要持久化文件是 `ProjectIndex.jsonc`、`ColumnIndex.jsonc`、`SettingIndex.jsonc`、`ModeIndex.jsonc`、`current_state.json` 和 `history.log`。
 
 ## 行为规则
 

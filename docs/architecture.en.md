@@ -6,7 +6,7 @@
 
 ## Packages
 
-- `internal/warehouse`: resolves `~/.configfacilitator/` and loads the warehouse model.
+- `internal/warehouse`: resolves the effective warehouse root (default `~/.configfacilitator/` plus any persisted override) and loads the warehouse model.
 - `internal/index`: parses and writes JSONC index files.
 - `internal/jsonc`: strips comments and normalizes JSONC content.
 - `internal/scaffold`: creates project, column, and mode templates.
@@ -18,7 +18,7 @@
 
 ## Storage model
 
-The warehouse lives under `~/.configfacilitator/`, not beside the shell working directory. Projects contain `Column/`, `Mode/`, and `Backup/` trees, with `ProjectIndex.jsonc`, `ColumnIndex.jsonc`, `SettingIndex.jsonc`, `ModeIndex.jsonc`, `current_state.json`, and `history.log` as the main persisted files.
+The warehouse lives under the effective warehouse root, not beside the shell working directory. By default that root is `~/.configfacilitator/`, but `cfgfc root <path>` can persist a different root in a user-scoped bootstrap file outside the warehouse. Projects contain `Column/`, `Mode/`, and `Backup/` trees, with `ProjectIndex.jsonc`, `ColumnIndex.jsonc`, `SettingIndex.jsonc`, `ModeIndex.jsonc`, `current_state.json`, and `history.log` as the main persisted files.
 
 ## Behavioral rules
 

@@ -16,9 +16,9 @@
 
 ## 仓库结构
 
-仓库根目录固定在 `~/.configfacilitator/`。完成骨架创建和手工编辑后，一个有代表性的目录结构如下：
+这个示例使用默认仓库根目录 `~/.configfacilitator/`。如果你之前执行过 `cfgfc root <path>`，请把下面的路径理解为那个当前生效的根目录。完成骨架创建和手工编辑后，一个有代表性的目录结构如下：
 
-项目目录会直接从 `~/.configfacilitator/` 根目录下发现。根目录下名为 `SettingWarehouse` 的目录也会和其他项目目录一样参与发现。
+项目目录会直接从当前生效仓库根目录下发现。根目录下名为 `SettingWarehouse` 的目录也会和其他项目目录一样参与发现。
 
 ```text
 ~/.configfacilitator/

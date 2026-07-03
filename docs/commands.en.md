@@ -37,6 +37,15 @@ cfgfc switch OpenCode
 cfgfc switch global
 ```
 
+## `root`
+
+Inspect or change the persistent warehouse root. `cfgfc root` prints the current effective root. `cfgfc root <path>` expands `~` and supported environment variables, persists the resulting absolute path in a user-scoped bootstrap file, and makes later warehouse-scoped commands use that root. Changing roots does not migrate, copy, or initialize warehouse contents.
+
+```bash
+cfgfc root
+cfgfc root ~/.configfacilitator-alt
+```
+
 ## `list`
 
 Inspect projects, columns, modes, and settings. Without an effective project, `list` shows the available projects in the warehouse and appends one parenthesized usage summary for each project: the resolved persisted mode name when a mode intent still matches, otherwise `Unmatched` or `None`. With an effective project, plain `list` shows that project's columns and modes, and appends one parenthesized `Full`, `Partial`, or `None` label to each column according to the persisted managed mappings. After `cfgfc switch <project>`, project-scoped list forms can omit `-p`. Project, column, and mode references accept warehouse-side identifiers and aliases. `list` accepts only one detailed target at a time: `-c` or `-m`.
@@ -95,8 +104,10 @@ cfgfc revert -p OpenCode
 ## Notes
 
 - After `cfgfc switch`, project-scoped `new`, `sync`, `list`, `apply`, `update`, `reset`, and `revert` commands can omit `-p`.
+- `cfgfc root` prints the effective warehouse root, and `cfgfc root <path>` persists a different root for later commands without moving existing warehouse contents.
 - `switch` persists the normalized project identifier even when the user typed an alias.
 - After `cfgfc switch global`, the current PPID-scoped project context is cleared; `list` returns to the global project list and `sync` returns to its default full-warehouse fallback.
+- `.cfgfc-session/` stays under the effective warehouse root, so switching roots also switches the session-local active project store.
 - Use `sync` to reconcile indexes, `apply` to choose what should be active, and `update` to replan the persisted apply intent after source metadata changes. When no apply intent is recorded, current mappings are refreshed mapping-by-mapping.
 - Mode strategies are `cover`, `increment`, `none`, and `full`; only `none` and `full` may omit `settings` in `ModeIndex.jsonc`.
 - Forced operations restore only the last confirmed managed state. They do not back up or reconstruct overwritten unmanaged file or directory contents.

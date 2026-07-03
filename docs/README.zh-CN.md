@@ -1,6 +1,6 @@
 # ConfigFacilitator 文档
 
-ConfigFacilitator 是一个便携式 Go CLI，用于管理 `~/.configfacilitator/` 中的配置仓库。
+ConfigFacilitator 是一个便携式 Go CLI，用于管理配置仓库；默认仓库根目录是 `~/.configfacilitator/`。
 
 ## 从这里开始
 
@@ -17,14 +17,14 @@ ConfigFacilitator 是一个便携式 Go CLI，用于管理 `~/.configfacilitator
 - npm 安装：`npm install -g @jollyxenon/cfgfc`
 - 开发构建：`pixi run compile` 检查所有 Go package；`pixi run build` 生成 `dist/cfgfc`
 - 开源协议：MIT License（见 [`LICENSE`](../LICENSE)）
-- 仓库根目录：`~/.configfacilitator/`
-- 根目录项目发现：`~/.configfacilitator/` 下的直接项目目录都会参与发现，其中也包括 `SettingWarehouse`
+- 仓库根目录：默认是 `~/.configfacilitator/`；使用 `cfgfc root` 查看当前生效根目录，使用 `cfgfc root <path>` 持久化切换
+- 根目录项目发现：当前生效仓库根目录下的直接项目目录都会参与发现，其中也包括 `SettingWarehouse`
 - 核心实体：`Project`、`Column`、`Setting`、`Mode`
-- 命令：`new`、`sync`、`switch`、`list`、`apply`、`update`、`reset`、`revert`
+- 命令：`new`、`sync`、`switch`、`root`、`list`、`apply`、`update`、`reset`、`revert`
 
 ## 项目作用
 
-它负责搭建仓库骨架、同步索引与磁盘实体、保存基于 PPID 的便利上下文、应用符号链接配置，并支持 `reset` 和单步 `revert`。
+它负责搭建仓库骨架、同步索引与磁盘实体、保存基于 PPID 的便利上下文、通过 `cfgfc root` 持久化切换仓库根目录、应用符号链接配置，并支持 `reset` 和单步 `revert`。
 
 ## 安装
 

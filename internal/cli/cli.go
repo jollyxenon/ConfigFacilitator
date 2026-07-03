@@ -40,6 +40,7 @@ var commandDescriptions = []struct {
 	{name: "update", description: "Refresh the last applied intent from current warehouse metadata"},
 	{name: "reset", description: "Remove the current project's managed links"},
 	{name: "revert", description: "Restore the previous apply state for a project"},
+	{name: "root", description: "Inspect or change the persistent warehouse root"},
 }
 
 type helpFlag struct {
@@ -293,6 +294,22 @@ var commandHelpByName = map[string]commandHelp{
 			"cfgfc revert",
 		},
 	},
+	"root": {
+		description: "Inspect or change the persistent warehouse root.",
+		usage: []string{
+			"cfgfc root",
+			"cfgfc root <path>",
+		},
+		notes: []string{
+			"Without a path argument, `root` prints the current effective warehouse root.",
+			"With one path argument, `root` normalizes and persists the effective warehouse root for later commands.",
+			"Changing the warehouse root only changes where later commands look for warehouse data; it does not migrate, copy, or initialize warehouse contents.",
+		},
+		examples: []string{
+			"cfgfc root",
+			"cfgfc root ~/.configfacilitator-alt",
+		},
+	},
 }
 
 const globalProjectName = "global"
@@ -341,6 +358,9 @@ func run(args []string, stdout io.Writer, stderr io.Writer) int {
 	if hasHelpArg(commandArgs) {
 		return writeNamedHelp(commandName, stdout, stderr)
 	}
+	if commandName == "root" {
+		return runRoot(commandArgs, stdout, stderr)
+	}
 
 	warehouseRoot, err := scaffold.WarehouseRoot()
 	if err != nil {
@@ -376,6 +396,31 @@ func run(args []string, stdout io.Writer, stderr io.Writer) int {
 	fmt.Fprintf(stderr, "unknown command %q\n\n", commandName)
 	writeRootHelp(stderr)
 	return 1
+}
+
+// runRoot inspects or updates the persisted warehouse root override.
+func runRoot(args []string, stdout io.Writer, stderr io.Writer) int {
+	switch len(args) {
+	case 0:
+		warehouseRoot, err := warehouse.EffectiveWarehouseRoot()
+		if err != nil {
+			fmt.Fprintf(stderr, "resolve warehouse root: %v\n", err)
+			return 1
+		}
+		fmt.Fprintln(stdout, warehouseRoot)
+		return 0
+	case 1:
+		warehouseRoot, err := warehouse.SetEffectiveWarehouseRoot(args[0])
+		if err != nil {
+			fmt.Fprintf(stderr, "set warehouse root: %v\n", err)
+			return 1
+		}
+		fmt.Fprintf(stdout, "Warehouse root set to %s\n", warehouseRoot)
+		return 0
+	default:
+		fmt.Fprintln(stderr, "root accepts zero arguments to print the current root or one path argument to set it")
+		return 1
+	}
 }
 
 func isHelpArg(arg string) bool {
@@ -416,6 +461,10 @@ func writeRootHelp(writer io.Writer) {
 	fmt.Fprintln(writer, "  `cfgfc sync --all` or `cfgfc sync -a` forces a full-warehouse sync and ignores any active project context.")
 	fmt.Fprintln(writer, "  `cfgfc update --all` or `cfgfc update -a` refreshes all projects with active state and ignores context.")
 	fmt.Fprintln(writer, "  `cfgfc sync` targets the active project when one is set; otherwise it syncs all projects.")
+	fmt.Fprintln(writer)
+	fmt.Fprintln(writer, "Warehouse root:")
+	fmt.Fprintln(writer, "  `cfgfc root` prints the effective warehouse root for later commands.")
+	fmt.Fprintln(writer, "  `cfgfc root <path>` changes later warehouse resolution without moving existing warehouse contents.")
 	fmt.Fprintln(writer)
 	fmt.Fprintln(writer, "Flags:")
 	fmt.Fprintln(writer, "  --version, -v   Print the version and exit.")

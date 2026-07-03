@@ -14,7 +14,7 @@ pixi run test
 pixi run compile
 pixi run build
 pixi run help
-pixi run bash -lc 'for cmd in new sync switch list apply update reset revert; do go run ./cmd/cfgfc "$cmd" --help; done'
+pixi run bash -lc 'for cmd in new sync switch root list apply update reset revert; do go run ./cmd/cfgfc "$cmd" --help; done'
 ```
 
 ## Validation expectations
@@ -24,7 +24,7 @@ pixi run bash -lc 'for cmd in new sync switch list apply update reset revert; do
 - Use `pixi run build` to create the local CLI binary at `dist/cfgfc`.
 - Use `pixi run help` to verify the root command surface.
 - Use the subcommand help sweep above to verify every registered command returns structured help through the pixi-managed Go toolchain.
-- For command changes, also run a real CLI smoke test against a temp `~/.configfacilitator/`.
+- For command changes, also run a real CLI smoke test against a temp home/profile plus an alternate warehouse root persisted with `cfgfc root <path>`.
 
 ## npm package and release workflow
 

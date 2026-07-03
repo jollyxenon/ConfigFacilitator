@@ -5,11 +5,15 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 
 	"github.com/xenon/ConfigFacilitator/internal/index"
+	"github.com/xenon/ConfigFacilitator/internal/pathvars"
 )
+
+const warehouseRootBootstrapFileName = ".cfgfc-root"
 
 // Warehouse stores the parsed warehouse root and all discovered projects.
 type Warehouse struct {
@@ -82,10 +86,115 @@ func DefaultWarehouseRoot() (string, error) {
 	return defaultWarehouseRootForHome(homeDir), nil
 }
 
+// EffectiveWarehouseRoot returns the configured warehouse root override when
+// present, otherwise it falls back to the default warehouse root.
+func EffectiveWarehouseRoot() (string, error) {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	return effectiveWarehouseRootForHome(homeDir)
+}
+
+// SetEffectiveWarehouseRoot normalizes and persists the warehouse root override
+// in the user-scoped bootstrap file outside the warehouse.
+func SetEffectiveWarehouseRoot(rootPath string) (string, error) {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	return setEffectiveWarehouseRootForHome(homeDir, runtime.GOOS, rootPath, currentEnvironmentMap())
+}
+
 // defaultWarehouseRootForHome keeps default root joining testable without
 // depending on the host OS-specific os.UserHomeDir implementation.
 func defaultWarehouseRootForHome(homeDir string) string {
 	return filepath.Join(homeDir, ".configfacilitator")
+}
+
+// effectiveWarehouseRootForHome resolves the persisted override for a specific
+// home directory and falls back to that home's default warehouse root.
+func effectiveWarehouseRootForHome(homeDir string) (string, error) {
+	overridePath := bootstrapFilePathForHome(homeDir)
+	overrideRoot, hasOverride, err := readWarehouseRootOverride(overridePath)
+	if err != nil {
+		return "", fmt.Errorf("read warehouse root bootstrap %q: %w", overridePath, err)
+	}
+	if hasOverride {
+		return overrideRoot, nil
+	}
+	return defaultWarehouseRootForHome(homeDir), nil
+}
+
+// setEffectiveWarehouseRootForHome normalizes and persists a warehouse root
+// override for the provided home directory and operating system.
+func setEffectiveWarehouseRootForHome(homeDir string, operatingSystem string, rootPath string, env map[string]string) (string, error) {
+	normalizedRoot, err := normalizeWarehouseRootPath(rootPath, homeDir, operatingSystem, env)
+	if err != nil {
+		return "", err
+	}
+	bootstrapPath := bootstrapFilePathForHome(homeDir)
+	if err := os.WriteFile(bootstrapPath, []byte(normalizedRoot+"\n"), 0o644); err != nil {
+		return "", fmt.Errorf("write warehouse root bootstrap %q: %w", bootstrapPath, err)
+	}
+	return normalizedRoot, nil
+}
+
+// bootstrapFilePathForHome returns the user-scoped bootstrap file path that
+// stores the persisted effective warehouse root override.
+func bootstrapFilePathForHome(homeDir string) string {
+	return filepath.Join(homeDir, warehouseRootBootstrapFileName)
+}
+
+// readWarehouseRootOverride loads the persisted warehouse root override from
+// the bootstrap file when one exists.
+func readWarehouseRootOverride(bootstrapPath string) (string, bool, error) {
+	data, err := os.ReadFile(bootstrapPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return "", false, nil
+		}
+		return "", false, err
+	}
+	overrideRoot := strings.TrimSpace(string(data))
+	if overrideRoot == "" {
+		return "", false, nil
+	}
+	if !filepath.IsAbs(overrideRoot) {
+		return "", false, fmt.Errorf("bootstrap file must contain an absolute path")
+	}
+	return filepath.Clean(overrideRoot), true, nil
+}
+
+// normalizeWarehouseRootPath expands variables and returns one cleaned absolute
+// warehouse root path ready to persist in the bootstrap file.
+func normalizeWarehouseRootPath(rootPath string, homeDir string, operatingSystem string, env map[string]string) (string, error) {
+	trimmedRoot := strings.TrimSpace(rootPath)
+	if trimmedRoot == "" {
+		return "", fmt.Errorf("warehouse root path cannot be empty")
+	}
+	expandedRoot, err := pathvars.Expand(trimmedRoot, pathvars.Options{HomeDir: homeDir, Env: env, OS: operatingSystem})
+	if err != nil {
+		return "", err
+	}
+	absoluteRoot, err := filepath.Abs(expandedRoot)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Clean(absoluteRoot), nil
+}
+
+// currentEnvironmentMap snapshots the current process environment for path
+// variable expansion during warehouse root normalization.
+func currentEnvironmentMap() map[string]string {
+	environment := map[string]string{}
+	for _, entry := range os.Environ() {
+		parts := strings.SplitN(entry, "=", 2)
+		if len(parts) == 2 {
+			environment[parts[0]] = parts[1]
+		}
+	}
+	return environment
 }
 
 // LoadWarehouse loads the warehouse root, project index, and project models.

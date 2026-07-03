@@ -35,6 +35,87 @@ func TestDefaultWarehouseRootForHomeUsesProfileRelativeDirectory(t *testing.T) {
 	}
 }
 
+func TestEffectiveWarehouseRootFallsBackToDefaultWithoutBootstrap(t *testing.T) {
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
+	t.Setenv("USERPROFILE", homeDir)
+	t.Setenv("HOMEDRIVE", "")
+	t.Setenv("HOMEPATH", "")
+
+	got, err := EffectiveWarehouseRoot()
+	if err != nil {
+		t.Fatalf("EffectiveWarehouseRoot returned error: %v", err)
+	}
+	want := filepath.Join(homeDir, ".configfacilitator")
+	if got != want {
+		t.Fatalf("expected fallback root %q, got %q", want, got)
+	}
+}
+
+func TestEffectiveWarehouseRootUsesBootstrapOverride(t *testing.T) {
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
+	t.Setenv("USERPROFILE", homeDir)
+	t.Setenv("HOMEDRIVE", "")
+	t.Setenv("HOMEPATH", "")
+	overrideRoot := filepath.Join(homeDir, "warehouse-root")
+	if err := os.WriteFile(filepath.Join(homeDir, warehouseRootBootstrapFileName), []byte(overrideRoot+"\n"), 0o644); err != nil {
+		t.Fatalf("write bootstrap override: %v", err)
+	}
+
+	got, err := EffectiveWarehouseRoot()
+	if err != nil {
+		t.Fatalf("EffectiveWarehouseRoot returned error: %v", err)
+	}
+	if got != overrideRoot {
+		t.Fatalf("expected override root %q, got %q", overrideRoot, got)
+	}
+}
+
+func TestEffectiveWarehouseRootIgnoresEmptyBootstrap(t *testing.T) {
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
+	t.Setenv("USERPROFILE", homeDir)
+	t.Setenv("HOMEDRIVE", "")
+	t.Setenv("HOMEPATH", "")
+	if err := os.WriteFile(filepath.Join(homeDir, warehouseRootBootstrapFileName), []byte("  \n"), 0o644); err != nil {
+		t.Fatalf("write empty bootstrap: %v", err)
+	}
+
+	got, err := EffectiveWarehouseRoot()
+	if err != nil {
+		t.Fatalf("EffectiveWarehouseRoot returned error: %v", err)
+	}
+	want := filepath.Join(homeDir, ".configfacilitator")
+	if got != want {
+		t.Fatalf("expected fallback root %q, got %q", want, got)
+	}
+}
+
+func TestSetEffectiveWarehouseRootNormalizesAndPersistsBootstrap(t *testing.T) {
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
+	t.Setenv("USERPROFILE", homeDir)
+	t.Setenv("HOMEDRIVE", "")
+	t.Setenv("HOMEPATH", "")
+
+	got, err := SetEffectiveWarehouseRoot("~/warehouse/../custom-root")
+	if err != nil {
+		t.Fatalf("SetEffectiveWarehouseRoot returned error: %v", err)
+	}
+	want := filepath.Join(homeDir, "custom-root")
+	if got != want {
+		t.Fatalf("expected normalized root %q, got %q", want, got)
+	}
+	bootstrapData, err := os.ReadFile(filepath.Join(homeDir, warehouseRootBootstrapFileName))
+	if err != nil {
+		t.Fatalf("read bootstrap file: %v", err)
+	}
+	if string(bootstrapData) != want+"\n" {
+		t.Fatalf("expected bootstrap contents %q, got %q", want+"\n", string(bootstrapData))
+	}
+}
+
 func TestLoadWarehouseBuildsProjectColumnAndModeRelationships(t *testing.T) {
 	root := filepath.Join("testdata", "basic")
 	warehouse, err := LoadWarehouse(root)

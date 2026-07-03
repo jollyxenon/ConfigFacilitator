@@ -14,7 +14,7 @@ pixi run test
 pixi run compile
 pixi run build
 pixi run help
-pixi run bash -lc 'for cmd in new sync switch list apply update reset revert; do go run ./cmd/cfgfc "$cmd" --help; done'
+pixi run bash -lc 'for cmd in new sync switch root list apply update reset revert; do go run ./cmd/cfgfc "$cmd" --help; done'
 ```
 
 ## 验证要求
@@ -24,7 +24,7 @@ pixi run bash -lc 'for cmd in new sync switch list apply update reset revert; do
 - 使用 `pixi run build` 在 `dist/cfgfc` 生成本地 CLI 二进制文件。
 - 使用 `pixi run help` 验证根命令面。
 - 使用上面的子命令 help sweep，验证每个已注册命令都能通过 pixi 管理的 Go 工具链返回结构化帮助。
-- 如果改动涉及命令行为，还要针对临时的 `~/.configfacilitator/` 做一次真实 CLI smoke test。
+- 如果改动涉及命令行为，还要针对临时 home/profile 与通过 `cfgfc root <path>` 持久化出来的备用仓库根目录做一次真实 CLI smoke test。
 
 ## npm 包与发布流程
 

@@ -1,12 +1,16 @@
 # ConfigFacilitator
 
-ConfigFacilitator is a portable Go CLI for managing Project, Column, Setting, and Mode data inside `~/.configfacilitator/`.
+ConfigFacilitator is a portable Go CLI for managing Project, Column, Setting, and Mode data inside a configuration warehouse whose default root is `~/.configfacilitator/`.
 
-ConfigFacilitator 是一个便携式 Go CLI，用于管理位于 `~/.configfacilitator/` 中的 Project、Column、Setting 和 Mode。
+ConfigFacilitator 是一个便携式 Go CLI，用于管理配置仓库中的 Project、Column、Setting 和 Mode；默认仓库根目录是 `~/.configfacilitator/`。
 
-Project directories are discovered directly under `~/.configfacilitator/`, including names such as `SettingWarehouse`.
+Use `cfgfc root` to inspect the current effective warehouse root, or `cfgfc root <path>` to persist a new root. Changing the root does not migrate, copy, or initialize warehouse contents.
 
-项目目录会直接从 `~/.configfacilitator/` 根目录下发现；`SettingWarehouse` 这样的名称也会按普通项目目录处理。
+使用 `cfgfc root` 可以查看当前生效的仓库根目录；使用 `cfgfc root <path>` 可以持久化切换到新的根目录。切换根目录不会迁移、复制或初始化任何仓库内容。
+
+Project directories are discovered directly under the effective warehouse root, including names such as `SettingWarehouse`.
+
+项目目录会直接从当前生效的仓库根目录下发现；`SettingWarehouse` 这样的名称也会按普通项目目录处理。
 
 ## Purpose / 用途
 

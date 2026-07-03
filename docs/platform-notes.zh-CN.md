@@ -12,10 +12,13 @@ ConfigFacilitator 只使用真实 symlink，不会退回到目录 junction、硬
 
 仓库根目录会从当前用户的 home/profile 目录解析，而不是按当前 shell 工作目录解析。移动二进制文件，不会改变生效的仓库根目录。
 
-- Unix-like 平台：`~/.configfacilitator/`
-- 原生 Windows：`%USERPROFILE%/.configfacilitator`
+- Unix-like 平台默认根目录：`~/.configfacilitator/`
+- 原生 Windows 默认根目录：`%USERPROFILE%/.configfacilitator`
+- 持久化 override bootstrap：Unix-like 平台是 `~/.cfgfc-root`，原生 Windows 是 `%USERPROFILE%/.cfgfc-root`
 
-根目录项目发现会直接在 `~/.configfacilitator/` 下进行。只要目录符合项目布局，像 `SettingWarehouse` 这样的目录名也会和其他项目目录一样参与发现。
+`cfgfc root` 会输出当前生效的仓库根目录。`cfgfc root <path>` 会在 bootstrap 文件中持久化新的生效根目录，并在写入前完成路径展开和规范化。切换根目录不会迁移、复制或初始化任何仓库内容。
+
+根目录项目发现会直接在当前生效仓库根目录下进行。只要目录符合项目布局，像 `SettingWarehouse` 这样的目录名也会和其他项目目录一样参与发现。
 
 ## 原生 Windows 与 WSL 边界
 
@@ -25,10 +28,12 @@ ConfigFacilitator 只使用真实 symlink，不会退回到目录 junction、硬
 
 `switch` 按父进程 ID 保存活动项目。这是为了多终端并行使用而提供的便利能力，不是强隔离边界。
 
+`.cfgfc-session/` 目录始终位于当前生效仓库根目录下，所以切换根目录也会切换会话上下文存储位置。
+
 ## 回退范围
 
 `revert` 只支持单步回退，只会恢复到上一次 `apply` 的快照状态。
 
 ## 原生 Windows 冒烟测试
 
-如需手动验证原生 Windows 支持，请在已开启 Developer Mode 或具有 Administrator 权限的 Windows shell 中运行 `cfgfc.exe`，分别应用一个文件型 setting 和一个目录型 setting。确认两个 target 都是真实 symlink，并确认仓库根目录位于 `%USERPROFILE%/.configfacilitator`。
+如需手动验证原生 Windows 支持，请在已开启 Developer Mode 或具有 Administrator 权限的 Windows shell 中运行 `cfgfc.exe`，分别应用一个文件型 setting 和一个目录型 setting。确认两个 target 都是真实 symlink，并确认仓库根目录要么是默认的 `%USERPROFILE%/.configfacilitator`，要么是通过 `cfgfc root` 持久化后的新根目录。

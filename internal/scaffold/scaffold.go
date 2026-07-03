@@ -303,5 +303,5 @@ List modes keyed by mode name. Use "cover" for explicit replacement, "increment"
 
 // WarehouseRoot exposes the command-facing warehouse path convention.
 func WarehouseRoot() (string, error) {
-	return warehouse.DefaultWarehouseRoot()
+	return warehouse.EffectiveWarehouseRoot()
 }

@@ -16,9 +16,9 @@ The workflow solves two common needs:
 
 ## Warehouse layout
 
-The warehouse root stays at `~/.configfacilitator/`. After scaffolding and manual edits, the representative layout looks like this:
+This example uses the default warehouse root `~/.configfacilitator/`. If you previously ran `cfgfc root <path>`, substitute that effective root instead. After scaffolding and manual edits, the representative layout looks like this:
 
-Project directories are discovered directly under `~/.configfacilitator/`. A root-level directory named `SettingWarehouse` participates the same way as any other project directory.
+Project directories are discovered directly under the effective warehouse root. A root-level directory named `SettingWarehouse` participates the same way as any other project directory.
 
 ```text
 ~/.configfacilitator/

@@ -37,6 +37,15 @@ cfgfc switch OpenCode
 cfgfc switch global
 ```
 
+## `root`
+
+查看或修改持久化仓库根目录。`cfgfc root` 会输出当前生效根目录。`cfgfc root <path>` 会展开 `~` 和支持的环境变量，把结果规范化为绝对路径后写入用户作用域 bootstrap 文件，并让后续所有仓库作用域命令都改用这个根目录。切换根目录不会迁移、复制或初始化任何仓库内容。
+
+```bash
+cfgfc root
+cfgfc root ~/.configfacilitator-alt
+```
+
 ## `list`
 
 查看项目、栏目、模式和子配置。如果当前没有有效项目，`list` 会输出仓库中的项目列表，并在每个项目后面追加一个括号包裹的使用状态摘要：当已持久化的 mode 意图仍然能匹配当前 mode 时，显示该 mode 名；否则显示 `Unmatched` 或 `None`。当存在有效项目时，直接执行 `list` 会显示该项目的栏目和模式，并在每个栏目后面追加一个括号包裹的 `Full`、`Partial` 或 `None` 标签，表示基于已持久化受管映射计算出的当前覆盖状态。执行 `cfgfc switch <project>` 后，项目作用域的 `list` 形式可以省略 `-p`。项目、栏目和模式引用都支持仓库侧标识符和别名。`list` 一次只接受一个详细目标：`-c` 或 `-m`。
@@ -95,8 +104,10 @@ cfgfc revert -p OpenCode
 ## 说明
 
 - 执行 `cfgfc switch` 后，带项目作用域的 `new`、`sync`、`list`、`apply`、`update`、`reset` 与 `revert` 命令都可以省略 `-p`。
+- `cfgfc root` 会输出当前生效的仓库根目录，`cfgfc root <path>` 会为后续命令持久化切换根目录，但不会移动现有仓库内容。
 - 即使用户输入的是别名，`switch` 保存到会话里的也始终是规范化后的项目标识符。
 - 执行 `cfgfc switch global` 后，会清除当前 PPID 的活动项目上下文；之后 `list` 会回到全局项目列表，`sync` 会回到默认的全仓同步回退行为。
+- `.cfgfc-session/` 始终位于当前生效仓库根目录下，所以切换根目录也会切换会话级活动项目存储。
 - 使用 `sync` 同步索引，使用 `apply` 选择应当激活的配置，使用 `update` 在 source 元数据变化后重新规划已持久化的应用意图。如果当前状态没有记录应用意图，则按映射逐项刷新当前映射。
 - 模式策略共有 `cover`、`increment`、`none`、`full` 四种；在 `ModeIndex.jsonc` 中，只有 `none` 和 `full` 可以省略 `settings`。
 - 强制操作只保证恢复到“上一次确认的受管状态”，不会备份或重建被覆盖的外部文件或目录内容。

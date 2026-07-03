@@ -58,7 +58,7 @@ func TestRunShowsRootHelpWithoutArguments(t *testing.T) {
 	}
 
 	output := stdout.String()
-	for _, required := range []string{"cfgfc manages portable configuration warehouses.", "new", "sync", "switch", "list", "apply", "update", "reset", "revert", "Development:", "pixi run compile", "pixi run build", "dist/cfgfc"} {
+	for _, required := range []string{"cfgfc manages portable configuration warehouses.", "new", "sync", "switch", "list", "apply", "update", "reset", "revert", "root", "Warehouse root:", "cfgfc root <path>", "Development:", "pixi run compile", "pixi run build", "dist/cfgfc"} {
 		if !bytes.Contains(stdout.Bytes(), []byte(required)) {
 			t.Fatalf("expected help output to contain %q, got %q", required, output)
 		}
@@ -84,6 +84,7 @@ func TestRunShowsCommandHelpForRegisteredCommands(t *testing.T) {
 		{name: "update --help", args: []string{"update", "--help"}, want: []string{"Refresh the last applied intent from current warehouse metadata.", "cfgfc update --project <project>", "--column <column>", "--all", "-f, --force", "persisted mode or column apply intent", "no apply intent is recorded", "cfgfc update -c Skills"}},
 		{name: "reset --help", args: []string{"reset", "--help"}, want: []string{"Remove the current project's managed links.", "cfgfc reset -p <project>", "-f, --force", "recorded target path", "cfgfc reset -p OpenCode"}},
 		{name: "revert --help", args: []string{"revert", "--help"}, want: []string{"Restore the previous apply state for a project.", "cfgfc revert -p <project>", "-f, --force", "overwritten unmanaged contents", "cfgfc revert -p OpenCode"}},
+		{name: "root --help", args: []string{"root", "--help"}, want: []string{"Inspect or change the persistent warehouse root.", "cfgfc root", "cfgfc root <path>", "current effective warehouse root", "does not migrate, copy, or initialize warehouse contents", "cfgfc root ~/.configfacilitator-alt"}},
 	}
 
 	for _, tt := range tests {
@@ -106,6 +107,77 @@ func TestRunShowsCommandHelpForRegisteredCommands(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestRunRootPrintsEffectiveWarehouseRoot(t *testing.T) {
+	workspace := t.TempDir()
+	homeDir := setTempHome(t, workspace)
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	exitCode := Run([]string{"root"}, &stdout, &stderr)
+
+	if exitCode != 0 {
+		t.Fatalf("expected exit code 0, got %d stderr=%q", exitCode, stderr.String())
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("expected empty stderr, got %q", stderr.String())
+	}
+	want := filepath.Join(homeDir, ".configfacilitator") + "\n"
+	if stdout.String() != want {
+		t.Fatalf("expected root output %q, got %q", want, stdout.String())
+	}
+}
+
+func TestRunRootSetPersistsNormalizedRootAndRecoversFromBadBootstrap(t *testing.T) {
+	workspace := t.TempDir()
+	homeDir := setTempHome(t, workspace)
+	bootstrapPath := filepath.Join(homeDir, ".cfgfc-root")
+	if err := os.WriteFile(bootstrapPath, []byte("relative/bootstrap\n"), 0o644); err != nil {
+		t.Fatalf("write malformed bootstrap: %v", err)
+	}
+	requestedRoot := "~/warehouse/../alternate-root"
+	wantRoot := filepath.Join(homeDir, "alternate-root")
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	exitCode := Run([]string{"root", requestedRoot}, &stdout, &stderr)
+
+	if exitCode != 0 {
+		t.Fatalf("expected exit code 0, got %d stderr=%q", exitCode, stderr.String())
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("expected empty stderr, got %q", stderr.String())
+	}
+	if !bytes.Contains(stdout.Bytes(), []byte(wantRoot)) {
+		t.Fatalf("expected normalized root in stdout, got %q", stdout.String())
+	}
+	bootstrapData, err := os.ReadFile(bootstrapPath)
+	if err != nil {
+		t.Fatalf("read bootstrap: %v", err)
+	}
+	if string(bootstrapData) != wantRoot+"\n" {
+		t.Fatalf("expected bootstrap contents %q, got %q", wantRoot+"\n", string(bootstrapData))
+	}
+}
+
+func TestRunRootRejectsExtraPathArguments(t *testing.T) {
+	workspace := t.TempDir()
+	setTempHome(t, workspace)
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	exitCode := Run([]string{"root", "one", "two"}, &stdout, &stderr)
+
+	if exitCode != 1 {
+		t.Fatalf("expected exit code 1, got %d", exitCode)
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("expected empty stdout, got %q", stdout.String())
+	}
+	if !bytes.Contains(stderr.Bytes(), []byte("root accepts zero arguments")) {
+		t.Fatalf("expected extra-arg rejection, got %q", stderr.String())
 	}
 }
 
@@ -800,6 +872,69 @@ func TestRunWithExecutableSyncFallsBackToAllProjectsAfterSwitchGlobal(t *testing
 	}
 	if !bytes.Contains(openCodeIndex, []byte("Skill-A")) || !bytes.Contains(claudeCodeIndex, []byte("Agent-A")) {
 		t.Fatalf("expected fallback sync to update all projects, OpenCode=%q ClaudeCode=%q", string(openCodeIndex), string(claudeCodeIndex))
+	}
+}
+
+func TestRunWithExecutableRootSwitchesWarehouseAndSessionStores(t *testing.T) {
+	workspace := t.TempDir()
+	homeDir := setTempHome(t, workspace)
+	executablePath := filepath.Join(workspace, "cfgfc")
+	defaultRoot := filepath.Join(homeDir, ".configfacilitator")
+	alternateRoot := filepath.Join(workspace, "alternate-root")
+
+	mustRun(t, executablePath, []string{"new", "-p", "DefaultProject"})
+	mustRun(t, executablePath, []string{"switch", "DefaultProject"})
+	if _, err := os.Stat(filepath.Join(defaultRoot, ".cfgfc-session")); err != nil {
+		t.Fatalf("expected default-root session store: %v", err)
+	}
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	if exitCode := RunWithExecutable([]string{"root", alternateRoot}, &stdout, &stderr, executablePath); exitCode != 0 {
+		t.Fatalf("root set exit=%d stderr=%q", exitCode, stderr.String())
+	}
+	if _, err := os.Stat(filepath.Join(defaultRoot, "DefaultProject")); err != nil {
+		t.Fatalf("expected previous warehouse contents to remain in default root: %v", err)
+	}
+	if _, err := os.Stat(alternateRoot); !os.IsNotExist(err) {
+		t.Fatalf("expected root command not to create alternate root, err=%v", err)
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	if exitCode := RunWithExecutable([]string{"list"}, &stdout, &stderr, executablePath); exitCode != 0 {
+		t.Fatalf("list on empty alternate root exit=%d stderr=%q", exitCode, stderr.String())
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("expected empty global list on untouched alternate root, got %q", stdout.String())
+	}
+
+	mustRun(t, executablePath, []string{"new", "-p", "AlternateProject"})
+	mustRun(t, executablePath, []string{"switch", "AlternateProject"})
+	if _, err := os.Stat(filepath.Join(alternateRoot, ".cfgfc-session")); err != nil {
+		t.Fatalf("expected alternate-root session store: %v", err)
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	if exitCode := RunWithExecutable([]string{"list"}, &stdout, &stderr, executablePath); exitCode != 0 {
+		t.Fatalf("list on alternate root exit=%d stderr=%q", exitCode, stderr.String())
+	}
+	if !bytes.Contains(stdout.Bytes(), []byte("Project: AlternateProject")) {
+		t.Fatalf("expected alternate-root session context, got %q", stdout.String())
+	}
+
+	mustRun(t, executablePath, []string{"root", defaultRoot})
+	stdout.Reset()
+	stderr.Reset()
+	if exitCode := RunWithExecutable([]string{"list"}, &stdout, &stderr, executablePath); exitCode != 0 {
+		t.Fatalf("list after returning to default root exit=%d stderr=%q", exitCode, stderr.String())
+	}
+	if !bytes.Contains(stdout.Bytes(), []byte("Project: DefaultProject")) {
+		t.Fatalf("expected default-root session context after switching back, got %q", stdout.String())
+	}
+	if bytes.Contains(stdout.Bytes(), []byte("AlternateProject")) {
+		t.Fatalf("did not expect alternate-root session context to leak into default root, got %q", stdout.String())
 	}
 }
 
