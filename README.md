@@ -17,6 +17,12 @@ Project directories are discovered directly under the effective warehouse root, 
 - English docs: [docs/README.en.md](docs/README.en.md)
 - 中文文档: [docs/README.zh-CN.md](docs/README.zh-CN.md)
 
+## Agent Skill / Agent Skill
+
+Repo-local agent guidance lives in [.opencode/skills/configfacilitator-usage/SKILL.md](.opencode/skills/configfacilitator-usage/SKILL.md). When user-facing commands, workflows, examples, or safety rules change, review and update this Skill with the docs.
+
+仓库内的 Agent 使用指南位于 [.opencode/skills/configfacilitator-usage/SKILL.md](.opencode/skills/configfacilitator-usage/SKILL.md)。当面向用户的命令、工作流、示例或安全规则变化时，需要随文档一起检查并更新这个 Skill。
+
 ## Development build / 开发构建
 
 Use pixi to run the Go toolchain. Check compilation with:

@@ -6,5 +6,6 @@ npm/bin/cfgfc.exe
 .sisyphus/
 .opencode/
 .omo/
+.secrets/
 
 *.log

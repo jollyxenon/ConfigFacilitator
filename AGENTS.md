@@ -53,3 +53,9 @@
 ## OpenSpec Workflow Expectations
 
 - After every OpenSpec Archive operation, automatically create a git commit for the archive changes.
+
+## Local Secrets
+
+- Local npm publish token is stored outside git at `.secrets/npm-publish.env`.
+- The token expires around 2026-10-02; rotate it before publishing after that date.
+- Do not commit or print the token value; load it only for `npm publish` or GitHub `NPM_TOKEN` setup.
