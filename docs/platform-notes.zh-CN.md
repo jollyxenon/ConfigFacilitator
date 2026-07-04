@@ -1,14 +1,12 @@
 # 平台说明
 
-## 硬链接策略
+## 符号链接策略
 
-ConfigFacilitator 只使用真实的文件硬链接，不会退回到 symlink、目录 junction、文件复制、`mklink`、PowerShell 辅助命令或其他替代机制。
+ConfigFacilitator 只使用真实 symlink，不会退回到目录 junction、硬链接、文件复制、`mklink`、PowerShell 辅助命令或其他替代机制。
 
-硬链接只适用于常规文件。目录型映射不受支持，并且会直接报出清晰错误，不会转成目录 symlink、junction 或复制。
+在原生 Windows 下，`cfgfc.exe` 管理 Windows 用户目录中的配置，并使用真实的文件 symlink 和目录 symlink。Windows 可能要求开启 Developer Mode，或用 Administrator 权限运行，才允许创建 symlink。如果 Windows 拒绝创建 symlink，ConfigFacilitator 会报告错误并停止，不会改用 junction 或复制。
 
-激活时会先检查 source 路径是否存在且确实是常规文件。硬链接通常不能跨文件系统或跨 Windows 卷，因此当仓库 source 与 target 位于不同设备、文件系统不支持，或 source 不是常规文件时，激活会失败。
-
-无论编辑仓库里的 source 路径，还是编辑已激活的 target 路径，改动都会落到同一份文件内容上，因为这两个名字指向同一个底层数据。
+创建链接时会先检查 source 路径是否存在，并让平台根据该路径推断文件/目录类型。ConfigFacilitator 不会在状态文件中持久化 source 类型。
 
 ## 便携式目录布局
 
@@ -24,7 +22,7 @@ ConfigFacilitator 只使用真实的文件硬链接，不会退回到 symlink、
 
 ## 原生 Windows 与 WSL 边界
 
-原生 Windows `cfgfc.exe` 与 WSL 下运行的 Linux 构建是两个不同运行环境。原生 Windows 使用 `%USERPROFILE%` 路径和 Windows 硬链接限制；WSL 使用传入路径对应的 Linux 路径与硬链接语义。ConfigFacilitator 不会自动在 `%USERPROFILE%` 与 `/mnt/c/...` 之间转换。
+原生 Windows `cfgfc.exe` 与 WSL 下运行的 Linux 构建是两个不同运行环境。原生 Windows 使用 `%USERPROFILE%` 路径和 Windows symlink 权限规则；WSL 使用传入路径对应的 Linux 路径与 symlink 语义。ConfigFacilitator 不会自动在 `%USERPROFILE%` 与 `/mnt/c/...` 之间转换。
 
 ## 会话上下文
 
@@ -38,4 +36,4 @@ ConfigFacilitator 只使用真实的文件硬链接，不会退回到 symlink、
 
 ## 原生 Windows 冒烟测试
 
-如需手动验证原生 Windows 支持，请在普通 Windows shell 中运行 `cfgfc.exe`，应用一个 source 和 target 位于同一卷的文件型 setting。确认 target 变成普通文件硬链接，确认不需要 Developer Mode 或 Administrator 的 symlink 权限，并确认仓库根目录要么是默认的 `%USERPROFILE%/.configfacilitator`，要么是通过 `cfgfc root` 持久化后的新根目录。同时验证跨卷、source 缺失、source 不是常规文件等情况会给出清晰错误。
+如需手动验证原生 Windows 支持，请在已开启 Developer Mode 或具有 Administrator 权限的 Windows shell 中运行 `cfgfc.exe`，分别应用一个文件型 setting 和一个目录型 setting。确认两个 target 都是真实 symlink，并确认仓库根目录要么是默认的 `%USERPROFILE%/.configfacilitator`，要么是通过 `cfgfc root` 持久化后的新根目录。

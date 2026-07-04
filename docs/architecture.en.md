@@ -13,8 +13,8 @@
 - `internal/syncer`: reconciles index files with filesystem reality.
 - `internal/session`: stores PPID-scoped project context.
 - `internal/pathvars`: expands portable path variables.
-- `internal/planner`: turns CLI intent into managed path mappings.
-- `internal/linker`: applies, resets, and reverts hard-link-backed file state.
+- `internal/planner`: turns CLI intent into link mappings.
+- `internal/linker`: applies, resets, and reverts symlink state.
 
 ## Storage model
 
@@ -23,8 +23,6 @@ The warehouse lives under the effective warehouse root, not beside the shell wor
 ## Behavioral rules
 
 - Setting target paths are resolved from zipped directory/name arrays: `targetDir` / `targetName` override `defaultTargetDir` / `defaultTargetName` by index.
-- Activation creates hard-link-backed regular files only; directory-backed mappings are unsupported and fail instead of falling back to symlinks, junctions, copies, or other platform substitutes.
-- Hard links usually must stay on the same filesystem or Windows volume, and editing either path mutates the same underlying file content.
 - `Mode` can apply `cover`, `increment`, `none`, or `full` column strategies.
 - `switch` stores a convenience project context by PPID.
 - `revert` restores only the previous apply state.

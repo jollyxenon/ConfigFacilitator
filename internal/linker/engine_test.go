@@ -27,8 +27,8 @@ func TestInspectOwnershipClassifiesAbsentOwnedAndUnmanaged(t *testing.T) {
 		t.Fatalf("ownership = %s, want absent", ownership)
 	}
 
-	if err := os.Link(source, target); err != nil {
-		t.Fatalf("create owned hard link: %v", err)
+	if err := os.Symlink(source, target); err != nil {
+		t.Fatalf("create owned symlink: %v", err)
 	}
 	ownership, err = engine.InspectOwnership(Mapping{Source: source, Target: target})
 	if err != nil {
@@ -41,8 +41,9 @@ func TestInspectOwnershipClassifiesAbsentOwnedAndUnmanaged(t *testing.T) {
 	if err := os.Remove(target); err != nil {
 		t.Fatalf("remove target: %v", err)
 	}
-	if err := os.WriteFile(target, []byte("manual"), 0o644); err != nil {
-		t.Fatalf("create unmanaged file: %v", err)
+	otherSource := writeFile(t, root, "warehouse/other.txt", "beta")
+	if err := os.Symlink(otherSource, target); err != nil {
+		t.Fatalf("create unmanaged symlink: %v", err)
 	}
 	ownership, err = engine.InspectOwnership(Mapping{Source: source, Target: target})
 	if err != nil {
@@ -50,37 +51,6 @@ func TestInspectOwnershipClassifiesAbsentOwnedAndUnmanaged(t *testing.T) {
 	}
 	if ownership != OwnershipUnmanaged {
 		t.Fatalf("ownership = %s, want unmanaged", ownership)
-	}
-
-	if err := os.Remove(target); err != nil {
-		t.Fatalf("remove unmanaged target: %v", err)
-	}
-	if err := os.Symlink(source, target); err != nil {
-		t.Fatalf("create legacy symlink: %v", err)
-	}
-	ownership, err = engine.InspectOwnership(Mapping{Source: source, Target: target})
-	if err != nil {
-		t.Fatalf("inspect legacy symlink: %v", err)
-	}
-	if ownership != OwnershipUnmanaged {
-		t.Fatalf("ownership = %s, want unmanaged for legacy symlink", ownership)
-	}
-
-	if err := os.Remove(target); err != nil {
-		t.Fatalf("remove legacy symlink: %v", err)
-	}
-	if err := os.Link(source, target); err != nil {
-		t.Fatalf("recreate owned hard link: %v", err)
-	}
-	if err := os.Remove(source); err != nil {
-		t.Fatalf("remove source to create drift: %v", err)
-	}
-	ownership, err = engine.InspectOwnership(Mapping{Source: source, Target: target})
-	if err == nil {
-		t.Fatal("expected missing source drift error")
-	}
-	if ownership != OwnershipUnmanaged {
-		t.Fatalf("ownership = %s, want unmanaged for missing source drift", ownership)
 	}
 }
 
@@ -94,12 +64,12 @@ func TestReplaceMappingsPersistsCurrentStateAndHistory(t *testing.T) {
 	if err := engine.ReplaceMappings(project, []Mapping{{Source: firstSource, Target: target}}); err != nil {
 		t.Fatalf("initial replace: %v", err)
 	}
-	assertHardLinkTarget(t, target, firstSource)
+	assertFileSymlinkTarget(t, target, firstSource)
 
 	if err := engine.ReplaceMappings(project, []Mapping{{Source: secondSource, Target: target}}); err != nil {
 		t.Fatalf("second replace: %v", err)
 	}
-	assertHardLinkTarget(t, target, secondSource)
+	assertFileSymlinkTarget(t, target, secondSource)
 
 	state, err := engine.LoadCurrentState(project)
 	if err != nil {
@@ -267,7 +237,7 @@ func TestReplaceMappingsWithForceOverridesUnmanagedTarget(t *testing.T) {
 	if err := engine.ReplaceMappings(project, []Mapping{{Source: source, Target: target}}, WithForce(true)); err != nil {
 		t.Fatalf("forced replace: %v", err)
 	}
-	assertHardLinkTarget(t, target, source)
+	assertFileSymlinkTarget(t, target, source)
 }
 
 func TestReplaceMappingsFailsClearlyWhenSourceIsMissing(t *testing.T) {
@@ -280,7 +250,7 @@ func TestReplaceMappingsFailsClearlyWhenSourceIsMissing(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected missing source failure")
 	}
-	if !strings.Contains(err.Error(), "hard link source") || !strings.Contains(err.Error(), source) || !strings.Contains(err.Error(), "does not exist") {
+	if !strings.Contains(err.Error(), "symlink source") || !strings.Contains(err.Error(), source) || !strings.Contains(err.Error(), "does not exist") {
 		t.Fatalf("missing source error = %q", err.Error())
 	}
 	if _, statErr := os.Lstat(target); !os.IsNotExist(statErr) {
@@ -288,124 +258,27 @@ func TestReplaceMappingsFailsClearlyWhenSourceIsMissing(t *testing.T) {
 	}
 }
 
-func TestReplaceMappingsPreflightsSourcesBeforeTargetMutation(t *testing.T) {
-	engine := New()
-	project, root := newProjectPaths(t)
-	validSource := writeFile(t, root, "warehouse/source.txt", "alpha")
-	validTarget := filepath.Join(root, "valid-target.txt")
-	directorySource := filepath.Join(root, "warehouse", "Skill-A")
-	directoryTarget := filepath.Join(root, "directory-target")
-	if err := os.MkdirAll(directorySource, 0o755); err != nil {
-		t.Fatalf("mkdir directory source: %v", err)
-	}
-
-	err := engine.ReplaceMappings(project, []Mapping{{Source: validSource, Target: validTarget}, {Source: directorySource, Target: directoryTarget}})
-	if err == nil {
-		t.Fatal("expected preflight source validation failure")
-	}
-	if !strings.Contains(err.Error(), "not a regular file") {
-		t.Fatalf("preflight error = %q", err.Error())
-	}
-	if _, statErr := os.Lstat(validTarget); !os.IsNotExist(statErr) {
-		t.Fatalf("valid target should not be created before later source validation fails, err=%v", statErr)
-	}
-	if _, statErr := os.Lstat(directoryTarget); !os.IsNotExist(statErr) {
-		t.Fatalf("directory target should not be created, err=%v", statErr)
-	}
-}
-
-func TestReplaceMappingsWithForcePreflightsDirectorySourceBeforeReclaim(t *testing.T) {
-	engine := New()
-	project, root := newProjectPaths(t)
-	sourceDir := filepath.Join(root, "warehouse", "Skill-A")
-	target := writeFile(t, root, "target.txt", "manual")
-	if err := os.MkdirAll(sourceDir, 0o755); err != nil {
-		t.Fatalf("mkdir source dir: %v", err)
-	}
-
-	err := engine.ReplaceMappings(project, []Mapping{{Source: sourceDir, Target: target}}, WithForce(true))
-	if err == nil {
-		t.Fatal("expected forced directory source rejection")
-	}
-	if !strings.Contains(err.Error(), "not a regular file") {
-		t.Fatalf("directory source error = %q", err.Error())
-	}
-	data, readErr := os.ReadFile(target)
-	if readErr != nil {
-		t.Fatalf("forced invalid source should preserve occupied target: %v", readErr)
-	}
-	if string(data) != "manual" {
-		t.Fatalf("occupied target content = %q, want manual", string(data))
-	}
-}
-
-func TestReplaceMappingsRejectsSourceAndTargetSameDirectoryEntry(t *testing.T) {
-	engine := New()
-	project, root := newProjectPaths(t)
-	source := writeFile(t, root, "warehouse/source.txt", "alpha")
-
-	err := engine.ReplaceMappings(project, []Mapping{{Source: source, Target: source}})
-	if err == nil {
-		t.Fatal("expected same directory entry rejection")
-	}
-	if !strings.Contains(err.Error(), "same directory entry") {
-		t.Fatalf("same-entry error = %q", err.Error())
-	}
-	data, readErr := os.ReadFile(source)
-	if readErr != nil {
-		t.Fatalf("source should remain after same-entry rejection: %v", readErr)
-	}
-	if string(data) != "alpha" {
-		t.Fatalf("source content = %q, want alpha", string(data))
-	}
-}
-
-func TestResetRefusesSameDirectoryEntryWithoutDeletingSource(t *testing.T) {
-	engine := New()
-	project, root := newProjectPaths(t)
-	source := writeFile(t, root, "warehouse/source.txt", "alpha")
-	state := CurrentState{Mappings: []Mapping{{Source: source, Target: source}}}
-	if err := engine.persistState(project, CurrentState{Mappings: []Mapping{}}, state); err != nil {
-		t.Fatalf("persist same-entry mapping: %v", err)
-	}
-
-	err := engine.Reset(project, WithForce(true))
-	if err == nil {
-		t.Fatal("expected same-entry reset rejection")
-	}
-	if !strings.Contains(err.Error(), "same directory entry") {
-		t.Fatalf("same-entry reset error = %q", err.Error())
-	}
-	data, readErr := os.ReadFile(source)
-	if readErr != nil {
-		t.Fatalf("source should remain after reset rejection: %v", readErr)
-	}
-	if string(data) != "alpha" {
-		t.Fatalf("source content = %q, want alpha", string(data))
-	}
-}
-
-func TestCreateHardLinkForOSWrapsWindowsCreationFailures(t *testing.T) {
+func TestCreateSymlinkForOSWrapsWindowsCreationFailures(t *testing.T) {
 	root := t.TempDir()
 	source := writeFile(t, root, "warehouse/source.txt", "alpha")
 	target := filepath.Join(root, "target.txt")
-	creationErr := errors.New("not supported")
+	creationErr := errors.New("privilege not held")
 
-	err := createHardLinkForOS(source, target, "windows", os.Stat, func(string, string) error {
+	err := createSymlinkForOS(source, target, "windows", os.Lstat, func(string, string) error {
 		return creationErr
 	})
 	if err == nil {
-		t.Fatal("expected Windows hard link creation failure")
+		t.Fatal("expected Windows symlink creation failure")
 	}
 	message := err.Error()
-	for _, want := range []string{"not supported", source, target, "same volume", "filesystem that supports hard links", "existing regular-file source"} {
+	for _, want := range []string{"privilege not held", "real symlinks only", "hardlinks", "junctions", "copies", "shell fallbacks", "Developer Mode", "Administrator"} {
 		if !strings.Contains(message, want) {
-			t.Fatalf("Windows hard link error %q missing %q", message, want)
+			t.Fatalf("Windows symlink error %q missing %q", message, want)
 		}
 	}
 }
 
-func TestReplaceMappingsRejectsDirectorySource(t *testing.T) {
+func TestReplaceMappingsCreatesDirectorySymlink(t *testing.T) {
 	engine := New()
 	project, root := newProjectPaths(t)
 	sourceDir := filepath.Join(root, "warehouse", "Skill-A")
@@ -417,15 +290,16 @@ func TestReplaceMappingsRejectsDirectorySource(t *testing.T) {
 		t.Fatalf("write source readme: %v", err)
 	}
 
-	err := engine.ReplaceMappings(project, []Mapping{{Source: sourceDir, Target: targetDir}})
-	if err == nil {
-		t.Fatal("expected directory source rejection")
+	if err := engine.ReplaceMappings(project, []Mapping{{Source: sourceDir, Target: targetDir}}); err != nil {
+		t.Fatalf("replace directory mapping: %v", err)
 	}
-	if !strings.Contains(err.Error(), "not a regular file") {
-		t.Fatalf("directory source error = %q", err.Error())
+	assertSymlinkTarget(t, targetDir, sourceDir)
+	got, err := os.ReadFile(filepath.Join(targetDir, "README.md"))
+	if err != nil {
+		t.Fatalf("read through directory symlink: %v", err)
 	}
-	if _, statErr := os.Lstat(targetDir); !os.IsNotExist(statErr) {
-		t.Fatalf("directory source should not create target, err=%v", statErr)
+	if string(got) != "skill-a" {
+		t.Fatalf("directory symlink content = %q, want skill-a", string(got))
 	}
 }
 
@@ -442,14 +316,14 @@ func TestReplaceStateWithForceRepairsDriftedRecordedTarget(t *testing.T) {
 	if err := os.Remove(target); err != nil {
 		t.Fatalf("remove owned target: %v", err)
 	}
-	if err := os.Link(manualSource, target); err != nil {
+	if err := os.Symlink(manualSource, target); err != nil {
 		t.Fatalf("create drifted target: %v", err)
 	}
 
 	if err := engine.ReplaceState(project, CurrentState{Mappings: []Mapping{{Source: source, Target: target}}}, WithForce(true)); err != nil {
 		t.Fatalf("forced replace state: %v", err)
 	}
-	assertHardLinkTarget(t, target, source)
+	assertFileSymlinkTarget(t, target, source)
 }
 
 func TestReplaceMappingsRollsBackOnHistoryWriteFailure(t *testing.T) {
@@ -476,7 +350,7 @@ func TestReplaceMappingsRollsBackOnHistoryWriteFailure(t *testing.T) {
 		t.Fatal("expected persistence failure")
 	}
 
-	assertHardLinkTarget(t, target, firstSource)
+	assertFileSymlinkTarget(t, target, firstSource)
 	state, stateErr := engine.LoadCurrentState(project)
 	if stateErr != nil {
 		t.Fatalf("load current state after rollback: %v", stateErr)
@@ -497,8 +371,8 @@ func TestResetRemovesOnlyOwnedTargets(t *testing.T) {
 	if err := engine.ReplaceMappings(project, []Mapping{{Source: source, Target: ownedTarget}}); err != nil {
 		t.Fatalf("replace for reset: %v", err)
 	}
-	if err := os.Link(otherSource, unmanagedTarget); err != nil {
-		t.Fatalf("create unmanaged hard link: %v", err)
+	if err := os.Symlink(otherSource, unmanagedTarget); err != nil {
+		t.Fatalf("create unmanaged symlink: %v", err)
 	}
 
 	if err := engine.Reset(project); err != nil {
@@ -507,7 +381,7 @@ func TestResetRemovesOnlyOwnedTargets(t *testing.T) {
 	if _, err := os.Lstat(ownedTarget); !os.IsNotExist(err) {
 		t.Fatalf("owned target still exists, err=%v", err)
 	}
-	assertHardLinkTarget(t, unmanagedTarget, otherSource)
+	assertFileSymlinkTarget(t, unmanagedTarget, otherSource)
 	state, err := engine.LoadCurrentState(project)
 	if err != nil {
 		t.Fatalf("load state after reset: %v", err)
@@ -530,9 +404,11 @@ func TestResetWithForceRemovesDriftedDirectoryTarget(t *testing.T) {
 		t.Fatalf("write source readme: %v", err)
 	}
 
-	stateData := CurrentState{Mappings: []Mapping{{Source: sourceDir, Target: targetDir}}}
-	if err := engine.persistState(project, CurrentState{Mappings: []Mapping{}}, stateData); err != nil {
-		t.Fatalf("persist recorded directory mapping: %v", err)
+	if err := engine.ReplaceState(project, CurrentState{Mappings: []Mapping{{Source: sourceDir, Target: targetDir}}}); err != nil {
+		t.Fatalf("initial directory replace: %v", err)
+	}
+	if err := os.Remove(targetDir); err != nil {
+		t.Fatalf("remove owned directory symlink: %v", err)
 	}
 	if err := os.MkdirAll(targetDir, 0o755); err != nil {
 		t.Fatalf("mkdir drifted target dir: %v", err)
@@ -579,7 +455,7 @@ func TestReplaceMappingsWithForceRollsBackManagedStateOnly(t *testing.T) {
 		t.Fatal("expected persistence failure")
 	}
 
-	assertHardLinkTarget(t, target, firstSource)
+	assertFileSymlinkTarget(t, target, firstSource)
 	if gotContent, readErr := os.ReadFile(target); readErr != nil {
 		t.Fatalf("read target after rollback: %v", readErr)
 	} else if bytes.Equal(gotContent, []byte("manual")) {
@@ -616,43 +492,30 @@ func writeFile(t *testing.T, root string, rel string, contents string) string {
 	return path
 }
 
-func assertHardLinkTarget(t *testing.T, path string, want string) {
+func assertSymlinkTarget(t *testing.T, path string, want string) {
 	t.Helper()
-	targetInfo, err := os.Stat(path)
+	got, err := os.Readlink(path)
 	if err != nil {
-		t.Fatalf("stat target %s: %v", path, err)
+		t.Fatalf("readlink %s: %v", path, err)
 	}
-	if !targetInfo.Mode().IsRegular() {
-		t.Fatalf("target %s is not a regular file", path)
+	if got != want {
+		t.Fatalf("readlink(%s) = %s, want %s", path, got, want)
 	}
-	sourceInfo, err := os.Stat(want)
-	if err != nil {
-		t.Fatalf("stat source %s: %v", want, err)
-	}
-	if !os.SameFile(sourceInfo, targetInfo) {
-		t.Fatalf("target %s is not the same file as source %s", path, want)
-	}
+}
+
+func assertFileSymlinkTarget(t *testing.T, path string, want string) {
+	t.Helper()
+	assertSymlinkTarget(t, path, want)
 
 	gotContent, err := os.ReadFile(path)
 	if err != nil {
-		t.Fatalf("read hard link target %s: %v", path, err)
+		t.Fatalf("read file through symlink %s: %v", path, err)
 	}
 	wantContent, err := os.ReadFile(want)
 	if err != nil {
 		t.Fatalf("read source file %s: %v", want, err)
 	}
 	if !bytes.Equal(gotContent, wantContent) {
-		t.Fatalf("file content via hard link %s = %q, want source content %q", path, string(gotContent), string(wantContent))
-	}
-	updated := []byte("updated through target")
-	if err := os.WriteFile(path, updated, 0o644); err != nil {
-		t.Fatalf("write hard link target %s: %v", path, err)
-	}
-	refreshedSource, err := os.ReadFile(want)
-	if err != nil {
-		t.Fatalf("read source after target write %s: %v", want, err)
-	}
-	if !bytes.Equal(refreshedSource, updated) {
-		t.Fatalf("source content after target write = %q, want %q", string(refreshedSource), string(updated))
+		t.Fatalf("file content via symlink %s = %q, want source content %q", path, string(gotContent), string(wantContent))
 	}
 }

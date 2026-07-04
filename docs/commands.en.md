@@ -61,7 +61,7 @@ cfgfc list -p OpenCode -m Max
 
 ## `apply`
 
-Activate a mode or explicit settings selection. `apply` accepts either mode apply (`-m`) or single-column apply (`-c` with `-s`). After `cfgfc switch <project>`, project-scoped apply forms can omit `-p`. Project, column, mode, and setting references accept warehouse-side identifiers and aliases. `-s` accepts one or more comma-separated setting names. Activation creates hard-link-backed regular files only: directory-backed mappings are unsupported, there is no fallback to symlinks, junctions, copies, `mklink`, PowerShell, or other substitutes, and cross-filesystem or cross-volume targets fail clearly. `-f` / `--force` deletes occupied target files, symlinks, or directories recursively so the requested managed state can be re-applied even when targets are unmanaged or drifted.
+Activate a mode or explicit settings selection. `apply` accepts either mode apply (`-m`) or single-column apply (`-c` with `-s`). After `cfgfc switch <project>`, project-scoped apply forms can omit `-p`. Project, column, mode, and setting references accept warehouse-side identifiers and aliases. `-s` accepts one or more comma-separated setting names. `-f` / `--force` deletes occupied target files, symlinks, or directories recursively so the requested managed state can be re-applied even when targets are unmanaged or drifted.
 
 ```bash
 cfgfc apply -p OpenCode -m Max
@@ -87,7 +87,7 @@ cfgfc update -a
 
 ## `reset`
 
-Remove the current project's managed paths. After `cfgfc switch <project>`, `reset` can omit `-p` and use the active project context. `cfgfc reset -f` / `cfgfc reset --force` deletes every target path recorded in the current project state, even when the path has drifted away from the recorded source.
+Remove the current project's managed links. After `cfgfc switch <project>`, `reset` can omit `-p` and use the active project context. `cfgfc reset -f` / `cfgfc reset --force` deletes every target path recorded in the current project state, even when the path has drifted away from the recorded source.
 
 ```bash
 cfgfc reset -p OpenCode
@@ -109,6 +109,5 @@ cfgfc revert -p OpenCode
 - After `cfgfc switch global`, the current PPID-scoped project context is cleared; `list` returns to the global project list and `sync` returns to its default full-warehouse fallback.
 - `.cfgfc-session/` stays under the effective warehouse root, so switching roots also switches the session-local active project store.
 - Use `sync` to reconcile indexes, `apply` to choose what should be active, and `update` to replan the persisted apply intent after source metadata changes. When no apply intent is recorded, current mappings are refreshed mapping-by-mapping.
-- `apply` manages regular-file hard links only. Directory-backed mappings are unsupported, hard links usually cannot cross filesystems or Windows volumes, and editing the activated target also edits the warehouse source because both names share the same file content.
 - Mode strategies are `cover`, `increment`, `none`, and `full`; only `none` and `full` may omit `settings` in `ModeIndex.jsonc`.
 - Forced operations restore only the last confirmed managed state. They do not back up or reconstruct overwritten unmanaged file or directory contents.

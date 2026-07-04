@@ -241,7 +241,7 @@ Mode: Max
 cfgfc apply -c oh-my-openagent -s OMOLight.json
 ```
 
-这种形式适合把单个配置文件以普通文件硬链接的形式临时激活到 `~/.config/opencode/oh-my-openagent.jsonc`。
+这种形式适合把单个配置文件临时链接到 `~/.config/opencode/oh-my-openagent.jsonc`。
 
 当你想恢复完整工作环境时，再应用命名好的 Mode：
 
@@ -249,9 +249,7 @@ cfgfc apply -c oh-my-openagent -s OMOLight.json
 cfgfc apply -m Max
 ```
 
-在这个示例里，`apply -m Max` 会先把 `oh-my-openagent` 的目标替换成指向 `OMOMax.json` 的硬链接，因为这个 Column 使用了 `cover`。但像 `Skills` 这种目录型映射不支持硬链接激活，会直接清晰报错，不会退回到 symlink、junction 或复制。
-
-由于硬链接要求 source 和 target 都是同一文件系统或同一 Windows 卷上的常规文件，所以示例里的仓库 source 与目标路径也应放在同一设备上。同时要注意：编辑已激活的 target，本质上也会改动仓库中的 source 内容。
+在这个示例里，`apply -m Max` 会先把 `oh-my-openagent` 的目标链接替换成 `OMOMax.json`，因为这个 Column 使用了 `cover`；随后再把 `Skill-A` 和 `Skill-B` 的目录链接补上，因为 `Skills` 使用的是 `increment`。
 
 完成这次 mode apply 之后，`cfgfc list` 会把两个 Column 都显示成已完整覆盖，终端会高亮当前活动的 `Max` mode，而 `cfgfc list -c Skills` 会高亮当前启用的 settings。如果你清掉切换上下文再回到全局视图，那么项目后面的括号会显示匹配到的持久化 mode 名：
 
