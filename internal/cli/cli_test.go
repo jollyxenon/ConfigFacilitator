@@ -1157,17 +1157,11 @@ func TestRunWithExecutableApplyResetAndRevertEndToEnd(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(warehouseRoot, "Column", "opencode.json", "GPT.json"), []byte("gpt"), 0o644); err != nil {
 		t.Fatalf("write GPT.json: %v", err)
 	}
-	if err := os.MkdirAll(filepath.Join(warehouseRoot, "Column", "Skills", "Skill-A"), 0o755); err != nil {
-		t.Fatalf("mkdir Skill-A: %v", err)
+	if err := os.WriteFile(filepath.Join(warehouseRoot, "Column", "Skills", "Skill-A"), []byte("a"), 0o644); err != nil {
+		t.Fatalf("write Skill-A: %v", err)
 	}
-	if err := os.MkdirAll(filepath.Join(warehouseRoot, "Column", "Skills", "Skill-B"), 0o755); err != nil {
-		t.Fatalf("mkdir Skill-B: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(warehouseRoot, "Column", "Skills", "Skill-A", "README.md"), []byte("a"), 0o644); err != nil {
-		t.Fatalf("write Skill-A readme: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(warehouseRoot, "Column", "Skills", "Skill-B", "README.md"), []byte("b"), 0o644); err != nil {
-		t.Fatalf("write Skill-B readme: %v", err)
+	if err := os.WriteFile(filepath.Join(warehouseRoot, "Column", "Skills", "Skill-B"), []byte("b"), 0o644); err != nil {
+		t.Fatalf("write Skill-B: %v", err)
 	}
 	if err := os.WriteFile(filepath.Join(warehouseRoot, "Column", "opencode.json", "SettingIndex.jsonc"), []byte("{\n  \"description\": \"main config\",\n  \"defaultTargetDir\": [\"~/.config/opencode\"],\n  \"defaultTargetName\": [\"opencode.json\"],\n  \"settings\": {\n    \"CLAUDE.json\": {\"displayName\": \"CLAUDE.json\"},\n    \"GPT.json\": {\"displayName\": \"GPT.json\"}\n  }\n}\n"), 0o644); err != nil {
 		t.Fatalf("write opencode setting index: %v", err)
@@ -1186,19 +1180,19 @@ func TestRunWithExecutableApplyResetAndRevertEndToEnd(t *testing.T) {
 	if got := mustRun(t, executablePath, []string{"apply", "-c", "opencode.json", "-s", "GPT.json"}); !bytes.Contains([]byte(got), []byte("Applied column \"opencode.json\" for project \"OpenCode\"")) {
 		t.Fatalf("unexpected apply-column stdout %q", got)
 	}
-	assertFileSymlinkPointsTo(t, filepath.Join(configDir, "opencode.json"), filepath.Join(warehouseRoot, "Column", "opencode.json", "GPT.json"))
+	assertManagedFileMatchesSource(t, filepath.Join(configDir, "opencode.json"), filepath.Join(warehouseRoot, "Column", "opencode.json", "GPT.json"))
 
 	if got := mustRun(t, executablePath, []string{"apply", "-m", "Max"}); !bytes.Contains([]byte(got), []byte("Applied mode \"Max\" for project \"OpenCode\"")) {
 		t.Fatalf("unexpected apply-mode stdout %q", got)
 	}
-	assertFileSymlinkPointsTo(t, filepath.Join(configDir, "opencode.json"), filepath.Join(warehouseRoot, "Column", "opencode.json", "CLAUDE.json"))
-	assertSymlinkPointsTo(t, filepath.Join(configDir, "skills", "Skill-A"), filepath.Join(warehouseRoot, "Column", "Skills", "Skill-A"))
-	assertSymlinkPointsTo(t, filepath.Join(configDir, "skills", "Skill-B"), filepath.Join(warehouseRoot, "Column", "Skills", "Skill-B"))
+	assertManagedFileMatchesSource(t, filepath.Join(configDir, "opencode.json"), filepath.Join(warehouseRoot, "Column", "opencode.json", "CLAUDE.json"))
+	assertManagedFileMatchesSource(t, filepath.Join(configDir, "skills", "Skill-A"), filepath.Join(warehouseRoot, "Column", "Skills", "Skill-A"))
+	assertManagedFileMatchesSource(t, filepath.Join(configDir, "skills", "Skill-B"), filepath.Join(warehouseRoot, "Column", "Skills", "Skill-B"))
 
 	if got := mustRun(t, executablePath, []string{"revert"}); !bytes.Contains([]byte(got), []byte("Reverted project \"OpenCode\"")) {
 		t.Fatalf("unexpected revert stdout %q", got)
 	}
-	assertFileSymlinkPointsTo(t, filepath.Join(configDir, "opencode.json"), filepath.Join(warehouseRoot, "Column", "opencode.json", "GPT.json"))
+	assertManagedFileMatchesSource(t, filepath.Join(configDir, "opencode.json"), filepath.Join(warehouseRoot, "Column", "opencode.json", "GPT.json"))
 	if _, err := os.Lstat(filepath.Join(configDir, "skills", "Skill-A")); !os.IsNotExist(err) {
 		t.Fatalf("Skill-A should be removed after revert, err=%v", err)
 	}
@@ -1225,7 +1219,7 @@ func TestRunWithExecutableApplyForceOverridesUnmanagedTarget(t *testing.T) {
 	if !bytes.Contains([]byte(got), []byte("Applied column \"Config\" for project \"Open Code\"")) {
 		t.Fatalf("unexpected forced apply stdout %q", got)
 	}
-	assertFileSymlinkPointsTo(t, target, filepath.Join(fixture.projectRoot, "Column", "opencode.json", "GPT.json"))
+	assertManagedFileMatchesSource(t, target, filepath.Join(fixture.projectRoot, "Column", "opencode.json", "GPT.json"))
 }
 
 func TestRunWithExecutableUpdateForceRepairsDriftedTarget(t *testing.T) {
@@ -1243,7 +1237,7 @@ func TestRunWithExecutableUpdateForceRepairsDriftedTarget(t *testing.T) {
 	if !bytes.Contains([]byte(got), []byte("Updated project \"Open Code\"")) {
 		t.Fatalf("unexpected forced update stdout %q", got)
 	}
-	assertFileSymlinkPointsTo(t, target, filepath.Join(fixture.projectRoot, "Column", "opencode.json", "GPT.json"))
+	assertManagedFileMatchesSource(t, target, filepath.Join(fixture.projectRoot, "Column", "opencode.json", "GPT.json"))
 }
 
 func TestRunWithExecutableRevertForceReclaimsOccupiedTargets(t *testing.T) {
@@ -1273,7 +1267,7 @@ func TestRunWithExecutableRevertForceReclaimsOccupiedTargets(t *testing.T) {
 	if !bytes.Contains([]byte(got), []byte("Reverted project \"Open Code\"")) {
 		t.Fatalf("unexpected forced revert stdout %q", got)
 	}
-	assertFileSymlinkPointsTo(t, configTarget, filepath.Join(fixture.projectRoot, "Column", "opencode.json", "GPT.json"))
+	assertManagedFileMatchesSource(t, configTarget, filepath.Join(fixture.projectRoot, "Column", "opencode.json", "GPT.json"))
 	if _, err := os.Lstat(skillTarget); !os.IsNotExist(err) {
 		t.Fatalf("skill target should be removed after forced revert, err=%v", err)
 	}
@@ -1302,7 +1296,7 @@ func TestRunWithExecutableResetForceRemovesDriftedTarget(t *testing.T) {
 func TestRunWithExecutableUpdateRefreshesExplicitAndSwitchedProjects(t *testing.T) {
 	fixture := setupUpdateFixture(t)
 	mustRun(t, fixture.executablePath, []string{"apply", "-p", "OpenCode", "-c", "opencode.json", "-s", "GPT.json"})
-	assertFileSymlinkPointsTo(t, filepath.Join(fixture.configDir, "opencode.json"), filepath.Join(fixture.projectRoot, "Column", "opencode.json", "GPT.json"))
+	assertManagedFileMatchesSource(t, filepath.Join(fixture.configDir, "opencode.json"), filepath.Join(fixture.projectRoot, "Column", "opencode.json", "GPT.json"))
 	state := readCurrentState(t, fixture.projectRoot)
 	if state.Intent == nil || state.Intent.Kind != "column" || state.Intent.Column != "opencode.json" || len(state.Intent.Settings) != 1 || state.Intent.Settings[0] != "GPT.json" {
 		t.Fatalf("apply column did not persist canonical intent: %#v", state.Intent)
@@ -1315,14 +1309,14 @@ func TestRunWithExecutableUpdateRefreshesExplicitAndSwitchedProjects(t *testing.
 	if _, err := os.Lstat(filepath.Join(fixture.configDir, "opencode.json")); !os.IsNotExist(err) {
 		t.Fatalf("old target should be removed after update, err=%v", err)
 	}
-	assertFileSymlinkPointsTo(t, filepath.Join(fixture.configDir, "opencode.updated.json"), filepath.Join(fixture.projectRoot, "Column", "opencode.json", "GPT.json"))
+	assertManagedFileMatchesSource(t, filepath.Join(fixture.configDir, "opencode.updated.json"), filepath.Join(fixture.projectRoot, "Column", "opencode.json", "GPT.json"))
 
 	mustRun(t, fixture.executablePath, []string{"switch", "OpenCode"})
 	writeUpdateFixtureIndexes(t, fixture.projectRoot, "~/.config/opencode/opencode.switched.json")
 	if got := mustRun(t, fixture.executablePath, []string{"update"}); !bytes.Contains([]byte(got), []byte("Updated project \"Open Code\"")) {
 		t.Fatalf("unexpected switched update stdout %q", got)
 	}
-	assertFileSymlinkPointsTo(t, filepath.Join(fixture.configDir, "opencode.switched.json"), filepath.Join(fixture.projectRoot, "Column", "opencode.json", "GPT.json"))
+	assertManagedFileMatchesSource(t, filepath.Join(fixture.configDir, "opencode.switched.json"), filepath.Join(fixture.projectRoot, "Column", "opencode.json", "GPT.json"))
 }
 
 func TestRunWithExecutableUpdateColumnPreservesOtherColumnsAndAliases(t *testing.T) {
@@ -1332,15 +1326,15 @@ func TestRunWithExecutableUpdateColumnPreservesOtherColumnsAndAliases(t *testing
 	if state.Intent == nil || state.Intent.Kind != "mode" || state.Intent.Mode != "Max" {
 		t.Fatalf("apply mode did not persist canonical intent: %#v", state.Intent)
 	}
-	assertFileSymlinkPointsTo(t, filepath.Join(fixture.configDir, "opencode.json"), filepath.Join(fixture.projectRoot, "Column", "opencode.json", "GPT.json"))
-	assertSymlinkPointsTo(t, filepath.Join(fixture.configDir, "skills", "Skill-A"), filepath.Join(fixture.projectRoot, "Column", "Skills", "Skill-A"))
+	assertManagedFileMatchesSource(t, filepath.Join(fixture.configDir, "opencode.json"), filepath.Join(fixture.projectRoot, "Column", "opencode.json", "GPT.json"))
+	assertManagedFileMatchesSource(t, filepath.Join(fixture.configDir, "skills", "Skill-A"), filepath.Join(fixture.projectRoot, "Column", "Skills", "Skill-A"))
 
 	writeUpdateFixtureIndexes(t, fixture.projectRoot, "~/.config/opencode/opencode.column.json")
 	if got := mustRun(t, fixture.executablePath, []string{"update", "-p", "oc", "-c", "config"}); !bytes.Contains([]byte(got), []byte("Updated column \"Config\" for project \"Open Code\"")) {
 		t.Fatalf("unexpected column update stdout %q", got)
 	}
-	assertFileSymlinkPointsTo(t, filepath.Join(fixture.configDir, "opencode.column.json"), filepath.Join(fixture.projectRoot, "Column", "opencode.json", "GPT.json"))
-	assertSymlinkPointsTo(t, filepath.Join(fixture.configDir, "skills", "Skill-A"), filepath.Join(fixture.projectRoot, "Column", "Skills", "Skill-A"))
+	assertManagedFileMatchesSource(t, filepath.Join(fixture.configDir, "opencode.column.json"), filepath.Join(fixture.projectRoot, "Column", "opencode.json", "GPT.json"))
+	assertManagedFileMatchesSource(t, filepath.Join(fixture.configDir, "skills", "Skill-A"), filepath.Join(fixture.projectRoot, "Column", "Skills", "Skill-A"))
 }
 
 func TestRunWithExecutableUpdateFullModeIncludesNewSyncedSkill(t *testing.T) {
@@ -1348,14 +1342,11 @@ func TestRunWithExecutableUpdateFullModeIncludesNewSyncedSkill(t *testing.T) {
 	writeUpdateFixtureFullSkillsIndexes(t, fixture.projectRoot, "~/.config/opencode/opencode.json", false)
 	mustRun(t, fixture.executablePath, []string{"sync", "-p", "OpenCode"})
 	mustRun(t, fixture.executablePath, []string{"apply", "-p", "OpenCode", "-m", "Max"})
-	assertSymlinkPointsTo(t, filepath.Join(fixture.configDir, "skills", "Skill-A"), filepath.Join(fixture.projectRoot, "Column", "Skills", "Skill-A"))
+	assertManagedFileMatchesSource(t, filepath.Join(fixture.configDir, "skills", "Skill-A"), filepath.Join(fixture.projectRoot, "Column", "Skills", "Skill-A"))
 
 	newSkillPath := filepath.Join(fixture.projectRoot, "Column", "Skills", "Skill-New")
-	if err := os.MkdirAll(newSkillPath, 0o755); err != nil {
-		t.Fatalf("mkdir Skill-New: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(newSkillPath, "README.md"), []byte("skill-new"), 0o644); err != nil {
-		t.Fatalf("write Skill-New readme: %v", err)
+	if err := os.WriteFile(newSkillPath, []byte("skill-new"), 0o644); err != nil {
+		t.Fatalf("write Skill-New: %v", err)
 	}
 	writeUpdateFixtureFullSkillsIndexes(t, fixture.projectRoot, "~/.config/opencode/opencode.json", true)
 	mustRun(t, fixture.executablePath, []string{"sync", "-p", "OpenCode"})
@@ -1363,8 +1354,8 @@ func TestRunWithExecutableUpdateFullModeIncludesNewSyncedSkill(t *testing.T) {
 	if got := mustRun(t, fixture.executablePath, []string{"update", "-p", "OpenCode"}); !bytes.Contains([]byte(got), []byte("Updated project \"Open Code\"")) {
 		t.Fatalf("unexpected update stdout %q", got)
 	}
-	assertSymlinkPointsTo(t, filepath.Join(fixture.configDir, "skills", "Skill-A"), filepath.Join(fixture.projectRoot, "Column", "Skills", "Skill-A"))
-	assertSymlinkPointsTo(t, filepath.Join(fixture.configDir, "skills", "Skill-New"), filepath.Join(fixture.projectRoot, "Column", "Skills", "Skill-New"))
+	assertManagedFileMatchesSource(t, filepath.Join(fixture.configDir, "skills", "Skill-A"), filepath.Join(fixture.projectRoot, "Column", "Skills", "Skill-A"))
+	assertManagedFileMatchesSource(t, filepath.Join(fixture.configDir, "skills", "Skill-New"), filepath.Join(fixture.projectRoot, "Column", "Skills", "Skill-New"))
 	state := readCurrentState(t, fixture.projectRoot)
 	if state.Intent == nil || state.Intent.Kind != "mode" || state.Intent.Mode != "Max" {
 		t.Fatalf("update did not preserve mode intent: %#v", state.Intent)
@@ -1378,11 +1369,8 @@ func TestRunWithExecutableUpdateFullModeColumnIncludesNewSyncedSkill(t *testing.
 	mustRun(t, fixture.executablePath, []string{"apply", "-p", "OpenCode", "-m", "Max"})
 
 	newSkillPath := filepath.Join(fixture.projectRoot, "Column", "Skills", "Skill-New")
-	if err := os.MkdirAll(newSkillPath, 0o755); err != nil {
-		t.Fatalf("mkdir Skill-New: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(newSkillPath, "README.md"), []byte("skill-new"), 0o644); err != nil {
-		t.Fatalf("write Skill-New readme: %v", err)
+	if err := os.WriteFile(newSkillPath, []byte("skill-new"), 0o644); err != nil {
+		t.Fatalf("write Skill-New: %v", err)
 	}
 	writeUpdateFixtureFullSkillsIndexes(t, fixture.projectRoot, "~/.config/opencode/opencode.json", true)
 	mustRun(t, fixture.executablePath, []string{"sync", "-p", "OpenCode"})
@@ -1390,8 +1378,8 @@ func TestRunWithExecutableUpdateFullModeColumnIncludesNewSyncedSkill(t *testing.
 	if got := mustRun(t, fixture.executablePath, []string{"update", "-p", "OpenCode", "-c", "skills"}); !bytes.Contains([]byte(got), []byte("Updated column \"Skills\" for project \"Open Code\"")) {
 		t.Fatalf("unexpected column update stdout %q", got)
 	}
-	assertFileSymlinkPointsTo(t, filepath.Join(fixture.configDir, "opencode.json"), filepath.Join(fixture.projectRoot, "Column", "opencode.json", "GPT.json"))
-	assertSymlinkPointsTo(t, filepath.Join(fixture.configDir, "skills", "Skill-New"), filepath.Join(fixture.projectRoot, "Column", "Skills", "Skill-New"))
+	assertManagedFileMatchesSource(t, filepath.Join(fixture.configDir, "opencode.json"), filepath.Join(fixture.projectRoot, "Column", "opencode.json", "GPT.json"))
+	assertManagedFileMatchesSource(t, filepath.Join(fixture.configDir, "skills", "Skill-New"), filepath.Join(fixture.projectRoot, "Column", "Skills", "Skill-New"))
 }
 
 func TestRunWithExecutableUpdateAllSkipsEmptyProjectsAndIgnoresContext(t *testing.T) {
@@ -1406,14 +1394,14 @@ func TestRunWithExecutableUpdateAllSkipsEmptyProjectsAndIgnoresContext(t *testin
 	if !bytes.Contains([]byte(got), []byte("Updated project \"Open Code\"")) || !bytes.Contains([]byte(got), []byte("Updated 1 project(s)")) {
 		t.Fatalf("unexpected update --all stdout %q", got)
 	}
-	assertFileSymlinkPointsTo(t, filepath.Join(fixture.configDir, "opencode.all.json"), filepath.Join(fixture.projectRoot, "Column", "opencode.json", "GPT.json"))
+	assertManagedFileMatchesSource(t, filepath.Join(fixture.configDir, "opencode.all.json"), filepath.Join(fixture.projectRoot, "Column", "opencode.json", "GPT.json"))
 
 	writeUpdateFixtureIndexes(t, fixture.projectRoot, "~/.config/opencode/opencode.a.json")
 	got = mustRun(t, fixture.executablePath, []string{"update", "-a"})
 	if !bytes.Contains([]byte(got), []byte("Updated 1 project(s)")) {
 		t.Fatalf("unexpected update -a stdout %q", got)
 	}
-	assertFileSymlinkPointsTo(t, filepath.Join(fixture.configDir, "opencode.a.json"), filepath.Join(fixture.projectRoot, "Column", "opencode.json", "GPT.json"))
+	assertManagedFileMatchesSource(t, filepath.Join(fixture.configDir, "opencode.a.json"), filepath.Join(fixture.projectRoot, "Column", "opencode.json", "GPT.json"))
 }
 
 func TestRunWithExecutableUpdateColumnReportsNoActiveMappings(t *testing.T) {
@@ -1440,7 +1428,7 @@ func TestRunWithExecutableUpdateRejectsMalformedIntentBeforeMutation(t *testing.
 	mustRun(t, fixture.executablePath, []string{"apply", "-p", "OpenCode", "-c", "opencode.json", "-s", "GPT.json"})
 	originalTarget := filepath.Join(fixture.configDir, "opencode.json")
 	originalSource := filepath.Join(fixture.projectRoot, "Column", "opencode.json", "GPT.json")
-	assertFileSymlinkPointsTo(t, originalTarget, originalSource)
+	assertManagedFileMatchesSource(t, originalTarget, originalSource)
 
 	state := readCurrentState(t, fixture.projectRoot)
 	state.Intent = &linker.ApplyIntent{Kind: "unknown"}
@@ -1465,7 +1453,7 @@ func TestRunWithExecutableUpdateRejectsMalformedIntentBeforeMutation(t *testing.
 	if !bytes.Contains(stderr.Bytes(), []byte("unsupported update intent kind")) {
 		t.Fatalf("expected malformed intent error, got %q", stderr.String())
 	}
-	assertFileSymlinkPointsTo(t, originalTarget, originalSource)
+	assertManagedFileMatchesSource(t, originalTarget, originalSource)
 }
 
 type updateFixture struct {
@@ -1506,11 +1494,8 @@ func setupUpdateFixture(t *testing.T) updateFixture {
 	if err := os.WriteFile(filepath.Join(projectRoot, "Column", "opencode.json", "GPT.json"), []byte("gpt"), 0o644); err != nil {
 		t.Fatalf("write GPT.json: %v", err)
 	}
-	if err := os.MkdirAll(filepath.Join(projectRoot, "Column", "Skills", "Skill-A"), 0o755); err != nil {
-		t.Fatalf("mkdir Skill-A: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(projectRoot, "Column", "Skills", "Skill-A", "README.md"), []byte("skill-a"), 0o644); err != nil {
-		t.Fatalf("write Skill-A readme: %v", err)
+	if err := os.WriteFile(filepath.Join(projectRoot, "Column", "Skills", "Skill-A"), []byte("skill-a"), 0o644); err != nil {
+		t.Fatalf("write Skill-A: %v", err)
 	}
 	writeUpdateFixtureIndexes(t, projectRoot, "~/.config/opencode/opencode.json")
 	mustRun(t, executablePath, []string{"sync", "-p", "OpenCode"})
@@ -1628,11 +1613,8 @@ func writeListStatusFixtureIndexes(t *testing.T, projectRoot string) {
 	if err := os.MkdirAll(filepath.Join(projectRoot, "Column", "Extras"), 0o755); err != nil {
 		t.Fatalf("mkdir Extras column: %v", err)
 	}
-	if err := os.MkdirAll(filepath.Join(projectRoot, "Column", "Skills", "Skill-B"), 0o755); err != nil {
-		t.Fatalf("mkdir Skill-B: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(projectRoot, "Column", "Skills", "Skill-B", "README.md"), []byte("skill-b"), 0o644); err != nil {
-		t.Fatalf("write Skill-B readme: %v", err)
+	if err := os.WriteFile(filepath.Join(projectRoot, "Column", "Skills", "Skill-B"), []byte("skill-b"), 0o644); err != nil {
+		t.Fatalf("write Skill-B: %v", err)
 	}
 	if err := os.WriteFile(filepath.Join(projectRoot, "Column", "Extras", "Extra-A"), []byte("extra-a"), 0o644); err != nil {
 		t.Fatalf("write Extra-A: %v", err)
@@ -1926,31 +1908,30 @@ func mustRun(t *testing.T, executablePath string, args []string) string {
 	return stdout.String()
 }
 
-func assertSymlinkPointsTo(t *testing.T, path string, want string) {
+func assertManagedFileMatchesSource(t *testing.T, path string, want string) {
 	t.Helper()
-	got, err := os.Readlink(path)
+	gotInfo, err := os.Stat(path)
 	if err != nil {
-		t.Fatalf("readlink %s: %v", path, err)
+		t.Fatalf("stat target %s: %v", path, err)
 	}
-	if got != want {
-		t.Fatalf("readlink(%s) = %q, want %q", path, got, want)
+	wantInfo, err := os.Stat(want)
+	if err != nil {
+		t.Fatalf("stat source %s: %v", want, err)
 	}
-}
-
-func assertFileSymlinkPointsTo(t *testing.T, path string, want string) {
-	t.Helper()
-	assertSymlinkPointsTo(t, path, want)
+	if !os.SameFile(gotInfo, wantInfo) {
+		t.Fatalf("expected %s and %s to reference the same file", path, want)
+	}
 
 	gotContent, err := os.ReadFile(path)
 	if err != nil {
-		t.Fatalf("read file through symlink %s: %v", path, err)
+		t.Fatalf("read managed file %s: %v", path, err)
 	}
 	wantContent, err := os.ReadFile(want)
 	if err != nil {
 		t.Fatalf("read source file %s: %v", want, err)
 	}
 	if !bytes.Equal(gotContent, wantContent) {
-		t.Fatalf("file content via symlink %s = %q, want source content %q", path, string(gotContent), string(wantContent))
+		t.Fatalf("managed file content %s = %q, want source content %q", path, string(gotContent), string(wantContent))
 	}
 }
 

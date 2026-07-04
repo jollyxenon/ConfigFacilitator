@@ -241,7 +241,7 @@ For quick testing, apply a single Setting from one Column:
 cfgfc apply -c oh-my-openagent -s OMOLight.json
 ```
 
-That form is useful when you only want one config file linked to `~/.config/opencode/oh-my-openagent.jsonc`.
+That form is useful when you only want one config file activated at `~/.config/opencode/oh-my-openagent.jsonc` as a regular file hard link.
 
 When you want the full workspace again, apply the named Mode:
 
@@ -249,7 +249,9 @@ When you want the full workspace again, apply the named Mode:
 cfgfc apply -m Max
 ```
 
-In this example, `apply -m Max` replaces the `oh-my-openagent` link with `OMOMax.json` because that Column uses `cover`, then adds the `Skill-A` and `Skill-B` directory links because `Skills` uses `increment`.
+In this example, `apply -m Max` replaces the `oh-my-openagent` target with a hard link to `OMOMax.json` because that Column uses `cover`. A directory-backed `Skills` mapping is not supported by hard-link activation and fails clearly instead of falling back to symlinks, junctions, or copies.
+
+Because hard links require regular files on the same filesystem or Windows volume, keep the warehouse source and target on the same device. Also remember that editing the activated target mutates the warehouse source content too.
 
 After that mode apply, `cfgfc list` shows both Columns as fully covered, the terminal highlights the active `Max` mode, and `cfgfc list -c Skills` highlights the enabled settings. If you clear the switched context, the global view shows the matched persisted mode name in parentheses:
 

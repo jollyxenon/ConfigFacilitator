@@ -40,8 +40,8 @@
 - Use `pixi run help` to verify the root command surface.
 - Use a subcommand help sweep to verify every registered command returns structured help through the pixi-managed Go toolchain.
 - For npm packaging changes, use `npm pack --dry-run`, a local install with `CFGFC_BINARY_PATH=../dist/cfgfc`, and an unsupported-platform installer smoke test.
-- For command changes, also run a real CLI smoke test against a temp home/profile plus an alternate warehouse root persisted with `cfgfc root <path>`; for `update`, cover mode apply with a `full` column, sync a newly added source, then update to verify the new source is linked.
-- For destructive command changes, include a smoke path that verifies `-f` / `--force` can reclaim both file-backed and directory-backed targets.
+- For command changes, also run a real CLI smoke test against a temp home/profile plus an alternate warehouse root persisted with `cfgfc root <path>`; for `update`, cover mode apply with a `full` column, sync a newly added source, then update to verify the new source is hard-linked into place when source and target stay on the same filesystem.
+- For hard-link activation changes, include smoke paths for regular-file success, cross-filesystem or cross-volume failure, missing or non-regular source failure, and clear rejection of directory-backed mappings.
 
 ## Documentation Expectations
 

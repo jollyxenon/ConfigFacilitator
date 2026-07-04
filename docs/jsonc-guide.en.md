@@ -34,6 +34,7 @@ Indexes are stored as JSONC so generated templates can end with one disposable e
 - In setting entries, `""` means inherit the matching default. In `defaultTargetName`, `""` falls back to the setting warehouse name. In `defaultTargetDir`, `""` means unconfigured and cannot be applied.
 - Target directories can use `~`, `${VAR}`, and Windows `%VAR%` forms. Target names must resolve to one normal file name or single-level directory name.
 - Expanded target paths must be non-empty and unique in the planned state.
+- Activation uses hard links for regular files only. Directory-backed mappings are unsupported, there is no fallback to symlinks or copies, and the source and target usually must stay on the same filesystem or Windows volume.
 
 ## Mode semantics
 

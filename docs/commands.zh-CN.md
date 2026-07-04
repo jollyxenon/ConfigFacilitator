@@ -61,7 +61,7 @@ cfgfc list -p OpenCode -m Max
 
 ## `apply`
 
-应用模式，或显式应用一组栏目设置。`apply` 只接受两种形式：模式应用（`-m`）或单栏目应用（`-c` 配合 `-s`）。执行 `cfgfc switch <project>` 后，项目作用域的 `apply` 形式可以省略 `-p`。项目、栏目、模式和设置引用都支持仓库侧标识符和别名。`-s` 支持一个或多个以逗号分隔的设置名。`-f` / `--force` 会递归删除已占用的目标文件、符号链接或目录，让请求的受管状态即使在目标已失管或状态漂移时也能重新生效。
+应用模式，或显式应用一组栏目设置。`apply` 只接受两种形式：模式应用（`-m`）或单栏目应用（`-c` 配合 `-s`）。执行 `cfgfc switch <project>` 后，项目作用域的 `apply` 形式可以省略 `-p`。项目、栏目、模式和设置引用都支持仓库侧标识符和别名。`-s` 支持一个或多个以逗号分隔的设置名。激活时只会创建基于硬链接的常规文件：目录型映射不受支持，不会退回到 symlink、junction、复制、`mklink`、PowerShell 或其他替代方案；跨文件系统或跨卷目标会直接给出清晰错误。`-f` / `--force` 会递归删除已占用的目标文件、符号链接或目录，让请求的受管状态即使在目标已失管或状态漂移时也能重新生效。
 
 ```bash
 cfgfc apply -p OpenCode -m Max
@@ -87,7 +87,7 @@ cfgfc update -a
 
 ## `reset`
 
-移除当前项目的受管链接。执行 `cfgfc switch <project>` 后，`reset` 可以省略 `-p` 并使用活动项目上下文。`cfgfc reset -f` / `cfgfc reset --force` 会删除当前项目状态里记录的每一个目标路径，即使该路径已经偏离了记录 source 的所有权。
+移除当前项目的受管路径。执行 `cfgfc switch <project>` 后，`reset` 可以省略 `-p` 并使用活动项目上下文。`cfgfc reset -f` / `cfgfc reset --force` 会删除当前项目状态里记录的每一个目标路径，即使该路径已经偏离了记录 source 的所有权。
 
 ```bash
 cfgfc reset -p OpenCode
@@ -109,5 +109,6 @@ cfgfc revert -p OpenCode
 - 执行 `cfgfc switch global` 后，会清除当前 PPID 的活动项目上下文；之后 `list` 会回到全局项目列表，`sync` 会回到默认的全仓同步回退行为。
 - `.cfgfc-session/` 始终位于当前生效仓库根目录下，所以切换根目录也会切换会话级活动项目存储。
 - 使用 `sync` 同步索引，使用 `apply` 选择应当激活的配置，使用 `update` 在 source 元数据变化后重新规划已持久化的应用意图。如果当前状态没有记录应用意图，则按映射逐项刷新当前映射。
+- `apply` 只管理常规文件硬链接。目录型映射不受支持，硬链接通常不能跨文件系统或跨 Windows 卷，而且编辑已激活 target 时也会同时改动仓库里的 source，因为两者共享同一份文件内容。
 - 模式策略共有 `cover`、`increment`、`none`、`full` 四种；在 `ModeIndex.jsonc` 中，只有 `none` 和 `full` 可以省略 `settings`。
 - 强制操作只保证恢复到“上一次确认的受管状态”，不会备份或重建被覆盖的外部文件或目录内容。

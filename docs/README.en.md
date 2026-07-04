@@ -26,7 +26,7 @@ ConfigFacilitator is a portable Go CLI that manages configuration warehouses who
 
 ## What it does
 
-It scaffolds warehouses, reconciles indexes with filesystem reality, stores PPID-scoped convenience context, applies symlink-backed configurations, supports persistent warehouse-root switching with `cfgfc root`, and supports `reset` and single-step `revert`.
+It scaffolds warehouses, reconciles indexes with filesystem reality, stores PPID-scoped convenience context, applies hard-link-backed regular-file configurations, supports persistent warehouse-root switching with `cfgfc root`, and supports `reset` and single-step `revert`.
 
 ## Installation
 

@@ -145,21 +145,35 @@ func (engine Engine) LoadPreviousState(project warehouse.Project) (CurrentState,
 
 // InspectOwnership reports whether the target is absent, owned by the exact mapping, or unmanaged.
 func (engine Engine) InspectOwnership(mapping Mapping) (Ownership, error) {
-	info, err := os.Lstat(mapping.Target)
+	targetEntryInfo, err := os.Lstat(mapping.Target)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return OwnershipAbsent, nil
 		}
 		return OwnershipUnmanaged, err
 	}
-	if info.Mode()&os.ModeSymlink == 0 {
+	if !targetEntryInfo.Mode().IsRegular() {
 		return OwnershipUnmanaged, nil
 	}
-	resolved, err := os.Readlink(mapping.Target)
+	targetInfo, err := os.Stat(mapping.Target)
 	if err != nil {
 		return OwnershipUnmanaged, err
 	}
-	if resolved == mapping.Source {
+	sourceEntryInfo, err := os.Lstat(mapping.Source)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return OwnershipUnmanaged, fmt.Errorf("recorded source %s is missing for target %s", mapping.Source, mapping.Target)
+		}
+		return OwnershipUnmanaged, err
+	}
+	if !sourceEntryInfo.Mode().IsRegular() {
+		return OwnershipUnmanaged, fmt.Errorf("recorded source %s is not a regular file for target %s", mapping.Source, mapping.Target)
+	}
+	sourceInfo, err := os.Stat(mapping.Source)
+	if err != nil {
+		return OwnershipUnmanaged, err
+	}
+	if os.SameFile(sourceInfo, targetInfo) {
 		return OwnershipOwned, nil
 	}
 	return OwnershipUnmanaged, nil
@@ -183,6 +197,9 @@ func (engine Engine) ReplaceState(project warehouse.Project, nextState CurrentSt
 		nextState.Mappings = []Mapping{}
 	}
 	if err := engine.validateMappings(nextState.Mappings); err != nil {
+		return err
+	}
+	if err := validateMappingSources(nextState.Mappings); err != nil {
 		return err
 	}
 	if err := engine.ensureReplacementAllowed(previousState.Mappings, nextState.Mappings, options); err != nil {
@@ -216,6 +233,38 @@ func (engine Engine) validateMappings(mappings []Mapping) error {
 			return fmt.Errorf("duplicate target %s", mapping.Target)
 		}
 		seenTargets[mapping.Target] = struct{}{}
+	}
+	return nil
+}
+
+// validateMappingSources verifies every next mapping before any target mutation starts.
+func validateMappingSources(mappings []Mapping) error {
+	for _, mapping := range mappings {
+		if err := validateHardLinkSource(mapping); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// validateHardLinkSource rejects mappings that cannot safely become hard links.
+func validateHardLinkSource(mapping Mapping) error {
+	sameEntry, err := sourceTargetSameDirectoryEntry(mapping)
+	if err != nil {
+		return err
+	}
+	if sameEntry {
+		return fmt.Errorf("hard link source %s and target %s refer to the same directory entry", mapping.Source, mapping.Target)
+	}
+	info, err := os.Lstat(mapping.Source)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return fmt.Errorf("hard link source %s does not exist for target %s: %w", mapping.Source, mapping.Target, err)
+		}
+		return fmt.Errorf("inspect hard link source %s for target %s: %w", mapping.Source, mapping.Target, err)
+	}
+	if !info.Mode().IsRegular() {
+		return fmt.Errorf("hard link source %s for target %s is not a regular file", mapping.Source, mapping.Target)
 	}
 	return nil
 }
@@ -262,6 +311,9 @@ func (engine Engine) ensureReplacementAllowed(previous []Mapping, next []Mapping
 
 // applyMappingSet removes stale targets and creates the next managed mappings.
 func (engine Engine) applyMappingSet(previous []Mapping, next []Mapping, options replaceOptions) error {
+	if err := validateMappingSources(next); err != nil {
+		return err
+	}
 	previousByTarget := mappingIndex(previous)
 	nextByTarget := mappingIndex(next)
 	for _, mapping := range previous {
@@ -288,7 +340,7 @@ func (engine Engine) applyMappingSet(previous []Mapping, next []Mapping, options
 				if err := removeTargetPath(mapping.Target); err != nil {
 					return err
 				}
-				if err := createOwnedSymlink(mapping); err != nil {
+				if err := createOwnedHardLink(mapping); err != nil {
 					return err
 				}
 				continue
@@ -302,7 +354,7 @@ func (engine Engine) applyMappingSet(previous []Mapping, next []Mapping, options
 				return err
 			}
 		}
-		if err := createOwnedSymlink(mapping); err != nil {
+		if err := createOwnedHardLink(mapping); err != nil {
 			return err
 		}
 	}
@@ -364,33 +416,61 @@ func (engine Engine) persistState(project warehouse.Project, previous CurrentSta
 	return nil
 }
 
-func removeOwnedSymlink(mapping Mapping) error {
-	info, err := os.Lstat(mapping.Target)
+func removeOwnedTarget(mapping Mapping) error {
+	sameEntry, err := sourceTargetSameDirectoryEntry(mapping)
+	if err != nil {
+		return err
+	}
+	if sameEntry {
+		return fmt.Errorf("refusing to remove target %s because it is the same directory entry as source %s", mapping.Target, mapping.Source)
+	}
+	targetEntryInfo, err := os.Lstat(mapping.Target)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil
 		}
 		return err
 	}
-	if info.Mode()&os.ModeSymlink == 0 {
-		return fmt.Errorf("target %s is not a symlink", mapping.Target)
+	if !targetEntryInfo.Mode().IsRegular() {
+		return fmt.Errorf("target %s is not a regular file", mapping.Target)
 	}
-	resolved, err := os.Readlink(mapping.Target)
+	targetInfo, err := os.Stat(mapping.Target)
 	if err != nil {
 		return err
 	}
-	if resolved != mapping.Source {
-		return fmt.Errorf("target %s does not point to source %s", mapping.Target, mapping.Source)
+	sourceEntryInfo, err := os.Lstat(mapping.Source)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return fmt.Errorf("recorded source %s is missing for target %s", mapping.Source, mapping.Target)
+		}
+		return err
+	}
+	if !sourceEntryInfo.Mode().IsRegular() {
+		return fmt.Errorf("recorded source %s is not a regular file for target %s", mapping.Source, mapping.Target)
+	}
+	sourceInfo, err := os.Stat(mapping.Source)
+	if err != nil {
+		return err
+	}
+	if !os.SameFile(sourceInfo, targetInfo) {
+		return fmt.Errorf("target %s is no longer owned by source %s", mapping.Target, mapping.Source)
 	}
 	return os.Remove(mapping.Target)
 }
 
 // removeManagedTarget removes one recorded target with optional force semantics.
 func removeManagedTarget(mapping Mapping, force bool) error {
+	sameEntry, err := sourceTargetSameDirectoryEntry(mapping)
+	if err != nil {
+		return err
+	}
+	if sameEntry {
+		return fmt.Errorf("refusing to remove target %s because it is the same directory entry as source %s", mapping.Target, mapping.Source)
+	}
 	if force {
 		return removeTargetPath(mapping.Target)
 	}
-	return removeOwnedSymlink(mapping)
+	return removeOwnedTarget(mapping)
 }
 
 // removeTargetPath deletes the exact target path, recursively when it is a directory.
@@ -411,45 +491,86 @@ func removeTargetPath(target string) error {
 	return os.Remove(target)
 }
 
-func createOwnedSymlink(mapping Mapping) error {
+func createOwnedHardLink(mapping Mapping) error {
 	if err := os.MkdirAll(filepath.Dir(mapping.Target), 0o755); err != nil {
 		return err
 	}
-	if err := createSymlink(mapping.Source, mapping.Target); err != nil {
+	if err := createHardLink(mapping.Source, mapping.Target); err != nil {
 		return err
 	}
 	return nil
 }
 
-// createSymlink creates a real filesystem symlink after confirming that the
-// source exists. This keeps source kind implicit so Windows can infer whether
-// the target should be a file or directory symlink without persisting that kind.
-func createSymlink(source string, target string) error {
-	return createSymlinkForOS(source, target, runtime.GOOS, os.Lstat, os.Symlink)
+func createHardLink(source string, target string) error {
+	return createHardLinkForOS(source, target, runtime.GOOS, os.Lstat, os.Link)
 }
 
-// createSymlinkForOS is the testable core for symlink creation and platform
-// diagnostics. It never attempts hardlinks, junctions, copies, or shell fallbacks.
-func createSymlinkForOS(source string, target string, operatingSystem string, lstat func(string) (os.FileInfo, error), symlink func(string, string) error) error {
-	if _, err := lstat(source); err != nil {
+func createHardLinkForOS(source string, target string, operatingSystem string, stat func(string) (os.FileInfo, error), link func(string, string) error) error {
+	if err := validateHardLinkSourceWithStat(Mapping{Source: source, Target: target}, stat); err != nil {
+		return err
+	}
+	if err := link(source, target); err != nil {
+		return wrapHardLinkErrorForOS(operatingSystem, source, target, err)
+	}
+	return nil
+}
+
+// validateHardLinkSourceWithStat keeps creation-time validation injectable for OS-specific tests.
+func validateHardLinkSourceWithStat(mapping Mapping, stat func(string) (os.FileInfo, error)) error {
+	sameEntry, err := sourceTargetSameDirectoryEntry(mapping)
+	if err != nil {
+		return err
+	}
+	if sameEntry {
+		return fmt.Errorf("hard link source %s and target %s refer to the same directory entry", mapping.Source, mapping.Target)
+	}
+	info, err := stat(mapping.Source)
+	if err != nil {
 		if os.IsNotExist(err) {
-			return wrapSymlinkErrorForOS(operatingSystem, fmt.Errorf("symlink source %s does not exist: %w", source, err))
+			return fmt.Errorf("hard link source %s does not exist for target %s: %w", mapping.Source, mapping.Target, err)
 		}
-		return wrapSymlinkErrorForOS(operatingSystem, fmt.Errorf("inspect symlink source %s: %w", source, err))
+		return fmt.Errorf("inspect hard link source %s for target %s: %w", mapping.Source, mapping.Target, err)
 	}
-	if err := symlink(source, target); err != nil {
-		return wrapSymlinkErrorForOS(operatingSystem, fmt.Errorf("create symlink %s -> %s: %w", target, source, err))
+	if !info.Mode().IsRegular() {
+		return fmt.Errorf("hard link source %s for target %s is not a regular file", mapping.Source, mapping.Target)
 	}
 	return nil
 }
 
-// wrapSymlinkErrorForOS adds native Windows guidance while preserving the
-// original failure. Non-Windows platforms keep the original error unchanged.
-func wrapSymlinkErrorForOS(operatingSystem string, err error) error {
-	if operatingSystem != "windows" || err == nil {
-		return err
+// sourceTargetSameDirectoryEntry reports whether two paths name the same removable directory entry.
+func sourceTargetSameDirectoryEntry(mapping Mapping) (bool, error) {
+	sourceAbs, err := filepath.Abs(mapping.Source)
+	if err != nil {
+		return false, err
 	}
-	return fmt.Errorf("%w; ConfigFacilitator uses real symlinks only and did not try hardlinks, junctions, copies, or shell fallbacks; on Windows, enable Developer Mode or run as Administrator to allow symlink creation", err)
+	targetAbs, err := filepath.Abs(mapping.Target)
+	if err != nil {
+		return false, err
+	}
+	if filepath.Clean(sourceAbs) == filepath.Clean(targetAbs) {
+		return true, nil
+	}
+	sourceParent, err := filepath.EvalSymlinks(filepath.Dir(sourceAbs))
+	if err != nil {
+		return false, nil
+	}
+	targetParent, err := filepath.EvalSymlinks(filepath.Dir(targetAbs))
+	if err != nil {
+		return false, nil
+	}
+	return filepath.Clean(sourceParent) == filepath.Clean(targetParent) && filepath.Base(sourceAbs) == filepath.Base(targetAbs), nil
+}
+
+func wrapHardLinkError(source string, target string, err error) error {
+	return wrapHardLinkErrorForOS(runtime.GOOS, source, target, err)
+}
+
+func wrapHardLinkErrorForOS(operatingSystem string, source string, target string, err error) error {
+	wrapped := fmt.Errorf("create hard link %s -> %s: %w", target, source, err)
+	if operatingSystem != "windows" || err == nil {
+		return wrapped
+	}
+	return fmt.Errorf("%w; Windows hard links require source and target on the same volume, a filesystem that supports hard links, and an existing regular-file source", wrapped)
 }
 
 func mappingIndex(mappings []Mapping) map[string]Mapping {

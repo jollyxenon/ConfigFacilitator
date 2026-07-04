@@ -13,8 +13,8 @@
 - `internal/syncer`：将索引与文件系统实体进行对齐。
 - `internal/session`：保存基于 PPID 的项目上下文。
 - `internal/pathvars`：展开可移植路径变量。
-- `internal/planner`：把命令意图转换为链接映射。
-- `internal/linker`：执行符号链接的应用、重置和回退；创建链接前会检查 source 是否存在，并始终只调用真实 symlink 创建逻辑。
+- `internal/planner`：把命令意图转换为受管路径映射。
+- `internal/linker`：执行基于硬链接的文件应用、重置和回退。
 
 ## 存储模型
 
@@ -23,6 +23,8 @@
 ## 行为规则
 
 - Setting 目标路径由目录 / 名称数组按下标 zip 得出：`targetDir` / `targetName` 会按下标覆盖 `defaultTargetDir` / `defaultTargetName`。
+- 激活时只会创建基于硬链接的常规文件；目录型映射不受支持，并且失败时不会退回到 symlink、junction、复制或其他平台替代方案。
+- 硬链接通常必须位于同一文件系统或同一 Windows 卷内，而且无论编辑 source 还是 target，修改的都是同一份底层文件内容。
 - `Mode` 支持 `cover`、`increment`、`none`、`full` 四种栏目策略。
 - `switch` 会按 PPID 保存一个便利用项目上下文。
 - `revert` 只恢复上一次应用状态。
