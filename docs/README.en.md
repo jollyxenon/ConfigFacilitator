@@ -10,7 +10,7 @@ ConfigFacilitator is a portable Go CLI that manages configuration warehouses who
 - [JSONC Guide](jsonc-guide.en.md)
 - [Platform Notes](platform-notes.en.md)
 - [Developer Setup](developer-setup.en.md)
-- [Agent Usage Skill](../.opencode/skills/configfacilitator-usage/SKILL.md)
+- [Agent Usage Skill](../skills/configfacilitator-usage/SKILL.md)
 
 ## Quick facts
 
@@ -22,7 +22,7 @@ ConfigFacilitator is a portable Go CLI that manages configuration warehouses who
 - Root-level project discovery: direct child project directories under the effective warehouse root, including `SettingWarehouse`, participate in discovery
 - Core entities: `Project`, `Column`, `Setting`, `Mode`
 - Commands: `new`, `sync`, `switch`, `root`, `list`, `apply`, `update`, `reset`, `revert`
-- Agent Skill maintenance: when user-facing commands, workflows, examples, or safety rules change, review and update [`configfacilitator-usage`](../.opencode/skills/configfacilitator-usage/SKILL.md) with the docs
+- Agent Skill maintenance: when user-facing commands, workflows, examples, or safety rules change, review and update [`configfacilitator-usage`](../skills/configfacilitator-usage/SKILL.md) with the docs
 
 ## What it does
 
