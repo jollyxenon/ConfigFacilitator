@@ -1,6 +1,6 @@
 {
   "name": "@jollyxenon/cfgfc",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "ConfigFacilitator CLI for managing local configuration warehouses.",
   "license": "MIT",
   "homepage": "https://github.com/jollyxenon/ConfigFacilitator#readme",
