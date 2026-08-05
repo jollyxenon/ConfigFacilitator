@@ -19,7 +19,7 @@ cfgfc new -m Max
 
 ## `sync`
 
-Reconcile warehouse indexes with filesystem state. When a switched project is active, `cfgfc sync` targets that project. Without an active project, `cfgfc sync` reconciles every project under the warehouse root. `cfgfc sync --all` and `cfgfc sync -a` force a full-warehouse sync and ignore any active project context. Project references accept warehouse-side identifiers and aliases. Within `sync -p`, `global` is reserved and cannot be used as a project target.
+Reconcile warehouse indexes with filesystem state. Sync adds newly discovered entities and removes indexed Settings whose source files or directories have disappeared. When a switched project is active, `cfgfc sync` targets that project. Without an active project, `cfgfc sync` reconciles every project under the warehouse root. `cfgfc sync --all` and `cfgfc sync -a` force a full-warehouse sync and ignore any active project context. Project references accept warehouse-side identifiers and aliases. Within `sync -p`, `global` is reserved and cannot be used as a project target.
 
 ```bash
 cfgfc sync
@@ -50,7 +50,7 @@ cfgfc root ~/.configfacilitator-alt
 
 Inspect projects, columns, modes, and settings. Without an effective project, `list` shows the available projects in the warehouse and appends one parenthesized usage summary for each project: the resolved persisted mode name when a mode intent still matches, otherwise `Unmatched` or `None`. With an effective project, plain `list` shows that project's columns and modes, and appends one parenthesized `Full`, `Partial`, or `None` label to each column according to the persisted managed mappings. After `cfgfc switch <project>`, project-scoped list forms can omit `-p`. Project, column, and mode references accept warehouse-side identifiers and aliases. `list` accepts only one detailed target at a time: `-c` or `-m`.
 
-When color output is available, terminal rendering highlights the active mode in project-scoped `list` views and the enabled settings in `list -c`. `list -c` still shows missing entries.
+When color output is available, terminal rendering highlights the active mode in project-scoped `list` views and the enabled settings in `list -c`. After sync, `list -c` shows only Settings whose sources remain in the Column.
 
 ```bash
 cfgfc list

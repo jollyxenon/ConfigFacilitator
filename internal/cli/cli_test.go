@@ -397,14 +397,77 @@ func TestRunWithExecutableSyncsWarehouseIndexes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read setting index after sync: %v", err)
 	}
-	if !bytes.Contains(settingIndexData, []byte("\"Skill-A\"")) || !bytes.Contains(settingIndexData, []byte("\"MissingSkill\"")) {
-		t.Fatalf("setting index missing synced entities, got %q", string(settingIndexData))
+	if !bytes.Contains(settingIndexData, []byte("\"Skill-A\"")) {
+		t.Fatalf("setting index missing synced entity, got %q", string(settingIndexData))
 	}
-	if !bytes.Contains(settingIndexData, []byte("\"description\": \"keep me\"")) || !bytes.Contains(settingIndexData, []byte("\"missing\": true")) {
-		t.Fatalf("setting index lost missing metadata, got %q", string(settingIndexData))
+	if bytes.Contains(settingIndexData, []byte("\"MissingSkill\"")) || bytes.Contains(settingIndexData, []byte("\"description\": \"keep me\"")) || bytes.Contains(settingIndexData, []byte("\"missing\": true")) {
+		t.Fatalf("setting index retained deleted setting metadata, got %q", string(settingIndexData))
 	}
 	if bytes.Contains(settingIndexData, []byte("Example block should disappear after sync.")) {
 		t.Fatalf("expected sync to discard generated example block, got %q", string(settingIndexData))
+	}
+}
+
+func TestRunWithExecutableSyncRemovesDeletedSettings(t *testing.T) {
+	workspace := t.TempDir()
+	homeDir := setTempHome(t, workspace)
+	executablePath := filepath.Join(workspace, "cfgfc")
+	projectPath := filepath.Join(homeDir, ".configfacilitator", "OpenCode")
+	columnPath := filepath.Join(projectPath, "Column", "Skills")
+
+	if exitCode := RunWithExecutable([]string{"new", "-p", "OpenCode"}, &bytes.Buffer{}, &bytes.Buffer{}, executablePath); exitCode != 0 {
+		t.Fatal("create project failed")
+	}
+	if exitCode := RunWithExecutable([]string{"new", "-p", "OpenCode", "-c", "Skills"}, &bytes.Buffer{}, &bytes.Buffer{}, executablePath); exitCode != 0 {
+		t.Fatal("create column failed")
+	}
+	if err := os.WriteFile(filepath.Join(columnPath, "FileSetting"), []byte("file"), 0o644); err != nil {
+		t.Fatalf("write file setting: %v", err)
+	}
+	if err := os.Mkdir(filepath.Join(columnPath, "DirectorySetting"), 0o755); err != nil {
+		t.Fatalf("create directory setting: %v", err)
+	}
+	if exitCode := RunWithExecutable([]string{"sync", "-p", "OpenCode"}, &bytes.Buffer{}, &bytes.Buffer{}, executablePath); exitCode != 0 {
+		t.Fatal("initial sync failed")
+	}
+	if err := os.WriteFile(filepath.Join(columnPath, "SettingIndex.jsonc"), []byte(`{
+  "settings": {
+    "FileSetting": {"description": "file metadata"},
+    "DirectorySetting": {"description": "directory metadata"}
+  }
+}
+`), 0o644); err != nil {
+		t.Fatalf("write setting metadata: %v", err)
+	}
+	if err := os.Remove(filepath.Join(columnPath, "FileSetting")); err != nil {
+		t.Fatalf("remove file setting: %v", err)
+	}
+	if err := os.RemoveAll(filepath.Join(columnPath, "DirectorySetting")); err != nil {
+		t.Fatalf("remove directory setting: %v", err)
+	}
+	if exitCode := RunWithExecutable([]string{"sync", "-p", "OpenCode"}, &bytes.Buffer{}, &bytes.Buffer{}, executablePath); exitCode != 0 {
+		t.Fatal("sync after deletion failed")
+	}
+
+	settingIndexData, err := os.ReadFile(filepath.Join(columnPath, "SettingIndex.jsonc"))
+	if err != nil {
+		t.Fatalf("read setting index: %v", err)
+	}
+	for _, removed := range []string{"FileSetting", "DirectorySetting", "file metadata", "directory metadata", "\"missing\": true"} {
+		if bytes.Contains(settingIndexData, []byte(removed)) {
+			t.Fatalf("setting index retained %q after deletion: %q", removed, string(settingIndexData))
+		}
+	}
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	if exitCode := RunWithExecutable([]string{"list", "-p", "OpenCode", "-c", "Skills"}, &stdout, &stderr, executablePath); exitCode != 0 {
+		t.Fatalf("list column exit=%d stderr=%q", exitCode, stderr.String())
+	}
+	for _, removed := range []string{"FileSetting", "DirectorySetting"} {
+		if bytes.Contains(stdout.Bytes(), []byte(removed)) {
+			t.Fatalf("column listing retained %q: %q", removed, stdout.String())
+		}
 	}
 }
 

@@ -215,7 +215,7 @@ Modes:
   - Max
 ```
 
-`cfgfc list -c Skills` still shows every known Setting in the Column. Missing entries remain visible when they exist:
+`cfgfc list -c Skills` shows every Setting whose source remains in the Column after sync. If a source is deleted, the next `cfgfc sync` removes that Setting from the index and this listing:
 
 ```text
 Column: Skills

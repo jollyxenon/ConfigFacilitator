@@ -100,15 +100,15 @@ func rewriteSettingIndex(column warehouse.Column) error {
 	settingIndex := column.SettingIndex
 	settingIndex.Settings = map[string]index.SettingEntry{}
 	for _, setting := range column.Settings {
+		if setting.Missing {
+			continue
+		}
 		entry := setting.Metadata
 		if entry.DisplayName == "" {
 			entry.DisplayName = setting.Name
 		}
 		if entry.Aliases == nil {
 			entry.Aliases = []string{}
-		}
-		if setting.Missing {
-			entry.Extra = withMissingMarker(entry.Extra)
 		}
 		entry, err := withGeneratedTargetFields(column, setting, entry)
 		if err != nil {

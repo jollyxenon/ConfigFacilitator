@@ -215,7 +215,7 @@ Modes:
   - Max
 ```
 
-`cfgfc list -c Skills` 仍然会把这个 Column 里的所有已知 Setting 都列出来；如果存在 missing entries，它们也会继续显示：
+完成同步后，`cfgfc list -c Skills` 会列出这个 Column 中来源仍然存在的全部 Setting。如果删除来源，下一次 `cfgfc sync` 会从索引和该列表中移除对应 Setting：
 
 ```text
 Column: Skills

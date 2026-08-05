@@ -110,6 +110,7 @@ var commandHelpByName = map[string]commandHelp{
 			"cfgfc sync -a",
 		},
 		notes: []string{
+			"Sync adds newly discovered entities and removes indexed Settings whose source files or directories have disappeared.",
 			"When a switched project is active, `cfgfc sync` targets that project by default.",
 			"Without an active project, `cfgfc sync` falls back to a full-warehouse sync.",
 			"Project references accept canonical names and aliases.",
@@ -160,7 +161,7 @@ var commandHelpByName = map[string]commandHelp{
 			"Without an effective project, `cfgfc list` shows each project's persisted mode name when available, or `(Unmatched)` / `(None)` when no mode summary can be resolved.",
 			"After `cfgfc switch <project>`, project-scoped `list` forms can omit `-p`.",
 			"Project-scoped `cfgfc list` adds `(Full)` / `(Partial)` / `(None)` to each column and highlights the active mode when terminal output supports color.",
-			"`cfgfc list -c <column>` highlights enabled settings when terminal output supports color and still prints missing index entries as `(missing)`.",
+			"`cfgfc list -c <column>` highlights enabled settings when terminal output supports color and, after sync, shows only Settings whose sources remain in the Column.",
 			"Project, column, and mode references accept canonical names and aliases.",
 			"`list` accepts only one detailed target at a time: `-c` or `-m`.",
 		},
