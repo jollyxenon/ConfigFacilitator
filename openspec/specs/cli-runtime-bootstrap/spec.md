@@ -1,4 +1,10 @@
-## MODIFIED Requirements
+# CLI Runtime Bootstrap Specification
+
+## Purpose
+
+Define the root and command-level help behavior available when the cfgfc CLI starts.
+
+## Requirements
 
 ### Requirement: The root help surface is available
 The system SHALL print a usable help surface from `cfgfc --help`, and the registered CLI commands SHALL also expose usable help surfaces from `cfgfc <command> --help` and `cfgfc <command> -h` without falling through into normal command parsing. The help surface SHALL also mention the `--version` flag.

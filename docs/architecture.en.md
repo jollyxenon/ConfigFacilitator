@@ -22,7 +22,7 @@ The warehouse lives under the effective warehouse root, not beside the shell wor
 
 ## Behavioral rules
 
-- Setting target paths are resolved from zipped directory/name arrays: `targetDir` / `targetName` override `defaultTargetDir` / `defaultTargetName` by index.
+- Setting target paths are resolved from directory/name arrays zipped by index: `targetDir` / `targetName` override `defaultTargetDir` / `defaultTargetName`. The required `targetNumber` determines every target array length after `sync`.
 - `Mode` can apply `cover`, `increment`, `none`, or `full` column strategies.
 - `switch` stores a convenience project context by PPID.
 - `revert` restores only the previous apply state.

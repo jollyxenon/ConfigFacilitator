@@ -355,7 +355,7 @@ func TestRunWithExecutableSyncsWarehouseIndexes(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(projectRoot, "Column", "ColumnIndex.jsonc"), []byte("{}\n"), 0o644); err != nil {
 		t.Fatalf("write column index: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(projectRoot, "Column", "Skills", "SettingIndex.jsonc"), []byte("{\n  \"description\": \"Skills\",\n  \"settings\": {\n    \"MissingSkill\": {\n      \"description\": \"keep me\",\n      \"missing\": true\n    }\n  }\n}\n\n/*\nExample block should disappear after sync.\n*/\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(projectRoot, "Column", "Skills", "SettingIndex.jsonc"), []byte("{\n  \"targetNumber\": 1,\n  \"description\": \"Skills\",\n  \"settings\": {\n    \"MissingSkill\": {\n      \"description\": \"keep me\",\n      \"missing\": true\n    }\n  }\n}\n\n/*\nExample block should disappear after sync.\n*/\n"), 0o644); err != nil {
 		t.Fatalf("write setting index: %v", err)
 	}
 	if err := os.WriteFile(filepath.Join(projectRoot, "Column", "Skills", "Skill-A", "README.md"), []byte("x"), 0o644); err != nil {
@@ -431,6 +431,7 @@ func TestRunWithExecutableSyncRemovesDeletedSettings(t *testing.T) {
 		t.Fatal("initial sync failed")
 	}
 	if err := os.WriteFile(filepath.Join(columnPath, "SettingIndex.jsonc"), []byte(`{
+  "targetNumber": 1,
   "settings": {
     "FileSetting": {"description": "file metadata"},
     "DirectorySetting": {"description": "directory metadata"}
@@ -494,7 +495,7 @@ func TestRunWithExecutableSyncIncludesSettingWarehouseDirectory(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(projectRoot, "Column", "ColumnIndex.jsonc"), []byte("{}\n"), 0o644); err != nil {
 		t.Fatalf("write column index: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(projectRoot, "Column", "Skills", "SettingIndex.jsonc"), []byte("{}\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(projectRoot, "Column", "Skills", "SettingIndex.jsonc"), []byte("{\n  \"targetNumber\": 1,}\n"), 0o644); err != nil {
 		t.Fatalf("write setting index: %v", err)
 	}
 	if err := os.WriteFile(filepath.Join(projectRoot, "Mode", "ModeIndex.jsonc"), []byte("{}\n"), 0o644); err != nil {
@@ -596,6 +597,7 @@ func TestRunWithExecutableListUsesDisplayNamesAndCanonicalIdentifiers(t *testing
 		t.Fatalf("write column index: %v", err)
 	}
 	if err := os.WriteFile(filepath.Join(projectRoot, "Column", "Skills", "SettingIndex.jsonc"), []byte(`{
+  "targetNumber": 1,
 	  "settings": {
 	    "Skill-A": {
 	      "displayName": "Skill Alpha",
@@ -1232,10 +1234,10 @@ func TestRunWithExecutableApplyResetAndRevertEndToEnd(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(warehouseRoot, "Column", "Skills", "Skill-B", "README.md"), []byte("b"), 0o644); err != nil {
 		t.Fatalf("write Skill-B readme: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(warehouseRoot, "Column", "opencode.json", "SettingIndex.jsonc"), []byte("{\n  \"description\": \"main config\",\n  \"defaultTargetDir\": [\"~/.config/opencode\"],\n  \"defaultTargetName\": [\"opencode.json\"],\n  \"settings\": {\n    \"CLAUDE.json\": {\"displayName\": \"CLAUDE.json\"},\n    \"GPT.json\": {\"displayName\": \"GPT.json\"}\n  }\n}\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(warehouseRoot, "Column", "opencode.json", "SettingIndex.jsonc"), []byte("{\n  \"targetNumber\": 1,\n  \"description\": \"main config\",\n  \"defaultTargetDir\": [\"~/.config/opencode\"],\n  \"defaultTargetName\": [\"opencode.json\"],\n  \"settings\": {\n    \"CLAUDE.json\": {\"displayName\": \"CLAUDE.json\"},\n    \"GPT.json\": {\"displayName\": \"GPT.json\"}\n  }\n}\n"), 0o644); err != nil {
 		t.Fatalf("write opencode setting index: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(warehouseRoot, "Column", "Skills", "SettingIndex.jsonc"), []byte("{\n  \"description\": \"skills\",\n  \"defaultTargetDir\": [\"~/.config/opencode/skills\"],\n  \"defaultTargetName\": [\"\"],\n  \"settings\": {\n    \"Skill-A\": {\"targetDir\": [\"\"], \"targetName\": [\"Skill-A\"]},\n    \"Skill-B\": {\"targetDir\": [\"\"], \"targetName\": [\"Skill-B\"]}\n  }\n}\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(warehouseRoot, "Column", "Skills", "SettingIndex.jsonc"), []byte("{\n  \"targetNumber\": 1,\n  \"description\": \"skills\",\n  \"defaultTargetDir\": [\"~/.config/opencode/skills\"],\n  \"defaultTargetName\": [\"\"],\n  \"settings\": {\n    \"Skill-A\": {\"targetDir\": [\"\"], \"targetName\": [\"Skill-A\"]},\n    \"Skill-B\": {\"targetDir\": [\"\"], \"targetName\": [\"Skill-B\"]}\n  }\n}\n"), 0o644); err != nil {
 		t.Fatalf("write skills setting index: %v", err)
 	}
 	if err := os.WriteFile(filepath.Join(warehouseRoot, "Mode", "ModeIndex.jsonc"), []byte("{\n  \"Max\": {\n    \"displayName\": \"Max\",\n    \"columns\": {\n      \"opencode.json\": {\n        \"settings\": [\"CLAUDE.json\"],\n        \"strategy\": \"cover\"\n      },\n      \"Skills\": {\n        \"settings\": [\"Skill-A\", \"Skill-B\"],\n        \"strategy\": \"increment\"\n      }\n    }\n  }\n}\n"), 0o644); err != nil {
@@ -1627,6 +1629,7 @@ func writeUpdateFixtureIndexes(t *testing.T, projectRoot string, configTarget st
 		t.Fatalf("write column index: %v", err)
 	}
 	if err := os.WriteFile(filepath.Join(projectRoot, "Column", "opencode.json", "SettingIndex.jsonc"), []byte(`{
+  "targetNumber": 1,
   "defaultTargetDir": [`+jsonString(t, configTargetDir)+`],
   "defaultTargetName": [`+jsonString(t, configTargetName)+`],
   "settings": {
@@ -1637,6 +1640,7 @@ func writeUpdateFixtureIndexes(t *testing.T, projectRoot string, configTarget st
 		t.Fatalf("write opencode setting index: %v", err)
 	}
 	if err := os.WriteFile(filepath.Join(projectRoot, "Column", "Skills", "SettingIndex.jsonc"), []byte(`{
+  "targetNumber": 1,
   "defaultTargetDir": ["~/.config/opencode/skills"],
   "defaultTargetName": [""],
   "settings": {
@@ -1674,6 +1678,7 @@ func writeUpdateFixtureIndexes(t *testing.T, projectRoot string, configTarget st
 func writeMultiTargetConfigSettingIndex(t *testing.T, projectRoot string) {
 	t.Helper()
 	if err := os.WriteFile(filepath.Join(projectRoot, "Column", "opencode.json", "SettingIndex.jsonc"), []byte(`{
+  "targetNumber": 1,
   "defaultTargetDir": ["~/.config/opencode", "~/.config/opencode"],
   "defaultTargetName": ["opencode.primary.json", "opencode.secondary.json"],
   "settings": {
@@ -1718,6 +1723,7 @@ func writeListStatusFixtureIndexes(t *testing.T, projectRoot string) {
 		t.Fatalf("write list column index: %v", err)
 	}
 	if err := os.WriteFile(filepath.Join(projectRoot, "Column", "Skills", "SettingIndex.jsonc"), []byte(`{
+  "targetNumber": 1,
   "defaultTargetDir": ["~/.config/opencode/skills"],
   "defaultTargetName": [""],
   "settings": {
@@ -1742,6 +1748,7 @@ func writeListStatusFixtureIndexes(t *testing.T, projectRoot string) {
 		t.Fatalf("write list skills setting index: %v", err)
 	}
 	if err := os.WriteFile(filepath.Join(projectRoot, "Column", "Extras", "SettingIndex.jsonc"), []byte(`{
+  "targetNumber": 1,
   "defaultTargetDir": ["~/.config/opencode/extras"],
   "defaultTargetName": [""],
   "settings": {
@@ -1785,6 +1792,7 @@ func writeUpdateFixtureFullSkillsIndexes(t *testing.T, projectRoot string, confi
     }`
 	}
 	if err := os.WriteFile(filepath.Join(projectRoot, "Column", "Skills", "SettingIndex.jsonc"), []byte(`{
+  "targetNumber": 1,
   "defaultTargetDir": ["~/.config/opencode/skills"],
   "defaultTargetName": [""],
   "settings": {`+skillsSettings+`
@@ -1879,6 +1887,7 @@ func TestRunWithExecutableResolvesAliasesAndStoresCanonicalProjectContext(t *tes
 		t.Fatalf("write column index: %v", err)
 	}
 	if err := os.WriteFile(filepath.Join(projectRoot, "Column", "skills-dir", "SettingIndex.jsonc"), []byte(`{
+  "targetNumber": 1,
   "settings": {
     "Skill-A": {
 	      "displayName": "Skill A",

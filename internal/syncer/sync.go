@@ -2,7 +2,6 @@ package syncer
 
 import (
 	"encoding/json"
-	"fmt"
 	"os"
 	"path/filepath"
 
@@ -98,6 +97,8 @@ func rewriteProject(project warehouse.Project) error {
 
 func rewriteSettingIndex(column warehouse.Column) error {
 	settingIndex := column.SettingIndex
+	settingIndex.DefaultTargetDir = normalizeTargetArray(settingIndex.DefaultTargetDir, settingIndex.TargetNumber)
+	settingIndex.DefaultTargetName = normalizeTargetArray(settingIndex.DefaultTargetName, settingIndex.TargetNumber)
 	settingIndex.Settings = map[string]index.SettingEntry{}
 	for _, setting := range column.Settings {
 		if setting.Missing {
@@ -110,57 +111,41 @@ func rewriteSettingIndex(column warehouse.Column) error {
 		if entry.Aliases == nil {
 			entry.Aliases = []string{}
 		}
-		entry, err := withGeneratedTargetFields(column, setting, entry)
-		if err != nil {
-			return err
-		}
+		entry.TargetDir = normalizeTargetArray(entry.TargetDir, settingIndex.TargetNumber)
+		entry.TargetName = normalizeTargetArray(entry.TargetName, settingIndex.TargetNumber)
 		settingIndex.Settings[setting.Name] = entry
 	}
 	return writeJSON(settingIndex, column.SettingIndexPath)
 }
 
-func withGeneratedTargetFields(column warehouse.Column, setting warehouse.Setting, entry index.SettingEntry) (index.SettingEntry, error) {
-	targetCount, err := generatedTargetCount(column.SettingIndex)
-	if err != nil {
-		return index.SettingEntry{}, err
+// normalizeTargetArray resizes one persisted target array to its declared count.
+func normalizeTargetArray(values []string, targetNumber int) []string {
+	if targetNumber == 0 {
+		return []string{}
 	}
-	if len(entry.TargetDir) == 0 {
-		entry.TargetDir = repeatedString("", targetCount)
+	if len(values) >= targetNumber {
+		return append([]string{}, values[:targetNumber]...)
 	}
-	if len(entry.TargetName) == 0 {
-		entry.TargetName = generatedTargetNames(column.SettingIndex, setting.WarehouseName, targetCount)
+
+	normalized := append([]string{}, values...)
+	fillValue := ""
+	if len(values) > 0 && allValuesEqual(values) {
+		fillValue = values[0]
 	}
-	return entry, nil
+	for len(normalized) < targetNumber {
+		normalized = append(normalized, fillValue)
+	}
+	return normalized
 }
 
-func generatedTargetCount(settingIndex index.SettingIndex) (int, error) {
-	if len(settingIndex.DefaultTargetDir) != len(settingIndex.DefaultTargetName) {
-		return 0, fmt.Errorf("defaultTargetDir and defaultTargetName lengths differ")
-	}
-	if len(settingIndex.DefaultTargetDir) > 0 {
-		return len(settingIndex.DefaultTargetDir), nil
-	}
-	return 1, nil
-}
-
-func generatedTargetNames(settingIndex index.SettingIndex, settingName string, targetCount int) []string {
-	names := make([]string, targetCount)
-	for index := range names {
-		if index < len(settingIndex.DefaultTargetName) && settingIndex.DefaultTargetName[index] != "" {
-			names[index] = ""
-		} else {
-			names[index] = settingName
+// allValuesEqual reports whether every target-array value is identical.
+func allValuesEqual(values []string) bool {
+	for _, value := range values[1:] {
+		if value != values[0] {
+			return false
 		}
 	}
-	return names
-}
-
-func repeatedString(value string, count int) []string {
-	values := make([]string, count)
-	for index := range values {
-		values[index] = value
-	}
-	return values
+	return true
 }
 
 func writeJSON(value any, path string) error {

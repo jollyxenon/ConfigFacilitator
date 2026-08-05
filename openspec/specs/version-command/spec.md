@@ -1,4 +1,10 @@
-## ADDED Requirements
+# Version Command Specification
+
+## Purpose
+
+Define version display and build-time version injection for the cfgfc CLI.
+
+## Requirements
 
 ### Requirement: Version display via --version flag
 The system SHALL display the current version of the cfgfc CLI when the `--version` or `-v` flag is provided.

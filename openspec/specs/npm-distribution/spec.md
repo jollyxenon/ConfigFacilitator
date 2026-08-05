@@ -1,4 +1,10 @@
-## ADDED Requirements
+# npm Distribution Specification
+
+## Purpose
+
+Define how the npm package installs and exposes prebuilt cfgfc binaries.
+
+## Requirements
 
 ### Requirement: npm package exposes cfgfc command
 The npm distribution SHALL expose a `cfgfc` command through npm's `bin` mechanism and SHALL forward command-line arguments to the ConfigFacilitator Go executable without changing command semantics.

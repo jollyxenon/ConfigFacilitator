@@ -301,7 +301,7 @@ func sampleProject() warehouse.Project {
 				WarehouseName: "opencode.json",
 				Path:          filepath.Join(projectPath, "Column", "opencode.json"),
 				Metadata:      index.ColumnEntry{WarehouseName: "opencode.json", Aliases: []string{"config"}},
-				SettingIndex:  index.SettingIndex{DefaultTargetDir: []string{"~/.config/opencode"}, DefaultTargetName: []string{"opencode.json"}},
+				SettingIndex:  index.SettingIndex{TargetNumber: 1, DefaultTargetDir: []string{"~/.config/opencode"}, DefaultTargetName: []string{"opencode.json"}},
 				Settings: map[string]warehouse.Setting{
 					"CLAUDE.json":  {Name: "CLAUDE.json", WarehouseName: "CLAUDE.json", Path: filepath.Join(projectPath, "Column", "opencode.json", "CLAUDE.json"), Metadata: index.SettingEntry{WarehouseName: "CLAUDE.json", Aliases: []string{"claude"}}},
 					"GPT.json":     {Name: "GPT.json", WarehouseName: "GPT.json", Path: filepath.Join(projectPath, "Column", "opencode.json", "GPT.json"), Metadata: index.SettingEntry{WarehouseName: "GPT.json"}},
@@ -313,7 +313,7 @@ func sampleProject() warehouse.Project {
 				WarehouseName: "Skills",
 				Path:          filepath.Join(projectPath, "Column", "Skills"),
 				Metadata:      index.ColumnEntry{WarehouseName: "Skills", Aliases: []string{"skills"}},
-				SettingIndex:  index.SettingIndex{DefaultTargetDir: []string{"/tmp/skills"}, DefaultTargetName: []string{""}},
+				SettingIndex:  index.SettingIndex{TargetNumber: 1, DefaultTargetDir: []string{"/tmp/skills"}, DefaultTargetName: []string{""}},
 				Settings: map[string]warehouse.Setting{
 					"Skill-A":   {Name: "Skill-A", WarehouseName: "Skill-A", Path: filepath.Join(projectPath, "Column", "Skills", "Skill-A"), Metadata: index.SettingEntry{WarehouseName: "Skill-A", Aliases: []string{"alpha"}, TargetDir: []string{""}, TargetName: []string{"a"}}},
 					"Skill-Old": {Name: "Skill-Old", WarehouseName: "Skill-Old", Path: filepath.Join(projectPath, "Column", "Skills", "Skill-Old"), Metadata: index.SettingEntry{WarehouseName: "Skill-Old", TargetDir: []string{""}, TargetName: []string{"old"}}},

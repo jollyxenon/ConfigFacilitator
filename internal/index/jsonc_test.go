@@ -11,6 +11,7 @@ func TestParseSettingIndexStripsCommentsAndPreservesDescription(t *testing.T) {
 	input := []byte(`{
   // comment
   "description": "perm note",
+  "targetNumber": 2,
   "defaultTargetDir": ["~/.config/opencode", "~/.config/opencode"],
   "defaultTargetName": ["opencode.json", "alt.json"],
   "settings": {
@@ -33,6 +34,9 @@ Example block that should be ignored during parsing.
 		t.Fatalf("ParseSettingIndex returned error: %v", err)
 	}
 
+	if index.TargetNumber != 2 {
+		t.Fatalf("expected targetNumber 2, got %d", index.TargetNumber)
+	}
 	if index.Description != "perm note" {
 		t.Fatalf("expected description to survive parsing, got %q", index.Description)
 	}
@@ -74,6 +78,34 @@ func TestParseSettingIndexRejectsLegacyTargets(t *testing.T) {
 	}
 }
 
+func TestParseSettingIndexRejectsMissingOrInvalidTargetNumber(t *testing.T) {
+	for _, input := range []string{
+		`{"settings":{}}`,
+		`{"targetNumber":-1,"settings":{}}`,
+		`{"targetNumber":1.5,"settings":{}}`,
+		`{"targetNumber":"1","settings":{}}`,
+		`{"targetNumber":null,"settings":{}}`,
+	} {
+		if _, err := ParseSettingIndex([]byte(input)); err == nil {
+			t.Fatalf("expected targetNumber validation failure for %s", input)
+		}
+	}
+}
+
+func TestMarshalSettingIndexEmitsZeroLengthTargetArrays(t *testing.T) {
+	data, err := json.Marshal(SettingIndex{TargetNumber: 0, Settings: map[string]SettingEntry{
+		"Setting": {},
+	}})
+	if err != nil {
+		t.Fatalf("marshal setting index: %v", err)
+	}
+	for _, field := range []string{`"targetNumber":0`, `"defaultTargetDir":[]`, `"defaultTargetName":[]`, `"targetDir":[]`, `"targetName":[]`} {
+		if !bytes.Contains(data, []byte(field)) {
+			t.Fatalf("expected %s in %s", field, data)
+		}
+	}
+}
+
 func TestParseProjectAndColumnIndexesPreserveAdditionalIdentityShapedFields(t *testing.T) {
 	projectInput := []byte(`{
   "OpenCode": {
@@ -110,6 +142,7 @@ func TestParseProjectAndColumnIndexesPreserveAdditionalIdentityShapedFields(t *t
 func TestSettingIndexPreservesUnknownFieldsOnMarshal(t *testing.T) {
 	index := SettingIndex{
 		Description:       "perm note",
+		TargetNumber:      1,
 		DefaultTargetDir:  []string{"~/.config/opencode"},
 		DefaultTargetName: []string{"opencode.json"},
 		Settings: map[string]SettingEntry{
@@ -134,6 +167,9 @@ func TestSettingIndexPreservesUnknownFieldsOnMarshal(t *testing.T) {
 		t.Fatalf("Marshal returned error: %v", err)
 	}
 
+	if !bytes.Contains(data, []byte(`"targetNumber":1`)) {
+		t.Fatalf("expected targetNumber in output, got %s", data)
+	}
 	if !bytes.Contains(data, []byte(`"description":"perm note"`)) {
 		t.Fatalf("expected description in output, got %s", data)
 	}

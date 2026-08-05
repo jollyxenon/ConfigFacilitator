@@ -100,12 +100,13 @@ The top-level key is the canonical identity. `displayName` and `aliases` stay av
 
 ### Setting targets
 
-Targets are split into directory and name arrays. `defaultTargetDir` / `defaultTargetName` define Column-level defaults, while `targetDir` / `targetName` can override them per Setting by matching index. Empty setting entries inherit defaults; an empty default target name falls back to the Setting warehouse name.
+Targets are split into directory and name arrays. `targetNumber` is the required number of target positions; after `cfgfc sync`, all four target arrays in the Column have exactly that length. `defaultTargetDir` / `defaultTargetName` define Column-level defaults, while `targetDir` / `targetName` can override them per Setting by matching index. Empty setting entries inherit defaults; an empty default target name falls back to the Setting warehouse name. When sync grows an array, it repeats a uniform existing value or appends `""` for a varied or empty array; lowering `targetNumber` discards trailing entries.
 
 ```jsonc
 // OpenCode/Column/oh-my-openagent/SettingIndex.jsonc
 {
   "description": "Main config settings",
+  "targetNumber": 1,
   "defaultTargetDir": ["~/.config/opencode"],
   "defaultTargetName": ["oh-my-openagent.jsonc"],
   "settings": {
@@ -127,6 +128,7 @@ Targets are split into directory and name arrays. `defaultTargetDir` / `defaultT
 // OpenCode/Column/Skills/SettingIndex.jsonc
 {
   "description": "Skills column",
+  "targetNumber": 1,
   "defaultTargetDir": ["~/.config/opencode/skills"],
   "defaultTargetName": [""],
   "settings": {

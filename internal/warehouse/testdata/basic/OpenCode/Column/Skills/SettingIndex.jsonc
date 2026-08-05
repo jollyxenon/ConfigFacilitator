@@ -1,13 +1,1 @@
-{
-  "description": "Skills column",
-  "settings": {
-    "Skill-A": {
-      "displayName": "Skill A",
-      "description": "A skill directory"
-    },
-    "Skill-B": {
-      "displayName": "Skill B",
-      "description": "B skill directory"
-    }
-  }
-}
+{"description":"Skills column","targetNumber":1,"defaultTargetDir":["~/.config/opencode/skills"],"defaultTargetName":[""],"settings":{"Skill-A":{"displayName":"Skill A","description":"A skill directory"},"Skill-B":{"displayName":"Skill B","description":"B skill directory"}}}

@@ -30,7 +30,8 @@
 
 - `defaultTargetDir` 与 `defaultTargetName` 是 Column 级别的默认目标目录 / 名称数组。
 - `targetDir` 与 `targetName` 是 Setting 级别的目标目录 / 名称数组，会按相同下标覆盖默认值。
-- 目录数组和名称数组严格按下标 zip；继承展开后长度必须一致。
+- `targetNumber` 是 Column 必填的非负目标位置数量。`cfgfc sync` 会把 `defaultTargetDir`、`defaultTargetName` 以及每个 Setting 的 `targetDir`、`targetName` 都回写为恰好这个长度。
+- sync 缩短数组时会丢弃末尾值；扩展非空数组时，如果所有值都相同则重复该值，否则追加 `""`。空数组扩展时只追加 `""`。
 - 在 Setting 条目中，`""` 表示继承对应下标的默认值；在 `defaultTargetName` 中，`""` 会回退为 Setting 的仓库侧名称；在 `defaultTargetDir` 中，`""` 表示未配置，不能执行 apply。
 - 目标目录支持 `~`、`${VAR}` 和 Windows `%VAR%` 写法。目标名称必须展开为普通文件名或单层目录名。
 - 展开后的目标路径必须非空，并且在同一个规划状态中唯一。

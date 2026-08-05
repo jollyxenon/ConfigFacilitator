@@ -200,7 +200,7 @@ func columnIndexTemplate() string {
 }
 
 func settingIndexTemplate() string {
-	return formatJSONCWithExample("{\n  \"description\": \"\",\n  \"defaultTargetDir\": [\"\"],\n  \"defaultTargetName\": [\"\"],\n  \"settings\": {}\n}", settingIndexExampleComment())
+	return formatJSONCWithExample("{\n  \"description\": \"\",\n  \"targetNumber\": 1,\n  \"defaultTargetDir\": [\"\"],\n  \"defaultTargetName\": [\"\"],\n  \"settings\": {}\n}", settingIndexExampleComment())
 }
 
 func modeIndexTemplate(modeIndex index.ModeIndex) string {
@@ -259,6 +259,7 @@ func settingIndexExampleComment() string {
 Example:
 {
   "description": "Optional note about this column",
+  "targetNumber": 1,
   "defaultTargetDir": ["~/.config/opencode/skills"],
   "defaultTargetName": [""],
   "settings": {
@@ -272,7 +273,7 @@ Example:
   }
 }
 
-Use "description" for permanent notes. Empty setting target entries inherit defaults; empty defaultTargetName falls back to the setting folder/file name. Set targetName to map variants to a shared target-side name.
+Use "description" for permanent notes. targetNumber declares every target array length; sync truncates surplus values, repeats uniform short arrays, and fills other short arrays with empty strings. Empty setting target entries inherit defaults; empty defaultTargetName falls back to the setting folder/file name. Set targetName to map variants to a shared target-side name.
 */`
 }
 

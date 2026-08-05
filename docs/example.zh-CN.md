@@ -100,12 +100,13 @@ cfgfc new -p OpenCode -m Max
 
 ### Setting 的目标路径
 
-目标路径拆成目录和名称数组。`defaultTargetDir` / `defaultTargetName` 定义 Column 级默认值，`targetDir` / `targetName` 可以在 Setting 级按相同下标覆盖。Setting 内的空字符串表示继承默认值；空的默认目标名称会回退为 Setting 的仓库侧名称。
+目标路径拆成目录和名称数组。`targetNumber` 是必填的目标位置数量；执行 `cfgfc sync` 后，Column 中四种目标数组都会恰好达到这个长度。`defaultTargetDir` / `defaultTargetName` 定义 Column 级默认值，`targetDir` / `targetName` 可以在 Setting 级按相同下标覆盖。Setting 内的空字符串表示继承默认值；空的默认目标名称会回退为 Setting 的仓库侧名称。sync 扩展数组时会重复统一的已有值，或为不同值和空数组追加 `""`；降低 `targetNumber` 会删除末尾条目。
 
 ```jsonc
 // OpenCode/Column/oh-my-openagent/SettingIndex.jsonc
 {
   "description": "主配置集合",
+  "targetNumber": 1,
   "defaultTargetDir": ["~/.config/opencode"],
   "defaultTargetName": ["oh-my-openagent.jsonc"],
   "settings": {
@@ -127,6 +128,7 @@ cfgfc new -p OpenCode -m Max
 // OpenCode/Column/Skills/SettingIndex.jsonc
 {
   "description": "Skills 栏目",
+  "targetNumber": 1,
   "defaultTargetDir": ["~/.config/opencode/skills"],
   "defaultTargetName": [""],
   "settings": {

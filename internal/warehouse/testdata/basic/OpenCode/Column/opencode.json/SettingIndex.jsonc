@@ -1,11 +1,1 @@
-{
-  "description": "Main config settings",
-  "defaultTargetDir": ["~/.config/opencode"],
-  "defaultTargetName": ["opencode.json"],
-  "settings": {
-    "GPT.json": {
-      "displayName": "GPT",
-      "description": "GPT model config"
-    }
-  }
-}
+{"description":"Main config settings","targetNumber":1,"defaultTargetDir":["~/.config/opencode"],"defaultTargetName":["opencode.json"],"settings":{"GPT.json":{"displayName":"GPT","description":"GPT model config"}}}

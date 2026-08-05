@@ -45,7 +45,7 @@ Use `docs/commands.en.md` or `docs/commands.zh-CN.md` for exact syntax and examp
 
 1. Select and confirm the effective warehouse root with `cfgfc root`; only persist a different root with clear user intent.
 2. Inspect current state with `cfgfc list` and relevant docs before editing metadata or source files.
-3. Modify only the needed warehouse metadata or source files, following the JSONC and platform rules in `docs/`.
+3. Modify only the needed warehouse metadata or source files, following the JSONC and platform rules in `docs/`. Every `SettingIndex.jsonc` must declare `targetNumber`; `sync` normalizes all target arrays to that declared length.
 4. Run `cfgfc sync` after manual warehouse edits; use full-warehouse sync only when the requested scope needs it.
 5. Apply or update mappings with `cfgfc apply` or `cfgfc update` according to the requested change.
 6. Verify the result with `cfgfc list`, targeted file/link checks, and command output that matches the user's intent.

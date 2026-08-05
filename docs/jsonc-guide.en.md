@@ -30,7 +30,8 @@ Indexes are stored as JSONC so generated templates can end with one disposable e
 
 - `defaultTargetDir` and `defaultTargetName` are column-level default target directory/name arrays.
 - `targetDir` and `targetName` are setting-level directory/name arrays that override defaults by matching index.
-- Directory and name arrays are strictly zipped; lengths must match after inheritance.
+- `targetNumber` is the required non-negative number of target positions for a Column. `cfgfc sync` rewrites `defaultTargetDir`, `defaultTargetName`, and every Setting's `targetDir` and `targetName` to exactly that length.
+- When sync shortens an array, it discards trailing values. When it extends a non-empty array whose values are all identical, it repeats that value; otherwise it appends `""` values. An empty array is extended with `""` values.
 - In setting entries, `""` means inherit the matching default. In `defaultTargetName`, `""` falls back to the setting warehouse name. In `defaultTargetDir`, `""` means unconfigured and cannot be applied.
 - Target directories can use `~`, `${VAR}`, and Windows `%VAR%` forms. Target names must resolve to one normal file name or single-level directory name.
 - Expanded target paths must be non-empty and unique in the planned state.

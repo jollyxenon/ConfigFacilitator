@@ -42,6 +42,7 @@ type ColumnEntry struct {
 // SettingIndex stores column-local setting metadata and targets.
 type SettingIndex struct {
 	Description       string
+	TargetNumber      int
 	DefaultTargetDir  []string
 	DefaultTargetName []string
 	Settings          map[string]SettingEntry
@@ -164,12 +165,18 @@ func parseColumnIndex(raw map[string]json.RawMessage) (ColumnIndex, error) {
 
 func parseSettingIndex(raw map[string]json.RawMessage) (SettingIndex, error) {
 	index := SettingIndex{Settings: map[string]SettingEntry{}, Extra: map[string]json.RawMessage{}}
+	hasTargetNumber := false
 	for key, value := range raw {
 		switch key {
 		case "description":
 			if err := json.Unmarshal(value, &index.Description); err != nil {
 				return SettingIndex{}, err
 			}
+		case "targetNumber":
+			if err := json.Unmarshal(value, &index.TargetNumber); err != nil || bytes.Equal(bytes.TrimSpace(value), []byte("null")) || index.TargetNumber < 0 {
+				return SettingIndex{}, fmt.Errorf("targetNumber must be a non-negative integer")
+			}
+			hasTargetNumber = true
 		case "defaultTarget":
 			return SettingIndex{}, fmt.Errorf("setting index uses unsupported field %q; use defaultTargetDir and defaultTargetName", key)
 		case "defaultTargetDir":
@@ -199,6 +206,9 @@ func parseSettingIndex(raw map[string]json.RawMessage) (SettingIndex, error) {
 		default:
 			index.Extra[key] = value
 		}
+	}
+	if !hasTargetNumber {
+		return SettingIndex{}, fmt.Errorf("setting index is missing required field %q", "targetNumber")
 	}
 	return index, nil
 }
@@ -419,16 +429,12 @@ func marshalColumnIndex(index ColumnIndex) ([]byte, error) {
 }
 
 func marshalSettingIndex(index SettingIndex) ([]byte, error) {
-	data := map[string]any{}
+	data := map[string]any{"targetNumber": index.TargetNumber}
 	if index.Description != "" {
 		data["description"] = index.Description
 	}
-	if len(index.DefaultTargetDir) > 0 {
-		data["defaultTargetDir"] = index.DefaultTargetDir
-	}
-	if len(index.DefaultTargetName) > 0 {
-		data["defaultTargetName"] = index.DefaultTargetName
-	}
+	data["defaultTargetDir"] = stringArray(index.DefaultTargetDir)
+	data["defaultTargetName"] = stringArray(index.DefaultTargetName)
 	settings := map[string]any{}
 	for key, entry := range index.Settings {
 		settings[key] = entry
@@ -502,12 +508,8 @@ func marshalSettingEntry(entry SettingEntry) ([]byte, error) {
 	if entry.Description != "" {
 		data["description"] = entry.Description
 	}
-	if len(entry.TargetDir) > 0 {
-		data["targetDir"] = entry.TargetDir
-	}
-	if len(entry.TargetName) > 0 {
-		data["targetName"] = entry.TargetName
-	}
+	data["targetDir"] = stringArray(entry.TargetDir)
+	data["targetName"] = stringArray(entry.TargetName)
 	mergeRaw(data, entry.Extra)
 	return marshalObject(data)
 }
@@ -542,6 +544,14 @@ func marshalModeColumnSelection(entry ModeColumnSelection) ([]byte, error) {
 	}
 	mergeRaw(data, entry.Extra)
 	return marshalObject(data)
+}
+
+// stringArray serializes absent string slices as explicit empty arrays.
+func stringArray(values []string) []string {
+	if values == nil {
+		return []string{}
+	}
+	return values
 }
 
 func mergeRaw(dst map[string]any, raw map[string]json.RawMessage) {

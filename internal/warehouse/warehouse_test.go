@@ -230,6 +230,7 @@ func TestLoadWarehouseIncludesSettingWarehouseAtRoot(t *testing.T) {
 		t.Fatalf("write column index: %v", err)
 	}
 	if err := os.WriteFile(filepath.Join(projectRoot, "Column", "Skills", "SettingIndex.jsonc"), []byte(`{
+  "targetNumber": 1,
   "settings": {}
 }`), 0o644); err != nil {
 		t.Fatalf("write setting index: %v", err)
@@ -284,11 +285,13 @@ func TestLoadWarehouseAllowsColumnNamedLegacyOrSessionMarkers(t *testing.T) {
 		t.Fatalf("write column index: %v", err)
 	}
 	if err := os.WriteFile(filepath.Join(projectRoot, "Column", "SettingWarehouse", "SettingIndex.jsonc"), []byte(`{
+  "targetNumber": 1,
   "settings": {}
 }`), 0o644); err != nil {
 		t.Fatalf("write legacy-named setting index: %v", err)
 	}
 	if err := os.WriteFile(filepath.Join(projectRoot, "Column", ".cfgfc-session", "SettingIndex.jsonc"), []byte(`{
+  "targetNumber": 1,
   "settings": {}
 }`), 0o644); err != nil {
 		t.Fatalf("write session-named setting index: %v", err)
@@ -348,6 +351,7 @@ func TestLoadWarehouseExposesCanonicalIdentityAndAliases(t *testing.T) {
 		t.Fatalf("write column index: %v", err)
 	}
 	if err := os.WriteFile(filepath.Join(projectRoot, "Column", "skills-dir", "SettingIndex.jsonc"), []byte(`{
+  "targetNumber": 1,
   "defaultTargetDir": ["~/.config"],
   "defaultTargetName": ["test"],
   "settings": {
