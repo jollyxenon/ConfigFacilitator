@@ -62,6 +62,9 @@ func rewriteProject(project warehouse.Project) error {
 	columnIndex := project.ColumnIndex
 	columnIndex.Columns = map[string]index.ColumnEntry{}
 	for _, column := range project.Columns {
+		if column.Missing {
+			continue
+		}
 		entry := column.Metadata
 		if entry.DisplayName == "" {
 			entry.DisplayName = column.Name

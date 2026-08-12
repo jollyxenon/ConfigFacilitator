@@ -1,6 +1,7 @@
 package syncer
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -87,5 +88,74 @@ func TestSyncNormalizesDefaultsAndNewSettingTargets(t *testing.T) {
 	newSetting := settingIndex.Settings["NewSkill"]
 	if !reflect.DeepEqual(newSetting.TargetDir, []string{"", "", ""}) || !reflect.DeepEqual(newSetting.TargetName, []string{"", "", ""}) {
 		t.Fatalf("unexpected new setting targets: %#v", newSetting)
+	}
+}
+
+func TestSyncRemovesDeletedColumnDirectory(t *testing.T) {
+	root := t.TempDir()
+	projectRoot := filepath.Join(root, "OpenCode")
+	keepColumnRoot := filepath.Join(projectRoot, "Column", "KeepColumn")
+	deleteColumnRoot := filepath.Join(projectRoot, "Column", "DeleteColumn")
+	for _, directory := range []string{keepColumnRoot, deleteColumnRoot, filepath.Join(projectRoot, "Mode"), filepath.Join(projectRoot, "Backup")} {
+		if err := os.MkdirAll(directory, 0o755); err != nil {
+			t.Fatalf("create %s: %v", directory, err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(root, "ProjectIndex.jsonc"), []byte("{}\n"), 0o644); err != nil {
+		t.Fatalf("write project index: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(projectRoot, "Column", "ColumnIndex.jsonc"), []byte(`{
+  "KeepColumn": {"displayName": "Keep Display", "description": "keep metadata", "aliases": ["keep"]},
+  "DeleteColumn": {"displayName": "Delete Display", "description": "delete metadata", "aliases": ["gone"]}
+}`), 0o644); err != nil {
+		t.Fatalf("write column index: %v", err)
+	}
+	for _, columnRoot := range []string{keepColumnRoot, deleteColumnRoot} {
+		if err := os.WriteFile(filepath.Join(columnRoot, "SettingIndex.jsonc"), []byte("{\"targetNumber\": 1}\n"), 0o644); err != nil {
+			t.Fatalf("write setting index: %v", err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(projectRoot, "Mode", "ModeIndex.jsonc"), []byte("{}\n"), 0o644); err != nil {
+		t.Fatalf("write mode index: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(projectRoot, "Backup", "current_state.json"), []byte("{\"mappings\": []}\n"), 0o644); err != nil {
+		t.Fatalf("write current state: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(projectRoot, "Backup", "history.log"), nil, 0o644); err != nil {
+		t.Fatalf("write history log: %v", err)
+	}
+
+	if err := SyncAll(root); err != nil {
+		t.Fatalf("initial sync: %v", err)
+	}
+
+	if err := os.RemoveAll(deleteColumnRoot); err != nil {
+		t.Fatalf("remove deleted column directory: %v", err)
+	}
+	if err := SyncAll(root); err != nil {
+		t.Fatalf("sync after deletion: %v", err)
+	}
+
+	if _, err := os.Stat(deleteColumnRoot); !os.IsNotExist(err) {
+		t.Fatalf("deleted column directory was recreated: %v", err)
+	}
+
+	data, err := os.ReadFile(filepath.Join(projectRoot, "Column", "ColumnIndex.jsonc"))
+	if err != nil {
+		t.Fatalf("read synced column index: %v", err)
+	}
+	columnIndex, err := index.ParseColumnIndex(data)
+	if err != nil {
+		t.Fatalf("parse synced column index: %v", err)
+	}
+	if _, ok := columnIndex.Columns["DeleteColumn"]; ok {
+		t.Fatalf("column index retained deleted column: %#v", columnIndex.Columns)
+	}
+	if bytes.Contains(data, []byte("delete metadata")) {
+		t.Fatalf("column index retained deleted column metadata: %q", string(data))
+	}
+	keep := columnIndex.Columns["KeepColumn"]
+	if keep.Description != "keep metadata" || keep.DisplayName != "Keep Display" || len(keep.Aliases) != 1 || keep.Aliases[0] != "keep" {
+		t.Fatalf("extant column lost authored metadata: %#v", keep)
 	}
 }

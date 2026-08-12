@@ -19,7 +19,7 @@ cfgfc new -m Max
 
 ## `sync`
 
-同步仓库索引与文件系统状态。同步会加入新发现的实体，并删除来源文件或目录已消失的已索引 Setting。当存在通过 `switch` 选中的活动项目时，`cfgfc sync` 只同步该项目；如果没有活动项目，`cfgfc sync` 会同步仓库中的全部项目。`cfgfc sync --all` 与 `cfgfc sync -a` 会强制同步整个仓库，并忽略当前活动项目上下文。项目引用支持仓库侧标识符和别名。在 `sync -p` 中，`global` 是保留字，不能作为项目名使用。
+同步仓库索引与文件系统状态。同步会加入新发现的实体，并删除来源目录已消失的已索引 Column，以及来源文件或目录已消失的已索引 Setting。当存在通过 `switch` 选中的活动项目时，`cfgfc sync` 只同步该项目；如果没有活动项目，`cfgfc sync` 会同步仓库中的全部项目。`cfgfc sync --all` 与 `cfgfc sync -a` 会强制同步整个仓库，并忽略当前活动项目上下文。项目引用支持仓库侧标识符和别名。在 `sync -p` 中，`global` 是保留字，不能作为项目名使用。
 
 ```bash
 cfgfc sync
@@ -50,7 +50,7 @@ cfgfc root ~/.configfacilitator-alt
 
 查看项目、栏目、模式和子配置。如果当前没有有效项目，`list` 会输出仓库中的项目列表，并在每个项目后面追加一个括号包裹的使用状态摘要：当已持久化的 mode 意图仍然能匹配当前 mode 时，显示该 mode 名；否则显示 `Unmatched` 或 `None`。当存在有效项目时，直接执行 `list` 会显示该项目的栏目和模式，并在每个栏目后面追加一个括号包裹的 `Full`、`Partial` 或 `None` 标签，表示基于已持久化受管映射计算出的当前覆盖状态。执行 `cfgfc switch <project>` 后，项目作用域的 `list` 形式可以省略 `-p`。项目、栏目和模式引用都支持仓库侧标识符和别名。`list` 一次只接受一个详细目标：`-c` 或 `-m`。
 
-当终端支持颜色输出时，项目作用域 `list` 里的活动 mode，以及 `list -c` 里当前启用的 settings 会被高亮显示。完成同步后，`list -c` 只显示来源仍在该 Column 中的 Setting。
+当终端支持颜色输出时，项目作用域 `list` 里的活动 mode，以及 `list -c` 里当前启用的 settings 会被高亮显示。完成同步后，项目列表只显示目录仍然存在的 Column，`list -c` 只显示来源仍在该 Column 中的 Setting。
 
 ```bash
 cfgfc list

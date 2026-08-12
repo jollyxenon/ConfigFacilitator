@@ -110,7 +110,7 @@ var commandHelpByName = map[string]commandHelp{
 			"cfgfc sync -a",
 		},
 		notes: []string{
-			"Sync adds newly discovered entities and removes indexed Settings whose source files or directories have disappeared.",
+			"Sync adds newly discovered entities and removes indexed Columns whose source directories have disappeared, as well as indexed Settings whose source files or directories have disappeared.",
 			"When a switched project is active, `cfgfc sync` targets that project by default.",
 			"Without an active project, `cfgfc sync` falls back to a full-warehouse sync.",
 			"Project references accept canonical names and aliases.",

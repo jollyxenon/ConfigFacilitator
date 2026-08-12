@@ -472,6 +472,65 @@ func TestRunWithExecutableSyncRemovesDeletedSettings(t *testing.T) {
 	}
 }
 
+func TestRunWithExecutableSyncRemovesDeletedColumns(t *testing.T) {
+	workspace := t.TempDir()
+	homeDir := setTempHome(t, workspace)
+	executablePath := filepath.Join(workspace, "cfgfc")
+	projectPath := filepath.Join(homeDir, ".configfacilitator", "OpenCode")
+	keepColumnPath := filepath.Join(projectPath, "Column", "KeepColumn")
+	_ = keepColumnPath
+	deleteColumnPath := filepath.Join(projectPath, "Column", "DeleteColumn")
+
+	if exitCode := RunWithExecutable([]string{"new", "-p", "OpenCode"}, &bytes.Buffer{}, &bytes.Buffer{}, executablePath); exitCode != 0 {
+		t.Fatal("create project failed")
+	}
+	for _, columnName := range []string{"KeepColumn", "DeleteColumn"} {
+		if exitCode := RunWithExecutable([]string{"new", "-p", "OpenCode", "-c", columnName}, &bytes.Buffer{}, &bytes.Buffer{}, executablePath); exitCode != 0 {
+			t.Fatalf("create column %s failed", columnName)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(projectPath, "Column", "ColumnIndex.jsonc"), []byte(`{
+  "KeepColumn": {"description": "keep column metadata"},
+  "DeleteColumn": {"description": "delete column metadata"}
+}`), 0o644); err != nil {
+		t.Fatalf("write column metadata: %v", err)
+	}
+	if exitCode := RunWithExecutable([]string{"sync", "-p", "OpenCode"}, &bytes.Buffer{}, &bytes.Buffer{}, executablePath); exitCode != 0 {
+		t.Fatal("initial sync failed")
+	}
+	if err := os.RemoveAll(deleteColumnPath); err != nil {
+		t.Fatalf("remove delete column: %v", err)
+	}
+	if exitCode := RunWithExecutable([]string{"sync", "-p", "OpenCode"}, &bytes.Buffer{}, &bytes.Buffer{}, executablePath); exitCode != 0 {
+		t.Fatal("sync after deletion failed")
+	}
+
+	columnIndexData, err := os.ReadFile(filepath.Join(projectPath, "Column", "ColumnIndex.jsonc"))
+	if err != nil {
+		t.Fatalf("read column index: %v", err)
+	}
+	for _, removed := range []string{"DeleteColumn", "delete column metadata"} {
+		if bytes.Contains(columnIndexData, []byte(removed)) {
+			t.Fatalf("column index retained %q after deletion: %q", removed, string(columnIndexData))
+		}
+	}
+	if _, err := os.Stat(deleteColumnPath); !os.IsNotExist(err) {
+		t.Fatalf("deleted column directory was recreated: %v", err)
+	}
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	if exitCode := RunWithExecutable([]string{"list", "-p", "OpenCode"}, &stdout, &stderr, executablePath); exitCode != 0 {
+		t.Fatalf("list project exit=%d stderr=%q", exitCode, stderr.String())
+	}
+	if bytes.Contains(stdout.Bytes(), []byte("DeleteColumn")) {
+		t.Fatalf("project listing retained deleted column: %q", stdout.String())
+	}
+	if !bytes.Contains(stdout.Bytes(), []byte("KeepColumn")) {
+		t.Fatalf("project listing missing extant column: %q", stdout.String())
+	}
+}
+
 func TestRunWithExecutableSyncIncludesSettingWarehouseDirectory(t *testing.T) {
 	workspace := t.TempDir()
 	homeDir := setTempHome(t, workspace)

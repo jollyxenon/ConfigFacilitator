@@ -45,11 +45,16 @@ The `new` workflows SHALL create editable project, column, and mode scaffolding 
 - **THEN** the CLI fails with an error that explains `global` is reserved
 
 ### Requirement: Sync reconciles filesystem reality with index metadata
-The `sync` workflow SHALL scan the warehouse, add newly discovered entities into index data, and remove previously indexed Settings whose source file or directory is no longer present. When `sync` accepts `-p <ProjectName>`, omitting `-p` SHALL cause the CLI to sync the active switched project when one is available, and SHALL fall back to syncing every project only when no effective project can be resolved. The `sync` workflow SHALL accept `--all` and `-a` as explicit warehouse-wide sync flags, and SHALL treat `global` as a reserved project target name. When syncing one resolved project, the success message SHALL report the resolved project with its display-oriented label instead of the raw alias text.
+The `sync` workflow SHALL scan the warehouse, add newly discovered entities into index data, and remove previously indexed Columns whose source directory is no longer present, as well as previously indexed Settings whose source file or directory is no longer present. When `sync` accepts `-p <ProjectName>`, omitting `-p` SHALL cause the CLI to sync the active switched project when one is available, and SHALL fall back to syncing every project only when no effective project can be resolved. The `sync` workflow SHALL accept `--all` and `-a` as explicit warehouse-wide sync flags, and SHALL treat `global` as a reserved project target name. When syncing one resolved project, the success message SHALL report the resolved project with its display-oriented label instead of the raw alias text.
 
 #### Scenario: Sync discovers a new setting file
 - **WHEN** the user adds a new filesystem setting and runs sync
 - **THEN** the corresponding index metadata is updated to include the discovered entity
+
+#### Scenario: Sync removes a disappeared column
+- **WHEN** a user removes a previously indexed Column directory and runs `cfgfc sync`
+- **THEN** the Column is removed from the project's `ColumnIndex.jsonc`
+- **AND** `cfgfc list -p <ProjectName>` no longer reports that Column after synchronization
 
 #### Scenario: Sync removes a disappeared setting
 - **WHEN** a user removes a previously indexed Setting source and runs `cfgfc sync`
