@@ -187,9 +187,13 @@ func newProjectDeleteCommand(context *commandContext) *cobra.Command {
 	var yes, cascade, forceTargets bool
 	command := &cobra.Command{Use: "delete <Project>", Short: "Delete one Project", Args: usageArgs(cobra.ExactArgs(1)), RunE: func(command *cobra.Command, args []string) error {
 		rootPath, err := effectiveWarehouseRoot(context.dependencies)
-		if err != nil { return err }
+		if err != nil {
+			return err
+		}
 		report, err := mutate.DeleteProject(repository.New(rootPath), args[0], yes, cascade, forceTargets)
-		if err != nil { return classifyMutateError(err) }
+		if err != nil {
+			return classifyMutateError(err)
+		}
 		return context.renderResult(HumanResult{Message: fmt.Sprintf("Deleted project %q", report.Name), Data: map[string]any{"project": report.Name, "dependencies": report}})
 	}}
 	addDeleteFlags(command, &yes, &cascade, &forceTargets)

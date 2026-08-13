@@ -146,8 +146,8 @@ func ValidateProjectTargets(project warehouse.Project, options PlanOptions) erro
 	return nil
 }
 
-// PlanModeMappings builds the mapping set for a mode selection from current managed state.
-func PlanModeMappings(project warehouse.Project, modeReference string, current []linker.Mapping, options PlanOptions) ([]linker.Mapping, error) {
+// PlanModeColumns plans the mapping set for one named Mode selection.
+func PlanModeColumns(project warehouse.Project, modeReference string, current []linker.Mapping, options PlanOptions) ([]linker.Mapping, error) {
 	if err := requirePresentProject(project); err != nil {
 		return nil, err
 	}
@@ -155,17 +155,34 @@ func PlanModeMappings(project warehouse.Project, modeReference string, current [
 	if err != nil {
 		return nil, err
 	}
+	if mode.Missing {
+		return nil, MissingResourceError{Kind: "mode", Project: project.Name, Name: mode.Name}
+	}
+	return PlanColumns(project, mode.Metadata.Columns, current, options)
+}
+
+// PlanColumns plans the mapping set for one columns selection map.
+func PlanColumns(project warehouse.Project, columns map[string]index.ModeColumnSelection, current []linker.Mapping, options PlanOptions) ([]linker.Mapping, error) {
+	if err := requirePresentProject(project); err != nil {
+		return nil, err
+	}
 	byColumn := groupCurrentMappingsByColumn(project, current)
 	result := []linker.Mapping{}
-	for columnReference, selection := range mode.Metadata.Columns {
-		column, err := project.ResolveColumn(columnReference)
+	names := make([]string, 0, len(columns))
+	for reference := range columns {
+		names = append(names, reference)
+	}
+	sort.Strings(names)
+	for _, reference := range names {
+		selection := columns[reference]
+		column, err := project.ResolveColumn(reference)
 		if err != nil {
 			return nil, err
 		}
 		if err := requirePresentColumn(project, column); err != nil {
 			return nil, err
 		}
-		columnMappings, err := planModeColumnMappings(column, selection, byColumn[column.Name], options)
+		columnMappings, err := planColumnSelection(column, selection, byColumn[column.Name], options)
 		if err != nil {
 			return nil, err
 		}
@@ -176,128 +193,6 @@ func PlanModeMappings(project warehouse.Project, modeReference string, current [
 		}
 	}
 	return result, nil
-}
-
-// PlanUpdateMappings refreshes every currently active mapping from current project metadata.
-func PlanUpdateMappings(project warehouse.Project, current []linker.Mapping, options PlanOptions) ([]linker.Mapping, error) {
-	if err := requirePresentProject(project); err != nil {
-		return nil, err
-	}
-	result := []linker.Mapping{}
-	processedSources := map[string]struct{}{}
-	for _, mapping := range current {
-		if _, processed := processedSources[mapping.Source]; processed {
-			continue
-		}
-		match, err := matchCurrentMapping(project, mapping)
-		if err != nil {
-			return nil, err
-		}
-		refreshed, err := resolveSettingMappings(match.column, match.setting, options)
-		if err != nil {
-			return nil, err
-		}
-		result, err = appendUniqueMappings(result, refreshed)
-		if err != nil {
-			return nil, err
-		}
-		processedSources[mapping.Source] = struct{}{}
-	}
-	return result, nil
-}
-
-// PlanColumnUpdateMappings refreshes one active column and preserves mappings from other columns.
-func PlanColumnUpdateMappings(project warehouse.Project, columnReference string, current []linker.Mapping, options PlanOptions) ([]linker.Mapping, error) {
-	if err := requirePresentProject(project); err != nil {
-		return nil, err
-	}
-	selectedColumn, err := project.ResolveColumn(columnReference)
-	if err != nil {
-		return nil, err
-	}
-	if err := requirePresentColumn(project, selectedColumn); err != nil {
-		return nil, err
-	}
-	result := make([]linker.Mapping, 0, len(current))
-	selectedCount := 0
-	processedSelectedSources := map[string]struct{}{}
-	for _, mapping := range current {
-		match, err := matchCurrentMapping(project, mapping)
-		if err != nil {
-			return nil, err
-		}
-		if match.column.Name != selectedColumn.Name {
-			result = append(result, mapping)
-			continue
-		}
-		if _, processed := processedSelectedSources[mapping.Source]; processed {
-			continue
-		}
-		refreshed, err := resolveSettingMappings(match.column, match.setting, options)
-		if err != nil {
-			return nil, err
-		}
-		result, err = appendUniqueMappings(result, refreshed)
-		if err != nil {
-			return nil, err
-		}
-		selectedCount++
-		processedSelectedSources[mapping.Source] = struct{}{}
-	}
-	if selectedCount == 0 {
-		return nil, fmt.Errorf("column %q has no active mappings to update", selectedColumn.Name)
-	}
-	return result, nil
-}
-
-// PlanIntentUpdateMappings refreshes the whole project from a persisted apply intent.
-func PlanIntentUpdateMappings(project warehouse.Project, intent linker.ApplyIntent, current []linker.Mapping, options PlanOptions) ([]linker.Mapping, error) {
-	switch intent.Kind {
-	case "mode":
-		if intent.Mode == "" {
-			return nil, fmt.Errorf("mode update intent requires a mode")
-		}
-		return PlanModeMappings(project, intent.Mode, current, options)
-	case "column":
-		if intent.Column == "" {
-			return nil, fmt.Errorf("column update intent requires a column")
-		}
-		return PlanColumnMappings(project, intent.Column, intent.Settings, options)
-	default:
-		return nil, fmt.Errorf("unsupported update intent kind %q", intent.Kind)
-	}
-}
-
-// PlanIntentColumnUpdateMappings refreshes one column from persisted intent and preserves other mappings.
-func PlanIntentColumnUpdateMappings(project warehouse.Project, intent linker.ApplyIntent, columnReference string, current []linker.Mapping, options PlanOptions) ([]linker.Mapping, error) {
-	if err := requirePresentProject(project); err != nil {
-		return nil, err
-	}
-	selectedColumn, err := project.ResolveColumn(columnReference)
-	if err != nil {
-		return nil, err
-	}
-	if err := requirePresentColumn(project, selectedColumn); err != nil {
-		return nil, err
-	}
-	switch intent.Kind {
-	case "mode":
-		return planModeIntentColumnUpdateMappings(project, intent, selectedColumn, current, options)
-	case "column":
-		if intent.Column == "" {
-			return nil, fmt.Errorf("column update intent requires a column")
-		}
-		intentColumn, err := project.ResolveColumn(intent.Column)
-		if err != nil {
-			return nil, err
-		}
-		if intentColumn.Name != selectedColumn.Name {
-			return PlanColumnUpdateMappings(project, selectedColumn.Name, current, options)
-		}
-		return PlanColumnMappings(project, intentColumn.Name, intent.Settings, options)
-	default:
-		return nil, fmt.Errorf("unsupported update intent kind %q", intent.Kind)
-	}
 }
 
 // ParseSettingList parses one or more setting names from CLI input.
@@ -447,50 +342,6 @@ func matchCurrentMapping(project warehouse.Project, mapping linker.Mapping) (cur
 	return currentMappingMatch{}, fmt.Errorf("current mapping source %q no longer matches project %q metadata", mapping.Source, project.Name)
 }
 
-func planModeIntentColumnUpdateMappings(project warehouse.Project, intent linker.ApplyIntent, selectedColumn warehouse.Column, current []linker.Mapping, options PlanOptions) ([]linker.Mapping, error) {
-	if intent.Mode == "" {
-		return nil, fmt.Errorf("mode update intent requires a mode")
-	}
-	mode, err := project.ResolveMode(intent.Mode)
-	if err != nil {
-		return nil, err
-	}
-	selection, ok, err := resolveModeColumnSelection(project, mode, selectedColumn.Name)
-	if err != nil {
-		return nil, err
-	}
-	if !ok {
-		return nil, fmt.Errorf("mode %q has no active selection for column %q", mode.Name, selectedColumn.Name)
-	}
-
-	byColumn := groupCurrentMappingsByColumn(project, current)
-	selectedMappings, err := planModeColumnMappings(selectedColumn, selection, byColumn[selectedColumn.Name], options)
-	if err != nil {
-		return nil, err
-	}
-	if len(selectedMappings) == 0 && len(byColumn[selectedColumn.Name]) == 0 {
-		return nil, fmt.Errorf("column %q has no active mappings to update", selectedColumn.Name)
-	}
-
-	result := make([]linker.Mapping, 0, len(current)+len(selectedMappings))
-	for _, mapping := range current {
-		match, err := matchCurrentMapping(project, mapping)
-		if err != nil {
-			return nil, err
-		}
-		if match.column.Name != selectedColumn.Name {
-			result = append(result, mapping)
-		}
-	}
-	for _, mapping := range selectedMappings {
-		result = upsertMapping(result, mapping)
-	}
-	if err := validateUniqueMappingTargets(result); err != nil {
-		return nil, err
-	}
-	return result, nil
-}
-
 func resolveModeColumnSelection(project warehouse.Project, mode warehouse.Mode, selectedColumnName string) (index.ModeColumnSelection, bool, error) {
 	for columnReference, selection := range mode.Metadata.Columns {
 		column, err := project.ResolveColumn(columnReference)
@@ -504,7 +355,7 @@ func resolveModeColumnSelection(project warehouse.Project, mode warehouse.Mode, 
 	return index.ModeColumnSelection{}, false, nil
 }
 
-func planModeColumnMappings(column warehouse.Column, selection index.ModeColumnSelection, current []linker.Mapping, options PlanOptions) ([]linker.Mapping, error) {
+func planColumnSelection(column warehouse.Column, selection index.ModeColumnSelection, current []linker.Mapping, options PlanOptions) ([]linker.Mapping, error) {
 	if err := requirePresentColumn(warehouse.Project{}, column); err != nil {
 		return nil, err
 	}

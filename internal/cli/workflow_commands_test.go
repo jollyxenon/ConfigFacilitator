@@ -29,8 +29,8 @@ func TestWorkflowContextStatusApplyRefreshAndMissingDiagnostics(t *testing.T) {
 	runResourceCommand(t, dependencies, []string{"apply", "mode", "maximum"}, ExitSuccess, "")
 	assertManagedLink(t, filepath.Join(firstTargets, "Alpha.txt"), workflowSettingPath(dependencies, "ProjectA", "Models", "Alpha.txt"))
 	state := loadWorkflowState(t, dependencies, "ProjectA")
-	if state.Intent == nil || state.Intent.Kind != "mode" || state.Intent.Mode != "Max" {
-		t.Fatalf("mode alias was not persisted canonically: %#v", state.Intent)
+	if state.Relation == nil || state.Relation.Kind != "following" || state.Relation.OriginMode != "Max" {
+		t.Fatalf("mode alias was not persisted canonically: %#v", state.Relation)
 	}
 
 	runResourceCommand(t, dependencies, []string{"setting", "create", "Beta.txt", "-p", "ProjectA", "-c", "Models", "--kind", "file", "--text", "beta"}, ExitSuccess, "")
@@ -54,7 +54,7 @@ func TestWorkflowContextStatusApplyRefreshAndMissingDiagnostics(t *testing.T) {
 	}
 
 	human, _ := runResourceCommand(t, dependencies, []string{"status", "-p", "ProjectA"}, ExitSuccess, "")
-	for _, expected := range []string{"Active Mode:", "Intent: mode Max", "Mappings:", "Columns:", "Missing resources:", "Models/Beta.txt", "Incomplete transactions:", "status-probe"} {
+	for _, expected := range []string{"Active Mode:", "Current: following (Max)", "Mappings:", "Columns:", "Missing resources:", "Models/Beta.txt", "Incomplete transactions:", "status-probe"} {
 		if !strings.Contains(human, expected) {
 			t.Fatalf("status human output missing %q: %q", expected, human)
 		}
@@ -67,7 +67,7 @@ func TestWorkflowContextStatusApplyRefreshAndMissingDiagnostics(t *testing.T) {
 		OK   bool `json:"ok"`
 		Data struct {
 			Project      string                       `json:"project"`
-			Intent       *linker.ApplyIntent          `json:"intent"`
+			Current      map[string]any               `json:"current"`
 			Mappings     []linker.Mapping             `json:"mappings"`
 			Columns      []statusColumnSummary        `json:"columns"`
 			Missing      []statusMissingResource      `json:"missing"`
@@ -77,7 +77,8 @@ func TestWorkflowContextStatusApplyRefreshAndMissingDiagnostics(t *testing.T) {
 	if err := json.Unmarshal([]byte(jsonOutput), &envelope); err != nil {
 		t.Fatalf("decode status JSON: %v; output=%q", err, jsonOutput)
 	}
-	if !envelope.OK || envelope.Data.Project != "ProjectA" || envelope.Data.Intent == nil || envelope.Data.Intent.Mode != "Max" || len(envelope.Data.Mappings) == 0 || len(envelope.Data.Columns) != 1 || len(envelope.Data.Missing) != 1 || len(envelope.Data.Transactions) != 1 {
+	relation, hasRelation := envelope.Data.Current["relation"].(map[string]any)
+	if !envelope.OK || envelope.Data.Project != "ProjectA" || !hasRelation || relation["kind"] != "following" || relation["originMode"] != "Max" || len(envelope.Data.Mappings) == 0 || len(envelope.Data.Columns) != 1 || len(envelope.Data.Missing) != 1 || len(envelope.Data.Transactions) != 1 {
 		t.Fatalf("status JSON data = %#v", envelope.Data)
 	}
 	if _, err := os.Stat(transaction.Directory()); err != nil {
@@ -118,14 +119,18 @@ func TestWorkflowRefreshMappingOnlyColumnIsolationAndAllProjects(t *testing.T) {
 
 	runResourceCommand(t, dependencies, []string{"apply", "column", "Models", "Alpha.txt", "-p", "ProjectA"}, ExitSuccess, "")
 	state := loadWorkflowState(t, dependencies, "ProjectA")
-	state.Intent = nil
+	state.Columns = map[string]repository.ColumnSelection{}
+	state.Relation = nil
 	saveWorkflowState(t, dependencies, "ProjectA", state)
 	mappingOnlyTargets := filepath.Join(dependencies.HomeDir, "mapping-only")
 	runResourceCommand(t, dependencies, []string{"column", "target", "set", "Models", "0", "-p", "ProjectA", "--dir", mappingOnlyTargets}, ExitSuccess, "")
 	runResourceCommand(t, dependencies, []string{"refresh", "-p", "ProjectA"}, ExitSuccess, "")
-	assertManagedLink(t, filepath.Join(mappingOnlyTargets, "Alpha.txt"), workflowSettingPath(dependencies, "ProjectA", "Models", "Alpha.txt"))
-	if loadWorkflowState(t, dependencies, "ProjectA").Intent != nil {
-		t.Fatal("mapping-only refresh invented an apply intent")
+	if _, err := os.Lstat(filepath.Join(projectATargets, "Alpha.txt")); !os.IsNotExist(err) {
+		t.Fatalf("empty Current selection kept a managed link: %v", err)
+	}
+	state = loadWorkflowState(t, dependencies, "ProjectA")
+	if len(state.Columns) != 0 || state.Relation != nil || len(state.Mappings) != 0 {
+		t.Fatalf("refresh without Current columns should clear mappings: %#v", state)
 	}
 
 	addWorkflowColumn(t, dependencies, "ProjectA", "Skills", filepath.Join(projectATargets, "skills"), "Skill-A")
@@ -135,11 +140,11 @@ func TestWorkflowRefreshMappingOnlyColumnIsolationAndAllProjects(t *testing.T) {
 	newSkillsTargets := filepath.Join(dependencies.HomeDir, "skills-new")
 	runResourceCommand(t, dependencies, []string{"column", "target", "set", "Models", "0", "-p", "ProjectA", "--dir", newModelsTargets}, ExitSuccess, "")
 	runResourceCommand(t, dependencies, []string{"column", "target", "set", "Skills", "0", "-p", "ProjectA", "--dir", newSkillsTargets}, ExitSuccess, "")
-	runResourceCommand(t, dependencies, []string{"refresh", "-p", "ProjectA", "--column", "Models"}, ExitSuccess, "")
+	runResourceCommand(t, dependencies, []string{"refresh", "-p", "ProjectA"}, ExitSuccess, "")
 	assertManagedLink(t, filepath.Join(newModelsTargets, "Alpha.txt"), workflowSettingPath(dependencies, "ProjectA", "Models", "Alpha.txt"))
-	assertManagedLink(t, filepath.Join(projectATargets, "skills", "Skill-A"), workflowSettingPath(dependencies, "ProjectA", "Skills", "Skill-A"))
-	if _, err := os.Lstat(filepath.Join(newSkillsTargets, "Skill-A")); !os.IsNotExist(err) {
-		t.Fatalf("Column refresh changed another Column: %v", err)
+	assertManagedLink(t, filepath.Join(newSkillsTargets, "Skill-A"), workflowSettingPath(dependencies, "ProjectA", "Skills", "Skill-A"))
+	if _, err := os.Lstat(filepath.Join(projectATargets, "skills", "Skill-A")); !os.IsNotExist(err) {
+		t.Fatalf("target change kept a stale managed link: %v", err)
 	}
 
 	runResourceCommand(t, dependencies, []string{"apply", "column", "Models", "Alpha.txt", "-p", "ProjectB"}, ExitSuccess, "")
@@ -173,7 +178,8 @@ func TestWorkflowResetRevertAndForcedTargetRecovery(t *testing.T) {
 	runResourceCommand(t, dependencies, []string{"revert", "-p", "oc", "--force-targets", "--json"}, ExitSuccess, "")
 	assertManagedLink(t, alphaTarget, workflowSettingPath(dependencies, "OpenCode", "Models", "Alpha.txt"))
 	state := loadWorkflowState(t, dependencies, "OpenCode")
-	if state.Intent == nil || state.Intent.Column != "Models" || len(state.Intent.Settings) != 1 || state.Intent.Settings[0] != "Alpha.txt" {
+	selection, ok := state.Columns["Models"]
+	if !ok || state.Relation != nil || selection.Strategy != "cover" || len(selection.Settings) != 1 || selection.Settings[0] != "Alpha.txt" {
 		t.Fatalf("one-step revert state = %#v", state)
 	}
 
@@ -183,13 +189,14 @@ func TestWorkflowResetRevertAndForcedTargetRecovery(t *testing.T) {
 		t.Fatalf("forced reset did not reclaim target: %v", err)
 	}
 	state = loadWorkflowState(t, dependencies, "OpenCode")
-	if state.Intent != nil || len(state.Mappings) != 0 {
+	if len(state.Columns) != 0 || state.Relation != nil || len(state.Mappings) != 0 {
 		t.Fatalf("reset state = %#v", state)
 	}
 
 	runResourceCommand(t, dependencies, []string{"revert", "-p", "OpenCode", "--force-targets"}, ExitSuccess, "")
 	state = loadWorkflowState(t, dependencies, "OpenCode")
-	if state.Intent == nil || state.Intent.Column != "Models" || len(state.Intent.Settings) != 1 || state.Intent.Settings[0] != "Alpha.txt" {
+	selection, ok = state.Columns["Models"]
+	if !ok || state.Relation != nil || selection.Strategy != "cover" || len(selection.Settings) != 1 || selection.Settings[0] != "Alpha.txt" {
 		t.Fatalf("revert after reset state = %#v", state)
 	}
 	assertManagedLink(t, alphaTarget, workflowSettingPath(dependencies, "OpenCode", "Models", "Alpha.txt"))

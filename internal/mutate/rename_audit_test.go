@@ -22,26 +22,26 @@ func TestRenameProjectFullWarehouse(t *testing.T) {
 	fixedTarget := filepath.Join(targetDir, "fixed.json")
 	derivedTarget := filepath.Join(targetDir, "GPT.json")
 
-// Current state with both a fixed and a derived target plus a mode intent.
-// Derived target names come from Setting names, so a Project rename must keep
-// them unchanged while only the mapping sources move.
-state := repository.CurrentState{
+	// Current state with both a fixed and a derived target plus a following Mode relation.
+	// Derived target names come from Setting names, so a Project rename must keep
+	// them unchanged while only the mapping sources move.
+	state := repository.CurrentState{
 		Mappings: []repository.Mapping{
 			{Source: oldSource, Target: fixedTarget},
 			{Source: oldSource, Target: derivedTarget},
 		},
-		Intent: &repository.ApplyIntent{Kind: "mode", Mode: "Max"},
+		Relation: &repository.CurrentRelation{Kind: "following", OriginMode: "Max"},
 	}
 	if err := repo.SaveCurrentState("OpenCode", state); err != nil {
 		t.Fatal(err)
 	}
-	// History with both intents and both mapping directions.
+	// History with both relations and both mapping directions.
 	history := []repository.HistoryEntry{{
 		Timestamp:        "t1",
 		PreviousMappings: []repository.Mapping{{Source: oldSource, Target: fixedTarget}},
 		NextMappings:     []repository.Mapping{{Source: oldSource, Target: derivedTarget}},
-		PreviousIntent:   &repository.ApplyIntent{Kind: "mode", Mode: "Max"},
-		NextIntent:       &repository.ApplyIntent{Kind: "column", Column: "Models", Settings: []string{"GPT.json"}},
+		PreviousRelation: &repository.CurrentRelation{Kind: "following", OriginMode: "Max"},
+		NextColumns:      map[string]repository.ColumnSelection{"Models": {Strategy: "cover", Settings: []string{"GPT.json"}}},
 	}}
 	if err := repo.SaveHistory("OpenCode", history); err != nil {
 		t.Fatal(err)
@@ -108,12 +108,12 @@ state := repository.CurrentState{
 	current, _ := repo.LoadCurrentState("Code")
 	if current.Mappings[0].Source != newSource || current.Mappings[0].Target != fixedTarget ||
 		current.Mappings[1].Source != newSource || current.Mappings[1].Target != derivedTarget ||
-		current.Intent == nil || current.Intent.Mode != "Max" {
+		current.Relation == nil || current.Relation.OriginMode != "Max" {
 		t.Fatalf("current after project rename = %#v", current)
 	}
 	entries, _ := repo.LoadHistory("Code")
 	if entries[0].PreviousMappings[0].Source != newSource || entries[0].NextMappings[0].Target != derivedTarget ||
-		entries[0].PreviousIntent.Mode != "Max" || entries[0].NextIntent.Column != "Models" || entries[0].NextIntent.Settings[0] != "GPT.json" {
+		entries[0].PreviousRelation == nil || entries[0].PreviousRelation.OriginMode != "Max" || entries[0].NextColumns["Models"].Settings[0] != "GPT.json" {
 		t.Fatalf("history after project rename = %#v", entries)
 	}
 	record, ok, err := repo.LoadSession(101)
@@ -134,7 +134,7 @@ state := repository.CurrentState{
 }
 
 // TestRenameColumnRewritesEveryReference verifies Column rename rewrites Mode
-// selections, current and history intents, mappings, and the Setting index move.
+// selections, current and history columns, mappings, and the Setting index move.
 func TestRenameColumnRewritesEveryReference(t *testing.T) {
 	root, repo, targetDir := createRenameFixture(t)
 	oldSource := filepath.Join(root, "OpenCode", "Column", "Models", "GPT.json")
@@ -143,7 +143,7 @@ func TestRenameColumnRewritesEveryReference(t *testing.T) {
 
 	state := repository.CurrentState{
 		Mappings: []repository.Mapping{{Source: oldSource, Target: fixedTarget}},
-		Intent:   &repository.ApplyIntent{Kind: "column", Column: "models", Settings: []string{"gpt"}},
+		Columns:  map[string]repository.ColumnSelection{"Models": {Strategy: "cover", Settings: []string{"GPT.json"}}},
 	}
 	if err := repo.SaveCurrentState("OpenCode", state); err != nil {
 		t.Fatal(err)
@@ -152,8 +152,8 @@ func TestRenameColumnRewritesEveryReference(t *testing.T) {
 		Timestamp:        "t1",
 		PreviousMappings: []repository.Mapping{{Source: oldSource, Target: fixedTarget}},
 		NextMappings:     []repository.Mapping{{Source: oldSource, Target: fixedTarget}},
-		PreviousIntent:   &repository.ApplyIntent{Kind: "column", Column: "Models", Settings: []string{"GPT.json"}},
-		NextIntent:       &repository.ApplyIntent{Kind: "mode", Mode: "Other"},
+		PreviousColumns:  map[string]repository.ColumnSelection{"Models": {Strategy: "cover", Settings: []string{"GPT.json"}}},
+		NextRelation:     &repository.CurrentRelation{Kind: "following", OriginMode: "Other"},
 	}}
 	if err := repo.SaveHistory("OpenCode", history); err != nil {
 		t.Fatal(err)
@@ -200,11 +200,11 @@ func TestRenameColumnRewritesEveryReference(t *testing.T) {
 		t.Fatalf("old column dir survived: %v", err)
 	}
 	current, _ := repo.LoadCurrentState("OpenCode")
-	if current.Mappings[0].Source != newSource || current.Intent.Column != "Configurations" || current.Intent.Settings[0] != "gpt" {
+	if current.Mappings[0].Source != newSource || current.Columns["Configurations"].Settings[0] != "GPT.json" || len(current.Columns) != 1 {
 		t.Fatalf("current = %#v", current)
 	}
 	entries, _ := repo.LoadHistory("OpenCode")
-	if entries[0].PreviousMappings[0].Source != newSource || entries[0].PreviousIntent.Column != "Configurations" || entries[0].NextIntent.Mode != "Other" {
+	if entries[0].PreviousMappings[0].Source != newSource || entries[0].PreviousColumns["Configurations"].Settings[0] != "GPT.json" || entries[0].NextRelation == nil || entries[0].NextRelation.OriginMode != "Other" {
 		t.Fatalf("history = %#v", entries)
 	}
 	if link, err := os.Readlink(fixedTarget); err != nil || link != newSource {
@@ -217,7 +217,7 @@ func TestRenameColumnRewritesEveryReference(t *testing.T) {
 }
 
 // TestRenameModeRewritesCurrentAndHistoryIntents verifies Mode rename rewrites
-// both intent directions while preserving other Mode selections and contexts.
+// both relation directions while preserving other Mode selections and contexts.
 func TestRenameModeRewritesCurrentAndHistoryIntents(t *testing.T) {
 	root, repo, targetDir := createRenameFixture(t)
 	oldSource := filepath.Join(root, "OpenCode", "Column", "Models", "GPT.json")
@@ -225,7 +225,7 @@ func TestRenameModeRewritesCurrentAndHistoryIntents(t *testing.T) {
 
 	state := repository.CurrentState{
 		Mappings: []repository.Mapping{{Source: oldSource, Target: target}},
-		Intent:   &repository.ApplyIntent{Kind: "mode", Mode: "Max"},
+		Relation: &repository.CurrentRelation{Kind: "following", OriginMode: "Max"},
 	}
 	if err := repo.SaveCurrentState("OpenCode", state); err != nil {
 		t.Fatal(err)
@@ -234,8 +234,8 @@ func TestRenameModeRewritesCurrentAndHistoryIntents(t *testing.T) {
 		Timestamp:        "t1",
 		PreviousMappings: []repository.Mapping{{Source: oldSource, Target: target}},
 		NextMappings:     []repository.Mapping{{Source: oldSource, Target: target}},
-		PreviousIntent:   &repository.ApplyIntent{Kind: "mode", Mode: "Max"},
-		NextIntent:       &repository.ApplyIntent{Kind: "mode", Mode: "Other"},
+		PreviousRelation: &repository.CurrentRelation{Kind: "following", OriginMode: "Max"},
+		NextRelation:     &repository.CurrentRelation{Kind: "following", OriginMode: "Other"},
 	}}
 	if err := repo.SaveHistory("OpenCode", history); err != nil {
 		t.Fatal(err)
@@ -251,7 +251,7 @@ func TestRenameModeRewritesCurrentAndHistoryIntents(t *testing.T) {
 	if err != nil {
 		t.Fatalf("BuildRenamePlan: %v", err)
 	}
-	if len(plan.IntentReferences) != 2 { // current + previous history intent
+	if len(plan.IntentReferences) != 2 { // current relation + previous history relation
 		t.Fatalf("intent references = %#v", plan.IntentReferences)
 	}
 	if err := mutate.RenameMode(repo, "OpenCode", "max", "Maximum", false, renamePlanOptions(t, targetDir)); err != nil {
@@ -269,12 +269,12 @@ func TestRenameModeRewritesCurrentAndHistoryIntents(t *testing.T) {
 		t.Fatalf("unrelated mode changed: %#v", got)
 	}
 	current, _ := repo.LoadCurrentState("OpenCode")
-	if current.Intent.Mode != "Maximum" {
-		t.Fatalf("current intent = %#v", current.Intent)
+	if current.Relation == nil || current.Relation.OriginMode != "Maximum" {
+		t.Fatalf("current relation = %#v", current.Relation)
 	}
 	entries, _ := repo.LoadHistory("OpenCode")
-	if entries[0].PreviousIntent.Mode != "Maximum" || entries[0].NextIntent.Mode != "Other" {
-		t.Fatalf("history intents = %#v", entries)
+	if entries[0].PreviousRelation == nil || entries[0].PreviousRelation.OriginMode != "Maximum" || entries[0].NextRelation == nil || entries[0].NextRelation.OriginMode != "Other" {
+		t.Fatalf("history relations = %#v", entries)
 	}
 }
 
@@ -323,7 +323,7 @@ func TestRenameSourceDescendantBoundaries(t *testing.T) {
 }
 
 // TestRenameSettingDerivedTargetAndUnrelatedPreservation verifies derived target
-// rename plus full preservation of unrelated Settings, Modes, and history intents.
+// rename plus full preservation of unrelated Settings, Modes, and history columns.
 func TestRenameSettingDerivedTargetAndUnrelatedPreservation(t *testing.T) {
 	root, repo, targetDir := createRenameFixture(t)
 	oldSource := filepath.Join(root, "OpenCode", "Column", "Models", "GPT.json")
@@ -355,8 +355,8 @@ func TestRenameSettingDerivedTargetAndUnrelatedPreservation(t *testing.T) {
 		Timestamp:        "t1",
 		PreviousMappings: []repository.Mapping{{Source: oldSource, Target: filepath.Join(targetDir, "GPT.json")}},
 		NextMappings:     []repository.Mapping{{Source: oldSource, Target: filepath.Join(targetDir, "GPT.json")}},
-		PreviousIntent:   &repository.ApplyIntent{Kind: "column", Column: "Models", Settings: []string{"GPT.json"}},
-		NextIntent:       &repository.ApplyIntent{Kind: "column", Column: "Models", Settings: []string{"GPT.json", "GPT2.json"}},
+		PreviousColumns:  map[string]repository.ColumnSelection{"Models": {Strategy: "cover", Settings: []string{"GPT.json"}}},
+		NextColumns:      map[string]repository.ColumnSelection{"Models": {Strategy: "cover", Settings: []string{"GPT.json", "GPT2.json"}}},
 	}}
 	if err := repo.SaveHistory("OpenCode", history); err != nil {
 		t.Fatal(err)
@@ -377,8 +377,8 @@ func TestRenameSettingDerivedTargetAndUnrelatedPreservation(t *testing.T) {
 	if entries[0].NextMappings[0].Target != filepath.Join(targetDir, "Primary.json") {
 		t.Fatalf("history mapping = %#v", entries[0].NextMappings)
 	}
-	if !reflect.DeepEqual(entries[0].NextIntent.Settings, []string{"Primary.json", "GPT2.json"}) {
-		t.Fatalf("history intent = %#v", entries[0].NextIntent)
+	if !reflect.DeepEqual(entries[0].NextColumns["Models"].Settings, []string{"Primary.json", "GPT2.json"}) {
+		t.Fatalf("history columns = %#v", entries[0].NextColumns)
 	}
 	modeIndex, _ = repo.LoadModeIndex("OpenCode")
 	if got := modeIndex.Modes["Max"].Columns["Models"].Settings; !reflect.DeepEqual(got, []string{"Primary.json"}) {
@@ -611,13 +611,14 @@ func TestRenameProjectRollback(t *testing.T) {
 		t.Fatalf("target -> %q err=%v", link, err)
 	}
 }
+
 // TestRenameColumnAndModeRollback verifies exact rollback of moved directories,
 // Mode references, runtime records, and links for Column and Mode renames.
 func TestRenameColumnAndModeRollback(t *testing.T) {
 	root, repo, targetDir := createRenameFixture(t)
 	oldSource := filepath.Join(root, "OpenCode", "Column", "Models", "GPT.json")
 	target := filepath.Join(targetDir, "fixed.json")
-	state := repository.CurrentState{Mappings: []repository.Mapping{{Source: oldSource, Target: target}}, Intent: &repository.ApplyIntent{Kind: "column", Column: "Models", Settings: []string{"GPT.json"}}}
+	state := repository.CurrentState{Mappings: []repository.Mapping{{Source: oldSource, Target: target}}, Columns: map[string]repository.ColumnSelection{"Models": {Strategy: "cover", Settings: []string{"GPT.json"}}}}
 	if err := repo.SaveCurrentState("OpenCode", state); err != nil {
 		t.Fatal(err)
 	}
@@ -652,14 +653,14 @@ func TestRenameColumnAndModeRollback(t *testing.T) {
 		t.Fatalf("mode refs not restored: %#v", got)
 	}
 	current, _ := repo.LoadCurrentState("OpenCode")
-	if current.Mappings[0].Source != oldSource || current.Intent.Column != "Models" {
+	if current.Mappings[0].Source != oldSource || current.Columns["Models"].Settings[0] != "GPT.json" {
 		t.Fatalf("current not restored: %#v", current)
 	}
 	if link, err := os.Readlink(target); err != nil || link != oldSource {
 		t.Fatalf("target -> %q err=%v", link, err)
 	}
 
-	if err := repo.SaveCurrentState("OpenCode", repository.CurrentState{Mappings: []repository.Mapping{{Source: oldSource, Target: target}}, Intent: &repository.ApplyIntent{Kind: "mode", Mode: "Max"}}); err != nil {
+	if err := repo.SaveCurrentState("OpenCode", repository.CurrentState{Mappings: []repository.Mapping{{Source: oldSource, Target: target}}, Relation: &repository.CurrentRelation{Kind: "following", OriginMode: "Max"}}); err != nil {
 		t.Fatal(err)
 	}
 	faultyMode := repository.New(root, repository.WithHooks(repository.Hooks{BeforeStage: func(s repository.Stage) error {
@@ -676,8 +677,8 @@ func TestRenameColumnAndModeRollback(t *testing.T) {
 		t.Fatalf("renamed mode survived rollback: %#v", modeIndex.Modes)
 	}
 	current, _ = repo.LoadCurrentState("OpenCode")
-	if current.Intent.Mode != "Max" {
-		t.Fatalf("mode intent not restored: %#v", current.Intent)
+	if current.Relation == nil || current.Relation.OriginMode != "Max" {
+		t.Fatalf("mode relation not restored: %#v", current.Relation)
 	}
 }
 
@@ -752,6 +753,7 @@ func TestRenameAbsentTargetRequiresForce(t *testing.T) {
 		t.Fatalf("recreated target -> %q err=%v", link, err)
 	}
 }
+
 // TestRenameDerivedDestinationDrift verifies an unmanaged object at the new
 // derived target blocks rename without force, is reclaimed with force, and is
 // restored exactly by rollback.

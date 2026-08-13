@@ -7,6 +7,7 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/xenon/ConfigFacilitator/internal/planner"
 	"github.com/xenon/ConfigFacilitator/internal/repository"
 )
 
@@ -60,7 +61,7 @@ func TestSyncNormalizesDefaultsAndNewSettingTargets(t *testing.T) {
 		t.Fatal(err)
 	}
 	writeProjectRuntime(t, projectRoot)
-	if err := SyncAll(root); err != nil {
+	if err := SyncAll(root, testPlanOptions()); err != nil {
 		t.Fatalf("sync warehouse: %v", err)
 	}
 	settingIndex, err := repository.New(root).LoadSettingIndex("OpenCode", "Skills")
@@ -128,7 +129,7 @@ func TestSyncDeletesDisappearedResources(t *testing.T) {
 	}
 	writeProjectRuntime(t, projectRoot)
 
-	if err := SyncAll(root); err != nil {
+	if err := SyncAll(root, testPlanOptions()); err != nil {
 		t.Fatalf("initial sync: %v", err)
 	}
 	repo := repository.New(root)
@@ -158,7 +159,7 @@ func TestSyncDeletesDisappearedResources(t *testing.T) {
 	if err := os.RemoveAll(missingDirSettingPath); err != nil {
 		t.Fatal(err)
 	}
-	if err := SyncAll(root); err != nil {
+	if err := SyncAll(root, testPlanOptions()); err != nil {
 		t.Fatalf("removal sync: %v", err)
 	}
 	columnIndex, _ = repo.LoadColumnIndex("OpenCode")
@@ -198,7 +199,7 @@ func TestSyncDeletesDisappearedResources(t *testing.T) {
 	if err := os.MkdirAll(missingDirSettingPath, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := SyncAll(root); err != nil {
+	if err := SyncAll(root, testPlanOptions()); err != nil {
 		t.Fatalf("restoration sync: %v", err)
 	}
 	columnIndex, _ = repo.LoadColumnIndex("OpenCode")
@@ -230,7 +231,7 @@ func TestSyncAllDiscoversRootSettingWarehouse(t *testing.T) {
 		t.Fatal(err)
 	}
 	writeProjectRuntime(t, projectRoot)
-	if err := SyncAll(root); err != nil {
+	if err := SyncAll(root, testPlanOptions()); err != nil {
 		t.Fatal(err)
 	}
 	projectIndex, err := repository.New(root).LoadProjectIndex()
@@ -252,7 +253,7 @@ func writeProjectRuntime(t *testing.T, projectRoot string) {
 	}
 	for path, data := range map[string][]byte{
 		filepath.Join(projectRoot, "Mode", "ModeIndex.jsonc"):      []byte(`{"Max":{"columns":{}}}`),
-		filepath.Join(projectRoot, "Backup", "current_state.json"): []byte(`{"mappings":[]}`),
+		filepath.Join(projectRoot, "Backup", "current_state.json"): []byte(`{"columns":{},"mappings":[]}`),
 		filepath.Join(projectRoot, "Backup", "history.log"):        nil,
 	} {
 		if err := os.WriteFile(path, data, 0o644); err != nil {
@@ -298,7 +299,7 @@ func TestProjectSyncDoesNotTouchOtherProjects(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := SyncProject(root, "OpenCode"); err != nil {
+	if err := SyncProject(root, "OpenCode", testPlanOptions()); err != nil {
 		t.Fatal(err)
 	}
 	projectIndex, err := repository.LoadProjectIndex(filepath.Join(root, "ProjectIndex.jsonc"))
@@ -312,7 +313,7 @@ func TestProjectSyncDoesNotTouchOtherProjects(t *testing.T) {
 		t.Fatal("Project-scoped sync removed an out-of-scope missing project")
 	}
 
-	if err := SyncAll(root); err != nil {
+	if err := SyncAll(root, testPlanOptions()); err != nil {
 		t.Fatal(err)
 	}
 	projectIndex, _ = repository.LoadProjectIndex(filepath.Join(root, "ProjectIndex.jsonc"))
@@ -353,7 +354,7 @@ func TestSyncAllRemovesMissingProjects(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := SyncAll(root); err != nil {
+	if err := SyncAll(root, testPlanOptions()); err != nil {
 		t.Fatal(err)
 	}
 	projectIndex, err := repository.LoadProjectIndex(filepath.Join(root, "ProjectIndex.jsonc"))
@@ -400,7 +401,7 @@ func TestSyncProjectRemovesScopedMissingProject(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := SyncProject(root, "GoneA"); err != nil {
+	if err := SyncProject(root, "GoneA", testPlanOptions()); err != nil {
 		t.Fatalf("scoped sync of missing project: %v", err)
 	}
 	projectIndex, err := repository.LoadProjectIndex(filepath.Join(root, "ProjectIndex.jsonc"))
@@ -420,7 +421,7 @@ func TestSyncProjectRemovesScopedMissingProject(t *testing.T) {
 		t.Fatalf("scoped sync recreated the disappeared path: %v", err)
 	}
 
-	if err := SyncAll(root); err != nil {
+	if err := SyncAll(root, testPlanOptions()); err != nil {
 		t.Fatal(err)
 	}
 	projectIndex, _ = repository.LoadProjectIndex(filepath.Join(root, "ProjectIndex.jsonc"))
@@ -469,7 +470,7 @@ func TestSyncCleansStaleMissingMarkers(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := SyncAll(root); err != nil {
+	if err := SyncAll(root, testPlanOptions()); err != nil {
 		t.Fatal(err)
 	}
 	repo := repository.New(root)
@@ -512,5 +513,134 @@ func TestSyncCleansStaleMissingMarkers(t *testing.T) {
 	}
 	if string(modeIndex.Modes["Max"].Extra["keep"]) != `"mode"` {
 		t.Fatalf("Mode extension fields lost: %#v", modeIndex.Modes["Max"].Extra)
+	}
+}
+
+// testPlanOptions returns deterministic environment-sensitive plan options for sync tests.
+func testPlanOptions() planner.PlanOptions {
+	return planner.PlanOptions{HomeDir: "/home/test", Env: map[string]string{}, OS: "linux"}
+}
+
+// TestSyncRecreatesMissingCurrentState verifies sync creates an empty Current
+// state and removes stale history when current_state.json is absent.
+func TestSyncRecreatesMissingCurrentState(t *testing.T) {
+	root := t.TempDir()
+	projectRoot := filepath.Join(root, "OpenCode")
+	columnRoot := filepath.Join(projectRoot, "Column", "Keep")
+	for _, directory := range []string{columnRoot, filepath.Join(projectRoot, "Mode"), filepath.Join(projectRoot, "Backup")} {
+		if err := os.MkdirAll(directory, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(root, "ProjectIndex.jsonc"), []byte("{}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(projectRoot, "Column", "ColumnIndex.jsonc"), []byte(`{"Keep":{}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(columnRoot, "SettingIndex.jsonc"), []byte(`{"targetNumber":0,"settings":{}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(projectRoot, "Mode", "ModeIndex.jsonc"), []byte(`{}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(projectRoot, "Backup", "history.log"), []byte("stale"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := SyncAll(root, testPlanOptions()); err != nil {
+		t.Fatalf("sync: %v", err)
+	}
+
+	repo := repository.New(root)
+	if _, err := os.Lstat(repo.CurrentStatePath("OpenCode")); err != nil {
+		t.Fatalf("current_state.json not created: %v", err)
+	}
+	state, err := repo.LoadCurrentState("OpenCode")
+	if err != nil {
+		t.Fatalf("load recreated current state: %v", err)
+	}
+	if len(state.Columns) != 0 || state.Relation != nil || len(state.Mappings) != 0 {
+		t.Fatalf("recreated current state = %#v, want empty", state)
+	}
+	if _, err := os.Lstat(filepath.Join(projectRoot, "Backup", "history.log")); !os.IsNotExist(err) {
+		t.Fatalf("stale history.log not removed, err=%v", err)
+	}
+}
+
+// TestSyncReplansFollowingRelationFromOriginMode verifies sync replans mappings
+// from the followed Mode's latest column selections when the Current state
+// follows that Mode but its persisted mappings are stale.
+func TestSyncReplansFollowingRelationFromOriginMode(t *testing.T) {
+	root := t.TempDir()
+	home := t.TempDir()
+	projectRoot := filepath.Join(root, "OpenCode")
+	columnRoot := filepath.Join(projectRoot, "Column", "opencode.json")
+	for _, directory := range []string{columnRoot, filepath.Join(projectRoot, "Mode"), filepath.Join(projectRoot, "Backup")} {
+		if err := os.MkdirAll(directory, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(root, "ProjectIndex.jsonc"), []byte("{}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(projectRoot, "Column", "ColumnIndex.jsonc"), []byte(`{"opencode.json":{}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(columnRoot, "SettingIndex.jsonc"), []byte(`{
+	"targetNumber": 1,
+	"defaultTargetDir": ["~/.config/opencode"],
+	"defaultTargetName": ["opencode.json"],
+	"settings": {
+		"GPT.json": {},
+		"CLAUDE.json": {}
+	}
+}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(columnRoot, "GPT.json"), []byte("gpt"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(columnRoot, "CLAUDE.json"), []byte("claude"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// Mode Max selects CLAUDE.json; the Current state follows Max but still
+	// carries the stale GPT.json mapping from an earlier selection.
+	if err := os.WriteFile(filepath.Join(projectRoot, "Mode", "ModeIndex.jsonc"), []byte(`{
+	"Max": {"columns": {"opencode.json": {"strategy": "cover", "settings": ["CLAUDE.json"]}}}
+}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	staleTarget := filepath.Join(home, "stale", "opencode.json")
+	if err := os.WriteFile(filepath.Join(projectRoot, "Backup", "current_state.json"), []byte(`{
+	"columns": {"opencode.json": {"strategy": "cover", "settings": ["GPT.json"]}},
+	"relation": {"kind": "following", "originMode": "Max"},
+	"mappings": [{"source": "`+filepath.Join(columnRoot, "GPT.json")+`", "target": "`+staleTarget+`"}]
+}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	options := planner.PlanOptions{HomeDir: home, Env: map[string]string{}, OS: "linux"}
+	if err := SyncAll(root, options); err != nil {
+		t.Fatalf("sync: %v", err)
+	}
+
+	repo := repository.New(root)
+	state, err := repo.LoadCurrentState("OpenCode")
+	if err != nil {
+		t.Fatalf("load current state: %v", err)
+	}
+	if state.Relation == nil || state.Relation.Kind != "following" || state.Relation.OriginMode != "Max" {
+		t.Fatalf("following relation lost: %#v", state.Relation)
+	}
+	if len(state.Mappings) != 1 || state.Mappings[0].Source != filepath.Join(columnRoot, "CLAUDE.json") {
+		t.Fatalf("mappings not replanned from Mode Max: %#v", state.Mappings)
+	}
+	wantTarget := filepath.Join(home, ".config", "opencode", "opencode.json")
+	if state.Mappings[0].Target != wantTarget {
+		t.Fatalf("replanned target = %q, want %q", state.Mappings[0].Target, wantTarget)
+	}
+	if got := state.Columns["opencode.json"]; got.Strategy != "cover" || len(got.Settings) != 1 || got.Settings[0] != "CLAUDE.json" {
+		t.Fatalf("columns not refreshed from Mode Max: %#v", state.Columns)
 	}
 }

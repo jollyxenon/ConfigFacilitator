@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
+	"github.com/xenon/ConfigFacilitator/internal/index"
 	"github.com/xenon/ConfigFacilitator/internal/linker"
 	"github.com/xenon/ConfigFacilitator/internal/planner"
 	"github.com/xenon/ConfigFacilitator/internal/repository"
@@ -112,7 +113,7 @@ func renderWarehouseStatus(context *commandContext, loaded warehouse.Warehouse) 
 			status = "matched"
 			humanStatus = displayLabel(mode.Metadata.DisplayName, mode.Name)
 			color = statusGreen
-		} else if len(state.Mappings) > 0 || state.Intent != nil {
+		} else if len(state.Mappings) > 0 || len(state.Columns) > 0 {
 			status = "unmatched"
 			humanStatus = "Unmatched"
 		}
@@ -155,7 +156,7 @@ func renderProjectStatus(context *commandContext, project warehouse.Project) err
 	} else {
 		lines = append(lines, "Active Mode: "+emphasizeStatusText(context, statusRed, "None"))
 	}
-	lines = append(lines, "Intent: "+formatStatusIntent(state.Intent), fmt.Sprintf("Mappings: %d", len(state.Mappings)))
+	lines = append(lines, "Current: "+formatCurrentState(state), fmt.Sprintf("Mappings: %d", len(state.Mappings)))
 	for _, mapping := range sortedStatusMappings(state.Mappings) {
 		lines = append(lines, fmt.Sprintf("  - %s -> %s", mapping.Source, mapping.Target))
 	}
@@ -180,7 +181,7 @@ func renderProjectStatus(context *commandContext, project warehouse.Project) err
 			"scope":        "project",
 			"project":      project.Name,
 			"activeMode":   nullableStatusName(matchedMode),
-			"intent":       state.Intent,
+			"current":      currentStateJSON(state),
 			"mappings":     state.Mappings,
 			"columns":      columns,
 			"missing":      missing,
@@ -189,19 +190,12 @@ func renderProjectStatus(context *commandContext, project warehouse.Project) err
 	})
 }
 
-// formatStatusIntent renders one canonical persisted apply intent for human inspection.
-func formatStatusIntent(intent *linker.ApplyIntent) string {
-	if intent == nil {
-		return "None (mapping-only)"
+// formatCurrentState renders one canonical persisted Current state for human inspection.
+func formatCurrentState(state linker.CurrentState) string {
+	if state.Relation != nil {
+		return fmt.Sprintf("%s (%s) [%d columns, %d mappings]", state.Relation.Kind, state.Relation.OriginMode, len(state.Columns), len(state.Mappings))
 	}
-	switch intent.Kind {
-	case "mode":
-		return fmt.Sprintf("mode %s", intent.Mode)
-	case "column":
-		return fmt.Sprintf("column %s [%s]", intent.Column, strings.Join(intent.Settings, ", "))
-	default:
-		return intent.Kind
-	}
+	return fmt.Sprintf("independent [%d columns, %d mappings]", len(state.Columns), len(state.Mappings))
 }
 
 // sortedStatusMappings returns a deterministic copy of current mappings.
@@ -280,6 +274,15 @@ func appendStatusDiagnostics(lines *[]string, diagnostics []repository.Transacti
 	}
 }
 
+// currentStateJSON emits a stable JSON object for one Current state.
+func currentStateJSON(state linker.CurrentState) map[string]any {
+	result := map[string]any{"columns": state.Columns, "mappings": state.Mappings}
+	if state.Relation != nil {
+		result["relation"] = state.Relation
+	}
+	return result
+}
+
 // nullableStatusName emits JSON null instead of an empty active Mode identifier.
 func nullableStatusName(name string) any {
 	if name == "" {
@@ -346,16 +349,16 @@ func newStatusPlanContext(dependencies Dependencies) statusPlanContext {
 	}}
 }
 
-// matchedModeIntent identifies a persisted Mode only while its replanned mappings still match.
+// matchedModeIntent identifies a persisted Mode while its replanned mappings still match.
 func matchedModeIntent(project warehouse.Project, state linker.CurrentState, context statusPlanContext) (warehouse.Mode, bool) {
-	if state.Intent == nil || state.Intent.Kind != "mode" || strings.TrimSpace(state.Intent.Mode) == "" {
+	if state.Relation == nil || state.Relation.Kind != "following" {
 		return warehouse.Mode{}, false
 	}
-	mode, err := project.ResolveMode(state.Intent.Mode)
+	mode, err := project.ResolveMode(state.Relation.OriginMode)
 	if err != nil {
 		return warehouse.Mode{}, false
 	}
-	plannedMappings, err := planner.PlanModeMappings(project, mode.Name, state.Mappings, context.options)
+	plannedMappings, err := planner.PlanModeColumns(project, mode.Name, state.Mappings, context.options)
 	if err != nil {
 		var missing planner.MissingResourceError
 		if errors.As(err, &missing) {
@@ -378,7 +381,7 @@ func columnCoverage(project warehouse.Project, column warehouse.Column, currentM
 			continue
 		}
 		total++
-		planned, err := planner.PlanColumnMappings(project, column.Name, []string{setting.Name}, context.options)
+		planned, err := planner.PlanColumns(project, map[string]index.ModeColumnSelection{column.Name: {Strategy: "cover", Settings: []string{setting.Name}}}, nil, context.options)
 		if err != nil || len(planned) == 0 {
 			continue
 		}

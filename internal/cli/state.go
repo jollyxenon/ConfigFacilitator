@@ -1,14 +1,16 @@
 package cli
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
 	"github.com/spf13/cobra"
-	"github.com/xenon/ConfigFacilitator/internal/linker"
 	"github.com/xenon/ConfigFacilitator/internal/planner"
+	"github.com/xenon/ConfigFacilitator/internal/repository"
 	"github.com/xenon/ConfigFacilitator/internal/session"
 	"github.com/xenon/ConfigFacilitator/internal/warehouse"
+	"github.com/xenon/ConfigFacilitator/internal/workflow"
 )
 
 // newResetCommand constructs the normalized reset syntax.
@@ -25,8 +27,12 @@ func newResetCommand(context *commandContext) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if err := linker.New().Reset(project, linker.WithForce(forceTargets)); err != nil {
-				return classifyMutationError("reset_failed", err)
+			rootPath, err := effectiveWarehouseRoot(context.dependencies)
+			if err != nil {
+				return err
+			}
+			if err := workflow.ResetCurrent(repository.New(rootPath), project.Name, forceTargets); err != nil {
+				return classifyWorkflowError(err)
 			}
 			return context.renderResult(HumanResult{
 				Message: fmt.Sprintf("Reset project %q", displayStatusName(project.Metadata.DisplayName, project.Name)),
@@ -53,23 +59,27 @@ func newRevertCommand(context *commandContext) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			engine := linker.New()
-			previous, loadErr := engine.LoadPreviousState(project)
-			if loadErr != nil {
-				return NewResourceError("previous_state_not_found", loadErr.Error(), nil, loadErr)
+			rootPath, err := effectiveWarehouseRoot(context.dependencies)
+			if err != nil {
+				return err
 			}
-			if err := engine.ReplaceState(project, previous, linker.WithForce(forceTargets)); err != nil {
-				return classifyMutationError("revert_failed", err)
+			if err := workflow.RevertCurrent(repository.New(rootPath), project.Name, forceTargets); err != nil {
+				return classifyWorkflowError(err)
 			}
 			return context.renderResult(HumanResult{
 				Message: fmt.Sprintf("Reverted project %q", displayStatusName(project.Metadata.DisplayName, project.Name)),
-				Data:    map[string]any{"project": project.Name, "state": previous},
+				Data:    map[string]any{"project": project.Name},
 			})
 		},
 	}
 	addProjectFlag(command, &scope)
 	command.Flags().BoolVar(&forceTargets, "force-targets", false, "Reclaim occupied recorded target paths")
 	return command
+}
+
+// EffectiveWarehouseRoot resolves the bootstrap file entirely from injected dependencies.
+func EffectiveWarehouseRoot(dependencies Dependencies) (string, error) {
+	return effectiveWarehouseRoot(dependencies)
 }
 
 // effectiveWarehouseRoot resolves the bootstrap file entirely from injected dependencies.
@@ -79,6 +89,38 @@ func effectiveWarehouseRoot(dependencies Dependencies) (string, error) {
 		return "", NewPersistenceError("warehouse_root", "resolve warehouse root", err)
 	}
 	return rootPath, nil
+}
+
+// classifyWorkflowError maps shared workflow failures to CLI error classes.
+func classifyWorkflowError(err error) *CommandError {
+	var missing planner.MissingResourceError
+	if errors.As(err, &missing) {
+		return NewResourceError("resource_missing", err.Error(), nil, err)
+	}
+	class, code := workflow.Classify(err)
+	switch class {
+	case workflow.ErrNotFound:
+		return NewResourceError(code, err.Error(), nil, err)
+	case workflow.ErrConflict:
+		return NewResourceError(code, err.Error(), nil, err)
+	case workflow.ErrInvalid:
+		return NewInvalidDataError(code, err.Error(), nil, err)
+	case workflow.ErrRefused:
+		return NewRefusalError(code, err.Error(), nil, err)
+	default:
+		return NewPersistenceError(code, err.Error(), err)
+	}
+}
+
+// unsafeTargetError reports whether a workflow error is an unsafe-target refusal.
+func unsafeTargetError(err error) bool {
+	message := strings.ToLower(err.Error())
+	for _, indicator := range []string{"unmanaged", "drift", "occupied", "owned", "ownership", "force"} {
+		if strings.Contains(message, indicator) {
+			return true
+		}
+	}
+	return false
 }
 
 // resolveProjectForCommand resolves explicit or injected PPID context into one canonical Project.
@@ -111,15 +153,4 @@ func resolveProjectForCommand(dependencies Dependencies, explicitProject string)
 // planOptions builds planner options from injected home, environment, and OS values.
 func planOptions(dependencies Dependencies) planner.PlanOptions {
 	return planner.PlanOptions{HomeDir: dependencies.HomeDir, Env: dependencies.Environment, OS: dependencies.OperatingSystem}
-}
-
-// classifyMutationError distinguishes unsafe target refusal from persistence failures.
-func classifyMutationError(code string, err error) *CommandError {
-	message := strings.ToLower(err.Error())
-	for _, indicator := range []string{"unmanaged", "drift", "occupied", "owned", "ownership", "force"} {
-		if strings.Contains(message, indicator) {
-			return NewRefusalError("unsafe_target", err.Error(), nil, err)
-		}
-	}
-	return NewPersistenceError(code, err.Error(), err)
 }

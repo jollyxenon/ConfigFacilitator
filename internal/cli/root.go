@@ -67,6 +67,7 @@ func NewRootCommand(dependencies Dependencies) *cobra.Command {
 		newColumnCommand(context),
 		newSettingCommand(context),
 		newModeCommand(context),
+		newCurrentCommand(context),
 		newUseCommand(context),
 		newStatusCommand(context),
 		newApplyCommand(context),
@@ -75,6 +76,7 @@ func NewRootCommand(dependencies Dependencies) *cobra.Command {
 		newRootPathCommand(context),
 		newResetCommand(context),
 		newRevertCommand(context),
+		newWebCommand(context),
 		newCompletionCommand(),
 	)
 	addDynamicCompletions(root, context)

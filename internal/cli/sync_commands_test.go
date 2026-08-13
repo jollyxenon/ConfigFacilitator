@@ -114,7 +114,7 @@ func TestApplyAndRefreshRejectMissingBeforeTargetMutation(t *testing.T) {
 	}
 	runResourceCommand(t, dependencies, []string{"refresh", "-p", "OpenCode", "--json"}, ExitResource, "resource_missing")
 	afterState := loadWorkflowState(t, dependencies, "OpenCode")
-	if len(afterState.Mappings) != len(beforeState.Mappings) || afterState.Intent == nil || beforeState.Intent == nil || afterState.Intent.Mode != beforeState.Intent.Mode {
+	if len(afterState.Mappings) != len(beforeState.Mappings) || afterState.Relation == nil || beforeState.Relation == nil || afterState.Relation.OriginMode != beforeState.Relation.OriginMode {
 		t.Fatalf("missing refresh changed state: before=%#v after=%#v", beforeState, afterState)
 	}
 	if info, err := os.Lstat(target); err != nil || info.Mode()&os.ModeSymlink == 0 {

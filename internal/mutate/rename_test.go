@@ -22,8 +22,8 @@ func TestRenameSettingRewritesEverySchemaReferenceAndPreservesMetadata(t *testin
 	fixedTarget := filepath.Join(targetDir, "fixed.json")
 	derivedTarget := filepath.Join(targetDir, "GPT.json")
 	state := repository.CurrentState{
+		Columns:  map[string]repository.ColumnSelection{"Models": {Strategy: "cover", Settings: []string{"GPT.json"}}},
 		Mappings: []repository.Mapping{{Source: oldSource, Target: fixedTarget}, {Source: oldSource, Target: derivedTarget}},
-		Intent:   &repository.ApplyIntent{Kind: "column", Column: "Models", Settings: []string{"GPT.json"}, Extra: map[string]json.RawMessage{"intentExtra": json.RawMessage(`true`)}},
 		Extra:    map[string]json.RawMessage{"stateExtra": json.RawMessage(`{"keep":1}`)},
 	}
 	if err := repo.SaveCurrentState("OpenCode", state); err != nil {
@@ -31,10 +31,10 @@ func TestRenameSettingRewritesEverySchemaReferenceAndPreservesMetadata(t *testin
 	}
 	history := []repository.HistoryEntry{{
 		Timestamp:        "one",
+		PreviousColumns:  map[string]repository.ColumnSelection{"Models": {Strategy: "cover", Settings: []string{"GPT.json"}}},
 		PreviousMappings: []repository.Mapping{{Source: oldSource, Target: fixedTarget}},
 		NextMappings:     []repository.Mapping{{Source: oldSource, Target: derivedTarget}},
-		PreviousIntent:   &repository.ApplyIntent{Kind: "column", Column: "Models", Settings: []string{"GPT.json"}},
-		NextIntent:       &repository.ApplyIntent{Kind: "mode", Mode: "Max"},
+		NextRelation:     &repository.CurrentRelation{Kind: "following", OriginMode: "Max"},
 		Extra:            map[string]json.RawMessage{"historyExtra": json.RawMessage(`"keep"`)},
 	}}
 	if err := repo.SaveHistory("OpenCode", history); err != nil {
@@ -80,11 +80,11 @@ func TestRenameSettingRewritesEverySchemaReferenceAndPreservesMetadata(t *testin
 		t.Fatalf("mode refs = %#v", got)
 	}
 	current, _ := repo.LoadCurrentState("OpenCode")
-	if current.Intent.Settings[0] != "Primary.json" || current.Mappings[0].Target != fixedTarget || current.Mappings[1].Target != filepath.Join(targetDir, "Primary.json") || !jsonRawEqual(current.Extra["stateExtra"], `{"keep":1}`) {
+	if current.Columns["Models"].Settings[0] != "Primary.json" || current.Mappings[0].Target != fixedTarget || current.Mappings[1].Target != filepath.Join(targetDir, "Primary.json") || !jsonRawEqual(current.Extra["stateExtra"], `{"keep":1}`) {
 		t.Fatalf("current state = %#v", current)
 	}
 	entries, _ := repo.LoadHistory("OpenCode")
-	if entries[0].PreviousMappings[0].Source != newSource || entries[0].NextMappings[0].Target != filepath.Join(targetDir, "Primary.json") || entries[0].PreviousIntent.Settings[0] != "Primary.json" || !jsonRawEqual(entries[0].Extra["historyExtra"], `"keep"`) {
+	if entries[0].PreviousMappings[0].Source != newSource || entries[0].NextMappings[0].Target != filepath.Join(targetDir, "Primary.json") || entries[0].PreviousColumns["Models"].Settings[0] != "Primary.json" || !jsonRawEqual(entries[0].Extra["historyExtra"], `"keep"`) {
 		t.Fatalf("history = %#v", entries)
 	}
 	for _, target := range []string{fixedTarget, filepath.Join(targetDir, "Primary.json")} {
@@ -145,7 +145,7 @@ func TestRenameProjectColumnModeAndMappingOnlyState(t *testing.T) {
 	}
 	current, _ := repo.LoadCurrentState("Code")
 	wantSource := filepath.Join(root, "Code", "Column", "Configurations", "GPT.json")
-	if current.Intent != nil || current.Mappings[0].Source != wantSource {
+	if current.Relation != nil || current.Mappings[0].Source != wantSource {
 		t.Fatalf("mapping-only state = %#v", current)
 	}
 	if link, err := os.Readlink(target); err != nil || link != wantSource {

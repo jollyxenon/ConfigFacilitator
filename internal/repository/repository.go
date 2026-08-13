@@ -21,11 +21,30 @@ const (
 	manifestFileName          = "manifest.json"
 )
 
-// CurrentState stores the currently active project-owned mappings and intent.
+// ErrUnsupportedCurrentSchema reports a legacy or unknown current-state schema.
+var ErrUnsupportedCurrentSchema = fmt.Errorf("current_state schema unsupported")
+
+// CurrentState stores the currently active project-owned mappings and selection.
+// The Current state is itself the temporary Mode: columns holds the authoritative
+// selection, relation describes whether it follows a named Mode or has detached,
+// and mappings keeps the planned links (including increment baselines).
 type CurrentState struct {
+	Columns  map[string]ColumnSelection `json:"columns"`
+	Relation *CurrentRelation           `json:"relation,omitempty"`
 	Mappings []Mapping                  `json:"mappings"`
-	Intent   *ApplyIntent               `json:"intent,omitempty"`
 	Extra    map[string]json.RawMessage `json:"-"`
+}
+
+// ColumnSelection stores one Current Column selection.
+type ColumnSelection struct {
+	Strategy string   `json:"strategy"`
+	Settings []string `json:"settings"`
+}
+
+// CurrentRelation describes how the Current state relates to a named Mode.
+type CurrentRelation struct {
+	Kind       string `json:"kind"`
+	OriginMode string `json:"originMode"`
 }
 
 // Mapping stores one source-target pair managed by the link engine.
@@ -34,22 +53,15 @@ type Mapping struct {
 	Target string `json:"target"`
 }
 
-// ApplyIntent stores the semantic apply operation that produced current mappings.
-type ApplyIntent struct {
-	Kind     string                     `json:"kind"`
-	Mode     string                     `json:"mode,omitempty"`
-	Column   string                     `json:"column,omitempty"`
-	Settings []string                   `json:"settings,omitempty"`
-	Extra    map[string]json.RawMessage `json:"-"`
-}
-
 // HistoryEntry stores one single-step restore snapshot event.
 type HistoryEntry struct {
 	Timestamp        string                     `json:"timestamp"`
+	PreviousColumns  map[string]ColumnSelection `json:"previousColumns"`
+	NextColumns      map[string]ColumnSelection `json:"nextColumns"`
+	PreviousRelation *CurrentRelation           `json:"previousRelation,omitempty"`
+	NextRelation     *CurrentRelation           `json:"nextRelation,omitempty"`
 	PreviousMappings []Mapping                  `json:"previousMappings"`
 	NextMappings     []Mapping                  `json:"nextMappings"`
-	PreviousIntent   *ApplyIntent               `json:"previousIntent,omitempty"`
-	NextIntent       *ApplyIntent               `json:"nextIntent,omitempty"`
 	Extra            map[string]json.RawMessage `json:"-"`
 }
 
@@ -61,9 +73,12 @@ type SessionRecord struct {
 
 // MarshalJSON preserves unknown current-state fields while known fields win collisions.
 func (state CurrentState) MarshalJSON() ([]byte, error) {
-	data := map[string]any{"mappings": state.MappingsOrEmpty()}
-	if state.Intent != nil {
-		data["intent"] = state.Intent
+	data := map[string]any{
+		"columns":  columnsOrEmpty(state.Columns),
+		"mappings": state.MappingsOrEmpty(),
+	}
+	if state.Relation != nil {
+		data["relation"] = state.Relation
 	}
 	mergeRaw(data, state.Extra)
 	return json.Marshal(data)
@@ -77,72 +92,31 @@ func (state *CurrentState) UnmarshalJSON(data []byte) error {
 	}
 	state.Mappings = []Mapping{}
 	state.Extra = map[string]json.RawMessage{}
+	if _, legacy := raw["intent"]; legacy {
+		return ErrUnsupportedCurrentSchema
+	}
 	for key, value := range raw {
 		switch key {
+		case "columns":
+			if err := json.Unmarshal(value, &state.Columns); err != nil {
+				return err
+			}
+		case "relation":
+			if bytes.Equal(bytes.TrimSpace(value), []byte("null")) {
+				state.Relation = nil
+				continue
+			}
+			var relation CurrentRelation
+			if err := json.Unmarshal(value, &relation); err != nil {
+				return err
+			}
+			state.Relation = &relation
 		case "mappings":
 			if err := json.Unmarshal(value, &state.Mappings); err != nil {
 				return err
 			}
-		case "intent":
-			if bytes.Equal(bytes.TrimSpace(value), []byte("null")) {
-				state.Intent = nil
-				continue
-			}
-			var intent ApplyIntent
-			if err := json.Unmarshal(value, &intent); err != nil {
-				return err
-			}
-			state.Intent = &intent
 		default:
 			state.Extra[key] = value
-		}
-	}
-	return nil
-}
-
-// MarshalJSON preserves unknown apply-intent fields while known fields win collisions.
-func (intent ApplyIntent) MarshalJSON() ([]byte, error) {
-	data := map[string]any{"kind": intent.Kind}
-	if intent.Mode != "" {
-		data["mode"] = intent.Mode
-	}
-	if intent.Column != "" {
-		data["column"] = intent.Column
-	}
-	if intent.Settings != nil {
-		data["settings"] = intent.Settings
-	}
-	mergeRaw(data, intent.Extra)
-	return json.Marshal(data)
-}
-
-// UnmarshalJSON parses an apply intent and retains unknown fields.
-func (intent *ApplyIntent) UnmarshalJSON(data []byte) error {
-	var raw map[string]json.RawMessage
-	if err := json.Unmarshal(data, &raw); err != nil {
-		return err
-	}
-	intent.Extra = map[string]json.RawMessage{}
-	for key, value := range raw {
-		switch key {
-		case "kind":
-			if err := json.Unmarshal(value, &intent.Kind); err != nil {
-				return err
-			}
-		case "mode":
-			if err := json.Unmarshal(value, &intent.Mode); err != nil {
-				return err
-			}
-		case "column":
-			if err := json.Unmarshal(value, &intent.Column); err != nil {
-				return err
-			}
-		case "settings":
-			if err := json.Unmarshal(value, &intent.Settings); err != nil {
-				return err
-			}
-		default:
-			intent.Extra[key] = value
 		}
 	}
 	return nil
@@ -152,14 +126,16 @@ func (intent *ApplyIntent) UnmarshalJSON(data []byte) error {
 func (entry HistoryEntry) MarshalJSON() ([]byte, error) {
 	data := map[string]any{
 		"timestamp":        entry.Timestamp,
+		"previousColumns":  columnsOrEmpty(entry.PreviousColumns),
+		"nextColumns":      columnsOrEmpty(entry.NextColumns),
 		"previousMappings": mappingsOrEmpty(entry.PreviousMappings),
 		"nextMappings":     mappingsOrEmpty(entry.NextMappings),
 	}
-	if entry.PreviousIntent != nil {
-		data["previousIntent"] = entry.PreviousIntent
+	if entry.PreviousRelation != nil {
+		data["previousRelation"] = entry.PreviousRelation
 	}
-	if entry.NextIntent != nil {
-		data["nextIntent"] = entry.NextIntent
+	if entry.NextRelation != nil {
+		data["nextRelation"] = entry.NextRelation
 	}
 	mergeRaw(data, entry.Extra)
 	return json.Marshal(data)
@@ -178,6 +154,34 @@ func (entry *HistoryEntry) UnmarshalJSON(data []byte) error {
 			if err := json.Unmarshal(value, &entry.Timestamp); err != nil {
 				return err
 			}
+		case "previousColumns":
+			if err := json.Unmarshal(value, &entry.PreviousColumns); err != nil {
+				return err
+			}
+		case "nextColumns":
+			if err := json.Unmarshal(value, &entry.NextColumns); err != nil {
+				return err
+			}
+		case "previousRelation":
+			if bytes.Equal(bytes.TrimSpace(value), []byte("null")) {
+				entry.PreviousRelation = nil
+				continue
+			}
+			var relation CurrentRelation
+			if err := json.Unmarshal(value, &relation); err != nil {
+				return err
+			}
+			entry.PreviousRelation = &relation
+		case "nextRelation":
+			if bytes.Equal(bytes.TrimSpace(value), []byte("null")) {
+				entry.NextRelation = nil
+				continue
+			}
+			var relation CurrentRelation
+			if err := json.Unmarshal(value, &relation); err != nil {
+				return err
+			}
+			entry.NextRelation = &relation
 		case "previousMappings":
 			if err := json.Unmarshal(value, &entry.PreviousMappings); err != nil {
 				return err
@@ -186,26 +190,6 @@ func (entry *HistoryEntry) UnmarshalJSON(data []byte) error {
 			if err := json.Unmarshal(value, &entry.NextMappings); err != nil {
 				return err
 			}
-		case "previousIntent":
-			if bytes.Equal(bytes.TrimSpace(value), []byte("null")) {
-				entry.PreviousIntent = nil
-				continue
-			}
-			var intent ApplyIntent
-			if err := json.Unmarshal(value, &intent); err != nil {
-				return err
-			}
-			entry.PreviousIntent = &intent
-		case "nextIntent":
-			if bytes.Equal(bytes.TrimSpace(value), []byte("null")) {
-				entry.NextIntent = nil
-				continue
-			}
-			var intent ApplyIntent
-			if err := json.Unmarshal(value, &intent); err != nil {
-				return err
-			}
-			entry.NextIntent = &intent
 		default:
 			entry.Extra[key] = value
 		}
@@ -470,6 +454,9 @@ func LoadCurrentState(path string) (CurrentState, error) {
 	if err := json.Unmarshal(data, &state); err != nil {
 		return CurrentState{}, err
 	}
+	if state.Columns == nil {
+		return CurrentState{}, ErrUnsupportedCurrentSchema
+	}
 	if state.Mappings == nil {
 		state.Mappings = []Mapping{}
 	}
@@ -617,7 +604,7 @@ func mergeRaw(destination map[string]any, extra map[string]json.RawMessage) {
 	}
 }
 
-// mappingsOrEmpty returns a non-nil mapping slice for stable JSON output.
+// MappingsOrEmpty returns a non-nil mapping slice for stable JSON output.
 func (state CurrentState) MappingsOrEmpty() []Mapping { return mappingsOrEmpty(state.Mappings) }
 
 // mappingsOrEmpty returns a non-nil mapping slice for stable JSON output.
@@ -626,6 +613,14 @@ func mappingsOrEmpty(mappings []Mapping) []Mapping {
 		return []Mapping{}
 	}
 	return mappings
+}
+
+// columnsOrEmpty returns a non-nil columns map for stable JSON output.
+func columnsOrEmpty(columns map[string]ColumnSelection) map[string]ColumnSelection {
+	if columns == nil {
+		return map[string]ColumnSelection{}
+	}
+	return columns
 }
 
 // syncDirectory flushes a containing directory where the platform supports it.

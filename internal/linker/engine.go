@@ -27,10 +27,13 @@ const (
 // Mapping stores one source-target pair managed by the engine.
 type Mapping = repository.Mapping
 
-// ApplyIntent stores the semantic apply operation that produced the current mappings.
-type ApplyIntent = repository.ApplyIntent
+// ColumnSelection stores one Current Column selection.
+type ColumnSelection = repository.ColumnSelection
 
-// CurrentState stores the currently active project-owned mappings and optional apply intent.
+// CurrentRelation describes how the Current state relates to a named Mode.
+type CurrentRelation = repository.CurrentRelation
+
+// CurrentState stores the currently active project-owned mappings and selection.
 type CurrentState = repository.CurrentState
 
 // HistoryEntry stores one single-step restore snapshot event.
@@ -86,10 +89,10 @@ func (engine Engine) LoadPreviousState(project warehouse.Project) (CurrentState,
 		return CurrentState{}, err
 	}
 	if len(entries) == 0 {
-		return CurrentState{Mappings: []Mapping{}}, nil
+		return CurrentState{Columns: map[string]ColumnSelection{}, Mappings: []Mapping{}}, nil
 	}
 	last := entries[len(entries)-1]
-	return cloneState(CurrentState{Mappings: last.PreviousMappings, Intent: last.PreviousIntent}), nil
+	return cloneState(CurrentState{Columns: last.PreviousColumns, Relation: last.PreviousRelation, Mappings: last.PreviousMappings}), nil
 }
 
 // InspectOwnership reports whether the target is absent, owned by the exact mapping, or unmanaged.
@@ -119,7 +122,8 @@ func (engine Engine) ReplaceMappings(project warehouse.Project, next []Mapping, 
 	return engine.ReplaceState(project, CurrentState{Mappings: next}, opts...)
 }
 
-// ReplaceState installs a new managed state and persists mappings plus optional intent atomically.
+// ReplaceState installs a new managed state and persists mappings plus the
+// Current selection atomically under the warehouse mutation lock.
 func (engine Engine) ReplaceState(project warehouse.Project, nextState CurrentState, opts ...ReplaceOption) error {
 	options := buildReplaceOptions(opts)
 	currentState, err := engine.LoadCurrentState(project)
@@ -147,10 +151,7 @@ func (engine Engine) ReplaceState(project warehouse.Project, nextState CurrentSt
 		return err
 	}
 	restoreManagedLinks := func() error {
-		if err := engine.applyMappingSet(nextState.Mappings, previousState.Mappings, replaceOptions{force: true}); err != nil {
-			return err
-		}
-		return nil
+		return engine.applyMappingSet(nextState.Mappings, previousState.Mappings, replaceOptions{force: true})
 	}
 	if err := engine.applyMappingSet(previousState.Mappings, nextState.Mappings, options); err != nil {
 		rollbackErr := transaction.Rollback()
@@ -169,6 +170,45 @@ func (engine Engine) ReplaceState(project warehouse.Project, nextState CurrentSt
 		return err
 	}
 	return transaction.Commit()
+}
+
+// ReplaceStateLocked installs a new managed state while the caller already
+// holds the warehouse mutation lock. Workflow operations that rewrite the
+// ModeIndex and the Current state in one transaction use this entry point;
+// their enclosing transaction rolls back all snapshots on failure.
+func (engine Engine) ReplaceStateLocked(project warehouse.Project, nextState CurrentState, opts ...ReplaceOption) error {
+	options := buildReplaceOptions(opts)
+	currentState, err := engine.LoadCurrentState(project)
+	if err != nil {
+		return err
+	}
+	previousState := cloneState(currentState)
+	nextState = cloneState(nextState)
+	if nextState.Mappings == nil {
+		nextState.Mappings = []Mapping{}
+	}
+	if err := engine.validateMappings(nextState.Mappings); err != nil {
+		return err
+	}
+	if err := engine.ensureReplacementAllowed(previousState.Mappings, nextState.Mappings, options); err != nil {
+		return err
+	}
+	if err := engine.applyMappingSet(previousState.Mappings, nextState.Mappings, options); err != nil {
+		return err
+	}
+	return engine.persistState(project, previousState, nextState)
+}
+
+// replaceSnapshotPaths lists the files and targets covered by one replace.
+func replaceSnapshotPaths(project warehouse.Project, nextState CurrentState) []string {
+	previous, err := repository.LoadCurrentState(project.CurrentStatePath)
+	paths := []string{project.CurrentStatePath, project.HistoryLogPath}
+	if err == nil {
+		for _, mapping := range append(append([]Mapping{}, previous.Mappings...), nextState.Mappings...) {
+			paths = append(paths, mapping.Target)
+		}
+	}
+	return paths
 }
 
 // Reset removes the current mappings and persists an empty current state.
@@ -300,10 +340,12 @@ func (engine Engine) persistState(project warehouse.Project, previous CurrentSta
 	}
 	history = append(history, repository.HistoryEntry{
 		Timestamp:        engine.now().UTC().Format(time.RFC3339Nano),
+		PreviousColumns:  previous.Columns,
+		NextColumns:      next.Columns,
+		PreviousRelation: previous.Relation,
+		NextRelation:     next.Relation,
 		PreviousMappings: previous.Mappings,
 		NextMappings:     next.Mappings,
-		PreviousIntent:   previous.Intent,
-		NextIntent:       next.Intent,
 	})
 	var historyData bytes.Buffer
 	for _, entry := range history {
@@ -431,19 +473,33 @@ func cloneMappings(mappings []Mapping) []Mapping {
 	return cloned
 }
 
-func cloneIntent(intent *ApplyIntent) *ApplyIntent {
-	if intent == nil {
+func cloneColumns(columns map[string]ColumnSelection) map[string]ColumnSelection {
+	if columns == nil {
 		return nil
 	}
-	cloned := *intent
-	cloned.Settings = append([]string{}, intent.Settings...)
+	cloned := make(map[string]ColumnSelection, len(columns))
+	for name, selection := range columns {
+		cloned[name] = ColumnSelection{Strategy: selection.Strategy, Settings: append([]string{}, selection.Settings...)}
+	}
+	return cloned
+}
+
+func cloneRelation(relation *CurrentRelation) *CurrentRelation {
+	if relation == nil {
+		return nil
+	}
+	cloned := *relation
 	return &cloned
 }
 
 func cloneState(state CurrentState) CurrentState {
 	cloned := CurrentState{
+		Columns:  cloneColumns(state.Columns),
+		Relation: cloneRelation(state.Relation),
 		Mappings: cloneMappings(state.Mappings),
-		Intent:   cloneIntent(state.Intent),
+	}
+	if cloned.Columns == nil {
+		cloned.Columns = map[string]ColumnSelection{}
 	}
 	if cloned.Mappings == nil {
 		cloned.Mappings = []Mapping{}

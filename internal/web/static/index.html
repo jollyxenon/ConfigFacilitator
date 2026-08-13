@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>cfgfc · 配线台原型</title>
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+<div class="app">
+
+  <!-- ================= 状态栏 ================= -->
+  <header class="statusbar">
+    <div class="sb-brand"><i></i>cfgfc</div>
+    <div class="sb-cell"><k>ROOT</k><span id="sbRoot"></span></div>
+    <div class="sb-cell"><k>作用域</k><span id="sbScope"></span></div>
+    <div class="sb-cell"><k>生效</k><span id="sbLive"></span></div>
+    <div class="sb-cell"><k>映射</k><span id="sbMappings"></span></div>
+    <div class="sb-spacer"></div>
+    <div class="sb-alert" id="sbTx" hidden>⚠ <span></span></div>
+  </header>
+
+  <div class="body">
+
+    <!-- ================= 侧栏 ================= -->
+    <nav class="side">
+      <div class="side-scroll">
+        <section class="nav-sect">
+          <div class="nav-sect-head">
+            <h2>Project</h2>
+            <span class="what">Column / Setting</span>
+            <button class="mini" title="project create" data-cmd="project-create">+</button>
+          </div>
+          <div id="navProjects"></div>
+        </section>
+
+        <section class="nav-sect">
+          <div class="nav-sect-head">
+            <h2>Mode</h2>
+            <span class="what">选择 / 应用</span>
+          </div>
+          <div id="navModes"></div>
+        </section>
+      </div>
+
+      <div class="side-foot">
+        <div class="note" style="margin-bottom:6px">仓库对账</div>
+        <div class="btnrow">
+          <button class="btn btn-sm" data-cmd="sync" title="索引对账：来源消失就移除元数据">sync</button>
+          <button class="btn btn-sm" data-cmd="refresh" title="按当前元数据重新规划已持久化意图">refresh</button>
+        </div>
+        <div class="ruler"></div>
+        <div class="note" style="margin-bottom:6px">仓库根目录</div>
+        <div class="btnrow"><button class="btn btn-sm" data-cmd="root">root …</button></div>
+      </div>
+    </nav>
+
+    <!-- ================= 主区 ================= -->
+    <main class="main">
+      <div class="crumb" id="crumb"></div>
+
+      <!-- ---------- Project 作用域：只组织资源 ---------- -->
+      <div class="scope" id="scope-project" hidden>
+        <div class="tabs" role="tablist">
+          <button class="tab" role="tab" data-ptab="targets" aria-selected="true">Column 与 Setting</button>
+          <button class="tab" role="tab" data-ptab="editor" aria-selected="false">内容编辑</button>
+          <div class="tab tab-fill"></div>
+        </div>
+
+        <section class="pane" id="ptab-targets" role="tabpanel">
+          <div class="vhead">
+            <h1>Columns &amp; Settings</h1>
+            <p>这里只组织资源：Column 的目标位置、Setting 的来源与目标覆盖。决定什么生效请去左侧 Mode。</p>
+          </div>
+          <div class="split">
+            <div class="tree" id="tree"></div>
+            <div class="panel" id="resPanel"></div>
+          </div>
+        </section>
+
+        <section class="pane" id="ptab-editor" role="tabpanel" hidden>
+          <div class="vhead">
+            <h1>Setting Content</h1>
+            <p>直接改 Setting 来源字节。已建立的受管符号链接会立刻反映改动，不需要 refresh。</p>
+          </div>
+          <div class="ed">
+            <div class="ed-list" id="edList"></div>
+            <div class="ed-main">
+              <div class="ed-bar">
+                <span class="ed-path" id="edPath"></span>
+                <span class="pill cn" id="edDirty" hidden>未保存</span>
+                <button class="btn btn-primary" id="edSave">写入</button>
+              </div>
+              <div class="code">
+                <div class="gutter" id="edGutter">1</div>
+                <textarea id="edText" spellcheck="false" aria-label="Setting 内容"></textarea>
+              </div>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <!-- ---------- Mode 作用域：决定什么生效 ---------- -->
+      <div class="scope" id="scope-mode" hidden>
+        <div class="vhead">
+          <h1 id="modeTitle"></h1>
+          <p id="modeSubtitle"></p>
+        </div>
+        <div id="modeCallout"></div>
+        <div id="modeLiveTable"></div>
+        <div class="mode-body">
+          <div class="cards" id="cards"></div>
+          <aside class="wire">
+            <h2 id="wireHead">线路预览</h2>
+            <div class="wire-scroll" id="wireBody"></div>
+          </aside>
+        </div>
+        <div class="mode-foot" id="modeFoot"></div>
+      </div>
+    </main>
+  </div>
+
+  <!-- ================= 执行抽屉 ================= -->
+  <section class="drawer" data-open="true" id="drawer">
+    <div class="drawer-bar">
+      <button class="mini" id="drawerToggle" aria-expanded="true" title="折叠 / 展开">▾</button>
+      <h2>执行预览</h2>
+      <span class="pill cn" id="pendingPill" hidden></span>
+      <div style="flex:1"></div>
+      <div class="btnrow" id="drawerActions"></div>
+    </div>
+    <div class="drawer-body">
+      <div class="plan">
+        <h3>计划 DIFF（已记录映射 → 目标）</h3>
+        <div class="diff" id="planDiff"></div>
+      </div>
+      <div class="log">
+        <h3>执行日志</h3>
+        <pre id="logBody" aria-live="polite"></pre>
+      </div>
+    </div>
+  </section>
+</div>
+
+<!-- ================= 危险确认 ================= -->
+<dialog id="dangerDlg">
+  <form method="dialog">
+    <div class="dlg-head">
+      <h2 id="dlgTitle">删除</h2>
+      <p id="dlgDesc"></p>
+    </div>
+    <div class="dlg-body">
+      <p class="note" style="margin:0 0 10px">三个授权彼此独立，各自只放开一件事。默认全部关闭，只有本次真正需要的项才要求勾选。</p>
+      <label class="gate">
+        <input type="checkbox" id="gYes" />
+        <code>--yes</code>
+        <span class="why">确认这次删除本身，不含任何引用修复或目标回收。</span>
+        <span class="req" id="reqYes"></span>
+      </label>
+      <label class="gate">
+        <input type="checkbox" id="gCascade" />
+        <code>--cascade</code>
+        <span class="why">允许删除时修复依赖引用，重写指向它的 Mode 选择。</span>
+        <span class="req" id="reqCascade"></span>
+      </label>
+      <label class="gate">
+        <input type="checkbox" id="gForce" />
+        <code>--force-targets</code>
+        <span class="why">允许回收已记录但漂移或被占用的目标；与它无关的路径不会被回收。</span>
+        <span class="req" id="reqForce"></span>
+      </label>
+    </div>
+    <div class="dlg-foot">
+      <button class="btn" value="cancel">取消</button>
+      <button class="btn btn-danger" value="ok" id="dlgConfirm" disabled>执行删除</button>
+    </div>
+  </form>
+</dialog>
+
+<script src="app.js"></script>
+</body>
+</html>

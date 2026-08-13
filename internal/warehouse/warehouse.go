@@ -734,3 +734,63 @@ func sortedKeys(input map[string]struct{}) []string {
 	slices.Sort(keys)
 	return keys
 }
+
+// RebuildProjectIndex discovers every source directory at the warehouse root and
+// merges discovered Projects into the ProjectIndex without overwriting metadata
+// of already indexed entries.
+func RebuildProjectIndex(rootPath string, projectIndex index.ProjectIndex) (index.ProjectIndex, error) {
+	if projectIndex.Projects == nil {
+		projectIndex.Projects = map[string]index.ProjectEntry{}
+	}
+	directories, err := listWarehouseRootDirectories(rootPath)
+	if err != nil {
+		return index.ProjectIndex{}, err
+	}
+	for name := range directories {
+		if _, exists := projectIndex.Projects[name]; exists {
+			continue
+		}
+		projectIndex.Projects[name] = index.ProjectEntry{WarehouseName: name, DisplayName: name, Aliases: []string{}}
+	}
+	return projectIndex, nil
+}
+
+// RebuildColumnIndex discovers every Column source directory below one Project
+// and merges discovered Columns into the ColumnIndex without overwriting
+// metadata of already indexed entries.
+func RebuildColumnIndex(columnRoot string, columnIndex index.ColumnIndex) (index.ColumnIndex, error) {
+	if columnIndex.Columns == nil {
+		columnIndex.Columns = map[string]index.ColumnEntry{}
+	}
+	directories, err := listSubdirectories(columnRoot)
+	if err != nil {
+		return index.ColumnIndex{}, err
+	}
+	for name := range directories {
+		if _, exists := columnIndex.Columns[name]; exists {
+			continue
+		}
+		columnIndex.Columns[name] = index.ColumnEntry{WarehouseName: name, DisplayName: name, Aliases: []string{}}
+	}
+	return columnIndex, nil
+}
+
+// RebuildSettingIndex discovers every Setting source file or directory below one
+// Column and merges discovered Settings into the SettingIndex without
+// overwriting metadata of already indexed entries.
+func RebuildSettingIndex(settingRoot string, settingIndex index.SettingIndex) (index.SettingIndex, error) {
+	if settingIndex.Settings == nil {
+		settingIndex.Settings = map[string]index.SettingEntry{}
+	}
+	entries, err := listSettingEntries(settingRoot)
+	if err != nil {
+		return index.SettingIndex{}, err
+	}
+	for name := range entries {
+		if _, exists := settingIndex.Settings[name]; exists {
+			continue
+		}
+		settingIndex.Settings[name] = index.SettingEntry{WarehouseName: name, DisplayName: name, Aliases: []string{}, TargetDir: []string{}, TargetName: []string{}}
+	}
+	return settingIndex, nil
+}

@@ -17,18 +17,28 @@ func TestDependencyReportCoversEveryCategory(t *testing.T) {
 	root, repo, _ := createRenameFixture(t)
 	source := filepath.Join(root, "OpenCode", "Column", "Models", "GPT.json")
 	target := filepath.Join(root, "managed", "GPT.json")
-	state := repository.CurrentState{Mappings: []repository.Mapping{{Source: source, Target: target}}, Intent: &repository.ApplyIntent{Kind: "column", Column: "Models", Settings: []string{"GPT.json"}}}
-	if err := repo.SaveCurrentState("OpenCode", state); err != nil { t.Fatal(err) }
-	if err := repo.SaveHistory("OpenCode", []repository.HistoryEntry{{Timestamp: "t", PreviousMappings: state.Mappings, NextMappings: state.Mappings, PreviousIntent: state.Intent, NextIntent: state.Intent}}); err != nil { t.Fatal(err) }
-	if err := repo.SaveSession(77, repository.SessionRecord{Project: "OpenCode"}); err != nil { t.Fatal(err) }
+	state := repository.CurrentState{Columns: map[string]repository.ColumnSelection{"Models": {Strategy: "cover", Settings: []string{"GPT.json"}}}, Mappings: []repository.Mapping{{Source: source, Target: target}}}
+	if err := repo.SaveCurrentState("OpenCode", state); err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.SaveHistory("OpenCode", []repository.HistoryEntry{{Timestamp: "t", PreviousMappings: state.Mappings, NextMappings: state.Mappings, PreviousColumns: state.Columns, NextColumns: state.Columns}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.SaveSession(77, repository.SessionRecord{Project: "OpenCode"}); err != nil {
+		t.Fatal(err)
+	}
 
 	report, err := mutate.BuildDependencyReport(repo, mutate.DeleteRequest{Kind: mutate.SettingKind, ProjectReference: "OpenCode", ColumnReference: "Models", Reference: "GPT.json"})
-	if err != nil { t.Fatal(err) }
-	if len(report.ModeSelections) != 2 || len(report.CurrentMappings) != 1 || report.CurrentIntent == nil || len(report.HistoryReferences) != 1 {
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(report.ModeSelections) != 2 || len(report.CurrentMappings) != 1 || len(report.CurrentColumns) != 1 || report.CurrentColumns[0] != "Models" || len(report.HistoryReferences) != 1 {
 		t.Fatalf("setting dependency report = %#v", report)
 	}
 	projectReport, err := mutate.BuildDependencyReport(repo, mutate.DeleteRequest{Kind: mutate.ProjectKind, Reference: "OpenCode"})
-	if err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
 	if len(projectReport.PPIDContexts) != 1 || projectReport.PPIDContexts[0].PPID != 77 {
 		t.Fatalf("project contexts = %#v", projectReport.PPIDContexts)
 	}
@@ -39,38 +49,56 @@ func TestDeleteRequiresIndependentConfirmationAndCascade(t *testing.T) {
 	root, repo, _ := createRenameFixture(t)
 	_, err := mutate.DeleteSetting(repo, "OpenCode", "Models", "GPT.json", false, true, true)
 	assertDeleteError(t, err, mutate.RefusalError, "confirmation_required")
-	if _, statErr := os.Lstat(filepath.Join(root, "OpenCode", "Column", "Models", "GPT.json")); statErr != nil { t.Fatal(statErr) }
+	if _, statErr := os.Lstat(filepath.Join(root, "OpenCode", "Column", "Models", "GPT.json")); statErr != nil {
+		t.Fatal(statErr)
+	}
 
 	report, err := mutate.DeleteSetting(repo, "OpenCode", "Models", "GPT.json", true, false, false)
 	assertDeleteError(t, err, mutate.RefusalError, "dependencies_exist")
-	if len(report.ModeSelections) != 2 { t.Fatalf("report = %#v", report) }
-	if _, statErr := os.Lstat(filepath.Join(root, "OpenCode", "Column", "Models", "GPT.json")); statErr != nil { t.Fatal(statErr) }
+	if len(report.ModeSelections) != 2 {
+		t.Fatalf("report = %#v", report)
+	}
+	if _, statErr := os.Lstat(filepath.Join(root, "OpenCode", "Column", "Models", "GPT.json")); statErr != nil {
+		t.Fatal(statErr)
+	}
 }
 
 // TestSettingCascadeRepairsSelectionsMappingsAndHistory verifies Setting cascade isolation.
 func TestSettingCascadeRepairsSelectionsMappingsAndHistory(t *testing.T) {
 	root, repo, _ := createRenameFixture(t)
 	other := filepath.Join(root, "OpenCode", "Column", "Models", "Other.json")
-	if err := mutate.CreateSetting(repo, "OpenCode", "Models", "Other.json", "file", renameMetadata(t, mutate.SettingKind, "Other.json", nil)); err != nil { t.Fatal(err) }
+	if err := mutate.CreateSetting(repo, "OpenCode", "Models", "Other.json", "file", renameMetadata(t, mutate.SettingKind, "Other.json", nil)); err != nil {
+		t.Fatal(err)
+	}
 	source := filepath.Join(root, "OpenCode", "Column", "Models", "GPT.json")
-	state := repository.CurrentState{Mappings: []repository.Mapping{{Source: source, Target: filepath.Join(root, "targets-a")}, {Source: other, Target: filepath.Join(root, "targets-b")}}, Intent: &repository.ApplyIntent{Kind: "column", Column: "Models", Settings: []string{"GPT.json", "Other.json"}}}
-	if err := repo.SaveCurrentState("OpenCode", state); err != nil { t.Fatal(err) }
-	if err := repo.SaveHistory("OpenCode", []repository.HistoryEntry{{Timestamp: "t", PreviousMappings: state.Mappings, NextMappings: state.Mappings, PreviousIntent: state.Intent, NextIntent: state.Intent}}); err != nil { t.Fatal(err) }
+	state := repository.CurrentState{Columns: map[string]repository.ColumnSelection{"Models": {Strategy: "cover", Settings: []string{"GPT.json", "Other.json"}}}, Mappings: []repository.Mapping{{Source: source, Target: filepath.Join(root, "targets-a")}, {Source: other, Target: filepath.Join(root, "targets-b")}}}
+	if err := repo.SaveCurrentState("OpenCode", state); err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.SaveHistory("OpenCode", []repository.HistoryEntry{{Timestamp: "t", PreviousMappings: state.Mappings, NextMappings: state.Mappings, PreviousColumns: state.Columns, NextColumns: state.Columns}}); err != nil {
+		t.Fatal(err)
+	}
 
-	if _, err := mutate.DeleteSetting(repo, "OpenCode", "Models", "GPT.json", true, true, false); err != nil { t.Fatal(err) }
+	if _, err := mutate.DeleteSetting(repo, "OpenCode", "Models", "GPT.json", true, true, false); err != nil {
+		t.Fatal(err)
+	}
 	settingIndex, _ := repo.LoadSettingIndex("OpenCode", "Models")
-	if _, ok := settingIndex.Settings["GPT.json"]; ok { t.Fatal("deleted Setting metadata survived") }
-	if _, ok := settingIndex.Settings["Other.json"]; !ok { t.Fatal("unrelated Setting removed") }
+	if _, ok := settingIndex.Settings["GPT.json"]; ok {
+		t.Fatal("deleted Setting metadata survived")
+	}
+	if _, ok := settingIndex.Settings["Other.json"]; !ok {
+		t.Fatal("unrelated Setting removed")
+	}
 	modeIndex, _ := repo.LoadModeIndex("OpenCode")
 	if len(modeIndex.Modes["Max"].Columns) != 0 || len(modeIndex.Modes["Other"].Columns) != 0 {
 		t.Fatalf("empty selections survived: %#v", modeIndex)
 	}
 	current, _ := repo.LoadCurrentState("OpenCode")
-	if len(current.Mappings) != 1 || current.Mappings[0].Source != other || current.Intent == nil || !reflect.DeepEqual(current.Intent.Settings, []string{"Other.json"}) {
+	if len(current.Mappings) != 2 || current.Mappings[0].Source != other || current.Mappings[0].Target != filepath.Join(root, "targets", "fixed.json") || current.Mappings[1].Target != filepath.Join(root, "targets", "Other.json") || !reflect.DeepEqual(current.Columns["Models"].Settings, []string{"Other.json"}) {
 		t.Fatalf("current = %#v", current)
 	}
 	history, _ := repo.LoadHistory("OpenCode")
-	if len(history[0].PreviousMappings) != 1 || !reflect.DeepEqual(history[0].NextIntent.Settings, []string{"Other.json"}) {
+	if len(history[0].PreviousMappings) != 1 || history[0].PreviousMappings[0].Source != other || !reflect.DeepEqual(history[0].NextColumns["Models"].Settings, []string{"Other.json"}) {
 		t.Fatalf("history = %#v", history)
 	}
 }
@@ -78,36 +106,44 @@ func TestSettingCascadeRepairsSelectionsMappingsAndHistory(t *testing.T) {
 // TestColumnAndModeCascadeSemantics verifies Column isolation and Mode mapping-only state.
 func TestColumnAndModeCascadeSemantics(t *testing.T) {
 	root, repo, _ := createRenameFixture(t)
-	if err := mutate.CreateColumn(repo, "OpenCode", "OtherColumn", renameMetadata(t, mutate.ColumnKind, "OtherColumn", nil)); err != nil { t.Fatal(err) }
-	if err := mutate.CreateSetting(repo, "OpenCode", "OtherColumn", "Keep.json", "file", renameMetadata(t, mutate.SettingKind, "Keep.json", nil)); err != nil { t.Fatal(err) }
+	if err := mutate.CreateColumn(repo, "OpenCode", "OtherColumn", renameMetadata(t, mutate.ColumnKind, "OtherColumn", nil)); err != nil {
+		t.Fatal(err)
+	}
+	if err := mutate.CreateSetting(repo, "OpenCode", "OtherColumn", "Keep.json", "file", renameMetadata(t, mutate.SettingKind, "Keep.json", nil)); err != nil {
+		t.Fatal(err)
+	}
 	modelsSource := filepath.Join(root, "OpenCode", "Column", "Models", "GPT.json")
 	otherSource := filepath.Join(root, "OpenCode", "Column", "OtherColumn", "Keep.json")
-	state := repository.CurrentState{Mappings: []repository.Mapping{{Source: modelsSource, Target: filepath.Join(root, "m")}, {Source: otherSource, Target: filepath.Join(root, "o")}}, Intent: &repository.ApplyIntent{Kind: "column", Column: "Models", Settings: []string{"GPT.json"}}}
-	if err := repo.SaveCurrentState("OpenCode", state); err != nil { t.Fatal(err) }
-	if _, err := mutate.DeleteColumn(repo, "OpenCode", "Models", true, true, false); err != nil { t.Fatal(err) }
+	state := repository.CurrentState{Columns: map[string]repository.ColumnSelection{"Models": {Strategy: "cover", Settings: []string{"GPT.json"}}}, Mappings: []repository.Mapping{{Source: modelsSource, Target: filepath.Join(root, "m")}, {Source: otherSource, Target: filepath.Join(root, "o")}}}
+	if err := repo.SaveCurrentState("OpenCode", state); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := mutate.DeleteColumn(repo, "OpenCode", "Models", true, true, false); err != nil {
+		t.Fatal(err)
+	}
 	current, _ := repo.LoadCurrentState("OpenCode")
-	if len(current.Mappings) != 1 || current.Mappings[0].Source != otherSource || current.Intent != nil {
+	if len(current.Mappings) != 0 || current.Relation != nil || len(current.Columns) != 0 {
 		t.Fatalf("column current = %#v", current)
 	}
 	if _, err := os.Stat(filepath.Join(root, "OpenCode", "Column", "OtherColumn", "Keep.json")); err != nil {
 		t.Fatal(err)
 	}
 
-	if err := repo.SaveCurrentState("OpenCode", repository.CurrentState{Mappings: current.Mappings, Intent: &repository.ApplyIntent{Kind: "mode", Mode: "Max"}}); err != nil {
+	if err := repo.SaveCurrentState("OpenCode", repository.CurrentState{Mappings: current.Mappings, Relation: &repository.CurrentRelation{Kind: "following", OriginMode: "Max"}}); err != nil {
 		t.Fatal(err)
 	}
-	if err := repo.SaveHistory("OpenCode", []repository.HistoryEntry{{Timestamp: "t", PreviousMappings: current.Mappings, NextMappings: current.Mappings, PreviousIntent: &repository.ApplyIntent{Kind: "mode", Mode: "Max"}, NextIntent: &repository.ApplyIntent{Kind: "mode", Mode: "Other"}}}); err != nil {
+	if err := repo.SaveHistory("OpenCode", []repository.HistoryEntry{{Timestamp: "t", PreviousMappings: current.Mappings, NextMappings: current.Mappings, PreviousRelation: &repository.CurrentRelation{Kind: "following", OriginMode: "Max"}, NextRelation: &repository.CurrentRelation{Kind: "following", OriginMode: "Other"}}}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := mutate.DeleteMode(repo, "OpenCode", "Max", true, true, false); err != nil {
 		t.Fatal(err)
 	}
 	current, _ = repo.LoadCurrentState("OpenCode")
-	if current.Intent != nil || len(current.Mappings) != 1 {
+	if current.Relation != nil || len(current.Mappings) != 0 {
 		t.Fatalf("mode current = %#v", current)
 	}
 	history, _ := repo.LoadHistory("OpenCode")
-	if history[0].PreviousIntent != nil || history[0].NextIntent == nil || history[0].NextIntent.Mode != "Other" || len(history[0].PreviousMappings) != 1 {
+	if history[0].PreviousRelation != nil || history[0].NextRelation == nil || history[0].NextRelation.OriginMode != "Other" || len(history[0].PreviousMappings) != 0 {
 		t.Fatalf("mode history = %#v", history)
 	}
 }
@@ -117,10 +153,18 @@ func TestProjectCascadeOwnershipForceAndContexts(t *testing.T) {
 	root, repo, _ := createRenameFixture(t)
 	source := filepath.Join(root, "OpenCode", "Column", "Models", "GPT.json")
 	target := filepath.Join(root, "outside", "recorded")
-	if err := os.MkdirAll(target, 0o755); err != nil { t.Fatal(err) }
-	if err := os.WriteFile(filepath.Join(target, "drift"), []byte("x"), 0o644); err != nil { t.Fatal(err) }
-	if err := repo.SaveCurrentState("OpenCode", repository.CurrentState{Mappings: []repository.Mapping{{Source: source, Target: target}}}); err != nil { t.Fatal(err) }
-	if err := repo.SaveSession(88, repository.SessionRecord{Project: "OpenCode"}); err != nil { t.Fatal(err) }
+	if err := os.MkdirAll(target, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(target, "drift"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.SaveCurrentState("OpenCode", repository.CurrentState{Mappings: []repository.Mapping{{Source: source, Target: target}}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.SaveSession(88, repository.SessionRecord{Project: "OpenCode"}); err != nil {
+		t.Fatal(err)
+	}
 
 	_, err := mutate.DeleteProject(repo, "OpenCode", true, true, false)
 	assertDeleteError(t, err, mutate.RefusalError, "unsafe_target")

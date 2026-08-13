@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/xenon/ConfigFacilitator/internal/repository"
 	"github.com/xenon/ConfigFacilitator/internal/warehouse"
 )
 
@@ -103,7 +104,7 @@ func TestReplaceMappingsPersistsCurrentStateAndHistory(t *testing.T) {
 	}
 }
 
-func TestLoadCurrentStateReadsLegacyMappingOnlyState(t *testing.T) {
+func TestLoadCurrentStateRejectsLegacyMappingOnlyState(t *testing.T) {
 	engine := New()
 	project, root := newProjectPaths(t)
 	source := writeFile(t, root, "warehouse/source.txt", "alpha")
@@ -113,32 +114,37 @@ func TestLoadCurrentStateReadsLegacyMappingOnlyState(t *testing.T) {
 		t.Fatalf("write legacy state: %v", err)
 	}
 
-	state, err := engine.LoadCurrentState(project)
-	if err != nil {
-		t.Fatalf("load legacy state: %v", err)
-	}
-	if state.Intent != nil {
-		t.Fatalf("legacy state intent = %#v, want nil", state.Intent)
-	}
-	if len(state.Mappings) != 1 || state.Mappings[0].Source != source || state.Mappings[0].Target != target {
-		t.Fatalf("unexpected legacy mappings: %#v", state.Mappings)
+	_, err := engine.LoadCurrentState(project)
+	if !errors.Is(err, repository.ErrUnsupportedCurrentSchema) {
+		t.Fatalf("load legacy state error = %v, want ErrUnsupportedCurrentSchema", err)
 	}
 }
 
-func TestReplaceStatePersistsIntentAndHistory(t *testing.T) {
+func TestReplaceStatePersistsColumnsAndHistory(t *testing.T) {
 	engine := New()
 	engine.now = func() time.Time { return time.Unix(456, 0) }
 	project, root := newProjectPaths(t)
 	firstSource := writeFile(t, root, "warehouse/first.txt", "one")
 	secondSource := writeFile(t, root, "warehouse/second.txt", "two")
 	target := filepath.Join(root, "target.txt")
-	modeIntent := &ApplyIntent{Kind: "mode", Mode: "Max"}
-	columnIntent := &ApplyIntent{Kind: "column", Column: "opencode.json", Settings: []string{"GPT.json"}}
+	firstColumns := map[string]ColumnSelection{
+		"opencode.json": {Strategy: "cover", Settings: []string{"GPT.json"}},
+	}
+	secondColumns := map[string]ColumnSelection{
+		"opencode.json": {Strategy: "cover", Settings: []string{"Claude.json"}},
+	}
 
-	if err := engine.ReplaceState(project, CurrentState{Mappings: []Mapping{{Source: firstSource, Target: target}}, Intent: modeIntent}); err != nil {
+	if err := engine.ReplaceState(project, CurrentState{
+		Columns:  firstColumns,
+		Relation: &CurrentRelation{Kind: "following", OriginMode: "Max"},
+		Mappings: []Mapping{{Source: firstSource, Target: target}},
+	}); err != nil {
 		t.Fatalf("initial replace state: %v", err)
 	}
-	if err := engine.ReplaceState(project, CurrentState{Mappings: []Mapping{{Source: secondSource, Target: target}}, Intent: columnIntent}); err != nil {
+	if err := engine.ReplaceState(project, CurrentState{
+		Columns:  secondColumns,
+		Mappings: []Mapping{{Source: secondSource, Target: target}},
+	}); err != nil {
 		t.Fatalf("second replace state: %v", err)
 	}
 
@@ -146,15 +152,21 @@ func TestReplaceStatePersistsIntentAndHistory(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load current state: %v", err)
 	}
-	if state.Intent == nil || state.Intent.Kind != "column" || state.Intent.Column != "opencode.json" || len(state.Intent.Settings) != 1 || state.Intent.Settings[0] != "GPT.json" {
-		t.Fatalf("unexpected current intent: %#v", state.Intent)
+	if state.Relation != nil {
+		t.Fatalf("unexpected current relation: %#v", state.Relation)
+	}
+	if got := state.Columns["opencode.json"]; got.Strategy != "cover" || len(got.Settings) != 1 || got.Settings[0] != "Claude.json" {
+		t.Fatalf("unexpected current columns: %#v", state.Columns)
 	}
 	previous, err := engine.LoadPreviousState(project)
 	if err != nil {
 		t.Fatalf("load previous state: %v", err)
 	}
-	if previous.Intent == nil || previous.Intent.Kind != "mode" || previous.Intent.Mode != "Max" {
-		t.Fatalf("unexpected previous intent: %#v", previous.Intent)
+	if previous.Relation == nil || previous.Relation.Kind != "following" || previous.Relation.OriginMode != "Max" {
+		t.Fatalf("unexpected previous relation: %#v", previous.Relation)
+	}
+	if got := previous.Columns["opencode.json"]; got.Strategy != "cover" || len(got.Settings) != 1 || got.Settings[0] != "GPT.json" {
+		t.Fatalf("unexpected previous columns: %#v", previous.Columns)
 	}
 
 	historyData, err := os.ReadFile(project.HistoryLogPath)
@@ -165,19 +177,32 @@ func TestReplaceStatePersistsIntentAndHistory(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parse history entries: %v", err)
 	}
-	if len(entries) != 2 || entries[1].PreviousIntent == nil || entries[1].NextIntent == nil {
-		t.Fatalf("history did not record intents: %#v", entries)
+	if len(entries) != 2 {
+		t.Fatalf("history entries = %d, want 2", len(entries))
+	}
+	last := entries[1]
+	if got := last.PreviousColumns["opencode.json"]; got.Strategy != "cover" || len(got.Settings) != 1 || got.Settings[0] != "GPT.json" {
+		t.Fatalf("unexpected previous columns in history: %#v", last.PreviousColumns)
+	}
+	if got := last.NextColumns["opencode.json"]; got.Strategy != "cover" || len(got.Settings) != 1 || got.Settings[0] != "Claude.json" {
+		t.Fatalf("unexpected next columns in history: %#v", last.NextColumns)
 	}
 }
 
-func TestResetClearsIntentAndLoadPreviousStateRestoresIt(t *testing.T) {
+func TestResetClearsColumnsAndLoadPreviousStateRestoresThem(t *testing.T) {
 	engine := New()
 	project, root := newProjectPaths(t)
 	source := writeFile(t, root, "warehouse/source.txt", "alpha")
 	target := filepath.Join(root, "target.txt")
-	intent := &ApplyIntent{Kind: "mode", Mode: "Max"}
+	columns := map[string]ColumnSelection{
+		"opencode.json": {Strategy: "cover", Settings: []string{"GPT.json"}},
+	}
 
-	if err := engine.ReplaceState(project, CurrentState{Mappings: []Mapping{{Source: source, Target: target}}, Intent: intent}); err != nil {
+	if err := engine.ReplaceState(project, CurrentState{
+		Columns:  columns,
+		Relation: &CurrentRelation{Kind: "detached", OriginMode: "Max"},
+		Mappings: []Mapping{{Source: source, Target: target}},
+	}); err != nil {
 		t.Fatalf("replace state: %v", err)
 	}
 	if err := engine.Reset(project); err != nil {
@@ -188,15 +213,18 @@ func TestResetClearsIntentAndLoadPreviousStateRestoresIt(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load state after reset: %v", err)
 	}
-	if state.Intent != nil || len(state.Mappings) != 0 {
-		t.Fatalf("reset state = %#v, want empty without intent", state)
+	if len(state.Columns) != 0 || state.Relation != nil || len(state.Mappings) != 0 {
+		t.Fatalf("reset state = %#v, want empty without columns or relation", state)
 	}
 	previous, err := engine.LoadPreviousState(project)
 	if err != nil {
 		t.Fatalf("load previous state: %v", err)
 	}
-	if previous.Intent == nil || previous.Intent.Kind != "mode" || previous.Intent.Mode != "Max" {
-		t.Fatalf("previous state did not preserve intent: %#v", previous.Intent)
+	if previous.Relation == nil || previous.Relation.Kind != "detached" || previous.Relation.OriginMode != "Max" {
+		t.Fatalf("previous state did not preserve relation: %#v", previous.Relation)
+	}
+	if got := previous.Columns["opencode.json"]; got.Strategy != "cover" || len(got.Settings) != 1 || got.Settings[0] != "GPT.json" {
+		t.Fatalf("previous state did not preserve columns: %#v", previous.Columns)
 	}
 }
 

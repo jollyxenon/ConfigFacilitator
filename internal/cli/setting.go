@@ -569,15 +569,25 @@ func newSettingRenameCommand(context *commandContext, scope *projectScope, colum
 func newSettingDeleteCommand(context *commandContext, scope *projectScope, columnReference *string) *cobra.Command {
 	var yes, cascade, forceTargets bool
 	command := &cobra.Command{Use: "delete <Setting>", Short: "Delete one Setting", Args: usageArgs(cobra.ExactArgs(1)), RunE: func(command *cobra.Command, args []string) error {
-		if err := requireColumnScope(*columnReference); err != nil { return err }
+		if err := requireColumnScope(*columnReference); err != nil {
+			return err
+		}
 		project, err := resolveProjectForCommand(context.dependencies, scope.project)
-		if err != nil { return err }
+		if err != nil {
+			return err
+		}
 		column, err := resolveColumnForInspection(project, *columnReference)
-		if err != nil { return err }
+		if err != nil {
+			return err
+		}
 		rootPath, err := effectiveWarehouseRoot(context.dependencies)
-		if err != nil { return err }
+		if err != nil {
+			return err
+		}
 		report, err := mutate.DeleteSetting(repository.New(rootPath), project.Name, column.Name, args[0], yes, cascade, forceTargets)
-		if err != nil { return classifyMutateError(err) }
+		if err != nil {
+			return classifyMutateError(err)
+		}
 		return context.renderResult(HumanResult{Message: fmt.Sprintf("Deleted setting %q", report.Name), Data: map[string]any{"project": project.Name, "column": column.Name, "setting": report.Name, "dependencies": report}})
 	}}
 	addDeleteFlags(command, &yes, &cascade, &forceTargets)

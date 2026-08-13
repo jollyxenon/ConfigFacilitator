@@ -51,7 +51,7 @@ func runSync(context *commandContext, explicitProject string, all bool) error {
 		}
 	}
 	if projectReference == "" || all {
-		if err := syncer.SyncAll(warehouseRoot); err != nil {
+		if err := syncer.SyncAll(warehouseRoot, planOptions(context.dependencies)); err != nil {
 			return classifySyncError(err)
 		}
 		return context.renderResult(HumanResult{
@@ -67,7 +67,7 @@ func runSync(context *commandContext, explicitProject string, all bool) error {
 	if resolveErr != nil {
 		return NewResourceError("project_not_found", resolveErr.Error(), nil, resolveErr)
 	}
-	if err := syncer.SyncProject(warehouseRoot, project.Name); err != nil {
+	if err := syncer.SyncProject(warehouseRoot, project.Name, planOptions(context.dependencies)); err != nil {
 		return classifySyncError(err)
 	}
 	return context.renderResult(HumanResult{

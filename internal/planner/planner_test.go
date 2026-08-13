@@ -9,9 +9,9 @@ import (
 	"github.com/xenon/ConfigFacilitator/internal/warehouse"
 )
 
-func TestPlanColumnMappingsUsesExplicitAndDefaultDirNameTargets(t *testing.T) {
+func TestPlanColumnsUsesExplicitAndDefaultDirNameTargets(t *testing.T) {
 	project := sampleProject()
-	mappings, err := PlanColumnMappings(project, "config", []string{"claude", "Special.json"}, PlanOptions{HomeDir: "/home/test", Env: map[string]string{}, OS: "linux"})
+	mappings, err := PlanColumns(project, map[string]index.ModeColumnSelection{"config": {Strategy: "cover", Settings: []string{"claude", "Special.json"}}}, nil, PlanOptions{HomeDir: "/home/test", Env: map[string]string{}, OS: "linux"})
 	if err != nil {
 		t.Fatalf("plan column mappings: %v", err)
 	}
@@ -29,14 +29,14 @@ func TestPlanColumnMappingsUsesExplicitAndDefaultDirNameTargets(t *testing.T) {
 	}
 }
 
-func TestPlanColumnMappingsExpandsMultipleDefaultDirNameTargets(t *testing.T) {
+func TestPlanColumnsExpandsMultipleDefaultDirNameTargets(t *testing.T) {
 	project := sampleProject()
 	column := project.Columns["opencode.json"]
 	column.SettingIndex.DefaultTargetDir = []string{"~/.config/opencode", "~/.config/opencode"}
 	column.SettingIndex.DefaultTargetName = []string{"opencode.json", "backup.json"}
 	project.Columns["opencode.json"] = column
 
-	mappings, err := PlanColumnMappings(project, "config", []string{"GPT.json"}, PlanOptions{HomeDir: "/home/test", Env: map[string]string{}, OS: "linux"})
+	mappings, err := PlanColumns(project, map[string]index.ModeColumnSelection{"config": {Strategy: "cover", Settings: []string{"GPT.json"}}}, nil, PlanOptions{HomeDir: "/home/test", Env: map[string]string{}, OS: "linux"})
 	if err != nil {
 		t.Fatalf("plan column mappings: %v", err)
 	}
@@ -48,10 +48,10 @@ func TestPlanColumnMappingsExpandsMultipleDefaultDirNameTargets(t *testing.T) {
 	assertContainsTarget(t, mappings, "/home/test/.config/opencode/backup.json", filepath.Join(project.Columns["opencode.json"].Path, "GPT.json"))
 }
 
-func TestPlanModeMappingsHandlesCoverAndIncrementColumns(t *testing.T) {
+func TestPlanModeColumnsHandlesCoverAndIncrementColumns(t *testing.T) {
 	project := sampleProject()
 	current := []linker.Mapping{{Source: filepath.Join(project.Columns["Skills"].Path, "Skill-Old"), Target: "/tmp/skills/old"}, {Source: filepath.Join(project.Columns["opencode.json"].Path, "GPT.json"), Target: "/home/test/.config/opencode/opencode.json"}}
-	mappings, err := PlanModeMappings(project, "m", current, PlanOptions{HomeDir: "/home/test", Env: map[string]string{}, OS: "linux"})
+	mappings, err := PlanModeColumns(project, "m", current, PlanOptions{HomeDir: "/home/test", Env: map[string]string{}, OS: "linux"})
 	if err != nil {
 		t.Fatalf("plan mode mappings: %v", err)
 	}
@@ -63,7 +63,7 @@ func TestPlanModeMappingsHandlesCoverAndIncrementColumns(t *testing.T) {
 	assertContainsTarget(t, mappings, "/tmp/skills/a", filepath.Join(project.Columns["Skills"].Path, "Skill-A"))
 }
 
-func TestPlanModeMappingsHandlesNoneAndFullColumns(t *testing.T) {
+func TestPlanModeColumnsHandlesNoneAndFullColumns(t *testing.T) {
 	project := sampleProject()
 	column := project.Columns["opencode.json"]
 	claude := column.Settings["CLAUDE.json"]
@@ -80,7 +80,7 @@ func TestPlanModeMappingsHandlesNoneAndFullColumns(t *testing.T) {
 		}, WarehouseName: "All"},
 	}
 	current := []linker.Mapping{{Source: filepath.Join(project.Columns["Skills"].Path, "Skill-Old"), Target: "/tmp/skills/old"}}
-	mappings, err := PlanModeMappings(project, "All", current, PlanOptions{HomeDir: "/home/test", Env: map[string]string{}, OS: "linux"})
+	mappings, err := PlanModeColumns(project, "All", current, PlanOptions{HomeDir: "/home/test", Env: map[string]string{}, OS: "linux"})
 	if err != nil {
 		t.Fatalf("plan mode mappings: %v", err)
 	}
@@ -94,7 +94,7 @@ func TestPlanModeMappingsHandlesNoneAndFullColumns(t *testing.T) {
 	assertDoesNotContainTarget(t, mappings, "/tmp/skills/old")
 }
 
-func TestPlanModeMappingsRejectsUnknownOrIncompleteStrategies(t *testing.T) {
+func TestPlanModeColumnsRejectsUnknownOrIncompleteStrategies(t *testing.T) {
 	project := sampleProject()
 	project.Modes["Broken"] = warehouse.Mode{
 		Name:          "Broken",
@@ -103,7 +103,7 @@ func TestPlanModeMappingsRejectsUnknownOrIncompleteStrategies(t *testing.T) {
 			"Skills": {Strategy: "unknown"},
 		}, WarehouseName: "Broken"},
 	}
-	if _, err := PlanModeMappings(project, "Broken", nil, PlanOptions{HomeDir: "/home/test", Env: map[string]string{}, OS: "linux"}); err == nil {
+	if _, err := PlanModeColumns(project, "Broken", nil, PlanOptions{HomeDir: "/home/test", Env: map[string]string{}, OS: "linux"}); err == nil {
 		t.Fatalf("expected unknown strategy to fail")
 	}
 
@@ -114,12 +114,12 @@ func TestPlanModeMappingsRejectsUnknownOrIncompleteStrategies(t *testing.T) {
 			"Skills": {Strategy: "cover"},
 		}, WarehouseName: "Empty"},
 	}
-	if _, err := PlanModeMappings(project, "Empty", nil, PlanOptions{HomeDir: "/home/test", Env: map[string]string{}, OS: "linux"}); err == nil {
+	if _, err := PlanModeColumns(project, "Empty", nil, PlanOptions{HomeDir: "/home/test", Env: map[string]string{}, OS: "linux"}); err == nil {
 		t.Fatalf("expected cover without settings to fail")
 	}
 }
 
-func TestPlanColumnMappingsRejectsInvalidTargetParts(t *testing.T) {
+func TestPlanColumnsRejectsInvalidTargetParts(t *testing.T) {
 	project := sampleProject()
 	column := project.Columns["opencode.json"]
 	setting := column.Settings["Special.json"]
@@ -127,7 +127,7 @@ func TestPlanColumnMappingsRejectsInvalidTargetParts(t *testing.T) {
 	setting.Metadata.TargetName = []string{"special.json", "backup.json"}
 	column.Settings["Special.json"] = setting
 	project.Columns["opencode.json"] = column
-	if _, err := PlanColumnMappings(project, "config", []string{"Special.json"}, PlanOptions{HomeDir: "/home/test", Env: map[string]string{}, OS: "linux"}); err == nil {
+	if _, err := PlanColumns(project, map[string]index.ModeColumnSelection{"config": {Strategy: "cover", Settings: []string{"Special.json"}}}, nil, PlanOptions{HomeDir: "/home/test", Env: map[string]string{}, OS: "linux"}); err == nil {
 		t.Fatalf("expected mismatched target arrays to fail")
 	}
 
@@ -137,7 +137,7 @@ func TestPlanColumnMappingsRejectsInvalidTargetParts(t *testing.T) {
 	column.SettingIndex.DefaultTargetName = []string{""}
 	column.Settings["Special.json"] = setting
 	project.Columns["opencode.json"] = column
-	if _, err := PlanColumnMappings(project, "config", []string{"Special.json"}, PlanOptions{HomeDir: "/home/test", Env: map[string]string{}, OS: "linux"}); err == nil {
+	if _, err := PlanColumns(project, map[string]index.ModeColumnSelection{"config": {Strategy: "cover", Settings: []string{"Special.json"}}}, nil, PlanOptions{HomeDir: "/home/test", Env: map[string]string{}, OS: "linux"}); err == nil {
 		t.Fatalf("expected empty resolved target directory to fail")
 	}
 
@@ -147,7 +147,7 @@ func TestPlanColumnMappingsRejectsInvalidTargetParts(t *testing.T) {
 	setting.Metadata.TargetName = []string{"../special.json"}
 	column.Settings["Special.json"] = setting
 	project.Columns["opencode.json"] = column
-	if _, err := PlanColumnMappings(project, "config", []string{"Special.json"}, PlanOptions{HomeDir: "/home/test", Env: map[string]string{}, OS: "linux"}); err == nil {
+	if _, err := PlanColumns(project, map[string]index.ModeColumnSelection{"config": {Strategy: "cover", Settings: []string{"Special.json"}}}, nil, PlanOptions{HomeDir: "/home/test", Env: map[string]string{}, OS: "linux"}); err == nil {
 		t.Fatalf("expected invalid target name to fail")
 	}
 
@@ -155,12 +155,12 @@ func TestPlanColumnMappingsRejectsInvalidTargetParts(t *testing.T) {
 	setting.Metadata.TargetName = []string{"same.json", "same.json"}
 	column.Settings["Special.json"] = setting
 	project.Columns["opencode.json"] = column
-	if _, err := PlanColumnMappings(project, "config", []string{"Special.json"}, PlanOptions{HomeDir: "/home/test", Env: map[string]string{"HOME": "/home/test"}, OS: "linux"}); err == nil {
+	if _, err := PlanColumns(project, map[string]index.ModeColumnSelection{"config": {Strategy: "cover", Settings: []string{"Special.json"}}}, nil, PlanOptions{HomeDir: "/home/test", Env: map[string]string{"HOME": "/home/test"}, OS: "linux"}); err == nil {
 		t.Fatalf("expected duplicate resolved targets to fail")
 	}
 }
 
-func TestPlanColumnMappingsAllowsVariantsToShareTargetInSeparatePlans(t *testing.T) {
+func TestPlanColumnsAllowsVariantsToShareTargetInSeparatePlans(t *testing.T) {
 	project := sampleProject()
 	column := project.Columns["Skills"]
 	column.SettingIndex.DefaultTargetDir = []string{"/tmp/skills"}
@@ -171,33 +171,36 @@ func TestPlanColumnMappingsAllowsVariantsToShareTargetInSeparatePlans(t *testing
 	column.Settings["Skill-3-B"] = variantB
 	project.Columns["Skills"] = column
 
-	first, err := PlanColumnMappings(project, "skills", []string{"Skill-3-A"}, PlanOptions{HomeDir: "/home/test", Env: map[string]string{}, OS: "linux"})
+	first, err := PlanColumns(project, map[string]index.ModeColumnSelection{"skills": {Strategy: "cover", Settings: []string{"Skill-3-A"}}}, nil, PlanOptions{HomeDir: "/home/test", Env: map[string]string{}, OS: "linux"})
 	if err != nil {
 		t.Fatalf("plan first variant: %v", err)
 	}
 	assertContainsTarget(t, first, "/tmp/skills/Skill-3", variantA.Path)
 
-	second, err := PlanColumnMappings(project, "skills", []string{"Skill-3-B"}, PlanOptions{HomeDir: "/home/test", Env: map[string]string{}, OS: "linux"})
+	second, err := PlanColumns(project, map[string]index.ModeColumnSelection{"skills": {Strategy: "cover", Settings: []string{"Skill-3-B"}}}, nil, PlanOptions{HomeDir: "/home/test", Env: map[string]string{}, OS: "linux"})
 	if err != nil {
 		t.Fatalf("plan second variant: %v", err)
 	}
 	assertContainsTarget(t, second, "/tmp/skills/Skill-3", variantB.Path)
 
-	if _, err := PlanColumnMappings(project, "skills", []string{"Skill-3-A", "Skill-3-B"}, PlanOptions{HomeDir: "/home/test", Env: map[string]string{}, OS: "linux"}); err == nil {
+	if _, err := PlanColumns(project, map[string]index.ModeColumnSelection{"skills": {Strategy: "cover", Settings: []string{"Skill-3-A", "Skill-3-B"}}}, nil, PlanOptions{HomeDir: "/home/test", Env: map[string]string{}, OS: "linux"}); err == nil {
 		t.Fatalf("expected duplicate variant targets to fail")
 	}
 }
 
-func TestPlanUpdateMappingsRefreshesCurrentSources(t *testing.T) {
+func TestPlanColumnsReplansCurrentSources(t *testing.T) {
 	project := sampleProject()
 	current := []linker.Mapping{
 		{Source: filepath.Join(project.Columns["opencode.json"].Path, "GPT.json"), Target: "/stale/target"},
 		{Source: filepath.Join(project.Columns["Skills"].Path, "Skill-A"), Target: "/tmp/old-skills/a"},
 	}
 
-	mappings, err := PlanUpdateMappings(project, current, PlanOptions{HomeDir: "/home/test", Env: map[string]string{}, OS: "linux"})
+	mappings, err := PlanColumns(project, map[string]index.ModeColumnSelection{
+		"config": {Strategy: "cover", Settings: []string{"GPT.json"}},
+		"skills": {Strategy: "cover", Settings: []string{"Skill-A"}},
+	}, current, PlanOptions{HomeDir: "/home/test", Env: map[string]string{}, OS: "linux"})
 	if err != nil {
-		t.Fatalf("plan update mappings: %v", err)
+		t.Fatalf("plan columns: %v", err)
 	}
 
 	if len(mappings) != 2 {
@@ -207,53 +210,16 @@ func TestPlanUpdateMappingsRefreshesCurrentSources(t *testing.T) {
 	assertContainsTarget(t, mappings, "/tmp/skills/a", filepath.Join(project.Columns["Skills"].Path, "Skill-A"))
 }
 
-func TestPlanUpdateMappingsRejectsUnmatchedCurrentSource(t *testing.T) {
-	project := sampleProject()
-	current := []linker.Mapping{{Source: filepath.Join(project.Path, "Column", "Missing", "Ghost"), Target: "/tmp/ghost"}}
-
-	if _, err := PlanUpdateMappings(project, current, PlanOptions{HomeDir: "/home/test", Env: map[string]string{}, OS: "linux"}); err == nil {
-		t.Fatalf("expected unmatched current source to fail")
-	}
-}
-
-func TestPlanColumnUpdateMappingsRefreshesSelectedColumnAndPreservesOthers(t *testing.T) {
-	project := sampleProject()
-	current := []linker.Mapping{
-		{Source: filepath.Join(project.Columns["opencode.json"].Path, "GPT.json"), Target: "/stale/target"},
-		{Source: filepath.Join(project.Columns["Skills"].Path, "Skill-A"), Target: "/tmp/skills/a"},
-	}
-
-	mappings, err := PlanColumnUpdateMappings(project, "config", current, PlanOptions{HomeDir: "/home/test", Env: map[string]string{}, OS: "linux"})
-	if err != nil {
-		t.Fatalf("plan column update mappings: %v", err)
-	}
-
-	if len(mappings) != 2 {
-		t.Fatalf("len(mappings) = %d, want 2", len(mappings))
-	}
-	assertContainsTarget(t, mappings, "/home/test/.config/opencode/opencode.json", filepath.Join(project.Columns["opencode.json"].Path, "GPT.json"))
-	assertContainsTarget(t, mappings, "/tmp/skills/a", filepath.Join(project.Columns["Skills"].Path, "Skill-A"))
-}
-
-func TestPlanColumnUpdateMappingsRejectsInactiveSelectedColumn(t *testing.T) {
-	project := sampleProject()
-	current := []linker.Mapping{{Source: filepath.Join(project.Columns["Skills"].Path, "Skill-A"), Target: "/tmp/skills/a"}}
-
-	if _, err := PlanColumnUpdateMappings(project, "config", current, PlanOptions{HomeDir: "/home/test", Env: map[string]string{}, OS: "linux"}); err == nil {
-		t.Fatalf("expected inactive selected column to fail")
-	}
-}
-
-func TestPlanIntentUpdateMappingsUsesFullModeCurrentMetadata(t *testing.T) {
+func TestPlanModeColumnsUsesFullModeCurrentMetadata(t *testing.T) {
 	project := sampleProjectWithFullSkillsMode()
 	current := []linker.Mapping{
 		{Source: filepath.Join(project.Columns["opencode.json"].Path, "GPT.json"), Target: "/home/test/.config/opencode/opencode.json"},
 		{Source: filepath.Join(project.Columns["Skills"].Path, "Skill-A"), Target: "/tmp/skills/a"},
 	}
 
-	mappings, err := PlanIntentUpdateMappings(project, linker.ApplyIntent{Kind: "mode", Mode: "Max"}, current, PlanOptions{HomeDir: "/home/test", Env: map[string]string{}, OS: "linux"})
+	mappings, err := PlanModeColumns(project, "Max", current, PlanOptions{HomeDir: "/home/test", Env: map[string]string{}, OS: "linux"})
 	if err != nil {
-		t.Fatalf("plan intent update mappings: %v", err)
+		t.Fatalf("plan mode columns: %v", err)
 	}
 
 	assertContainsTarget(t, mappings, "/home/test/.config/opencode/opencode.json", filepath.Join(project.Columns["opencode.json"].Path, "CLAUDE.json"))
@@ -262,32 +228,44 @@ func TestPlanIntentUpdateMappingsUsesFullModeCurrentMetadata(t *testing.T) {
 	assertContainsTarget(t, mappings, "/tmp/skills/old", filepath.Join(project.Columns["Skills"].Path, "Skill-Old"))
 }
 
-func TestPlanIntentColumnUpdateMappingsRefreshesFullModeColumnAndPreservesOthers(t *testing.T) {
-	project := sampleProjectWithFullSkillsMode()
+func TestPlanModeColumnsRejectsUnknownMode(t *testing.T) {
+	project := sampleProject()
+	if _, err := PlanModeColumns(project, "NoSuchMode", nil, PlanOptions{HomeDir: "/home/test", Env: map[string]string{}, OS: "linux"}); err == nil {
+		t.Fatalf("expected unknown mode reference to fail")
+	}
+}
+
+func TestPlanColumnsIncrementBaseline(t *testing.T) {
+	project := sampleProject()
 	current := []linker.Mapping{
-		{Source: filepath.Join(project.Columns["opencode.json"].Path, "GPT.json"), Target: "/stale/config-target"},
+		{Source: filepath.Join(project.Columns["opencode.json"].Path, "GPT.json"), Target: "/home/test/.config/opencode/opencode.json"},
 		{Source: filepath.Join(project.Columns["Skills"].Path, "Skill-A"), Target: "/tmp/skills/a"},
 	}
 
-	mappings, err := PlanIntentColumnUpdateMappings(project, linker.ApplyIntent{Kind: "mode", Mode: "Max"}, "skills", current, PlanOptions{HomeDir: "/home/test", Env: map[string]string{}, OS: "linux"})
+	// A new selection sharing the current target replaces the old source.
+	replaced, err := PlanColumns(project, map[string]index.ModeColumnSelection{
+		"config": {Strategy: "increment", Settings: []string{"CLAUDE.json"}},
+	}, current, PlanOptions{HomeDir: "/home/test", Env: map[string]string{}, OS: "linux"})
 	if err != nil {
-		t.Fatalf("plan intent column update mappings: %v", err)
+		t.Fatalf("plan increment same target: %v", err)
 	}
+	if len(replaced) != 1 {
+		t.Fatalf("len(replaced) = %d, want 1", len(replaced))
+	}
+	assertContainsTarget(t, replaced, "/home/test/.config/opencode/opencode.json", filepath.Join(project.Columns["opencode.json"].Path, "CLAUDE.json"))
 
-	assertContainsTarget(t, mappings, "/stale/config-target", filepath.Join(project.Columns["opencode.json"].Path, "GPT.json"))
-	assertContainsTarget(t, mappings, "/tmp/skills/a", filepath.Join(project.Columns["Skills"].Path, "Skill-A"))
-	assertContainsTarget(t, mappings, "/tmp/skills/new", filepath.Join(project.Columns["Skills"].Path, "Skill-New"))
-	assertContainsTarget(t, mappings, "/tmp/skills/old", filepath.Join(project.Columns["Skills"].Path, "Skill-Old"))
-}
-
-func TestPlanIntentUpdateMappingsRejectsMalformedIntent(t *testing.T) {
-	project := sampleProject()
-	if _, err := PlanIntentUpdateMappings(project, linker.ApplyIntent{Kind: "mode"}, nil, PlanOptions{HomeDir: "/home/test", Env: map[string]string{}, OS: "linux"}); err == nil {
-		t.Fatalf("expected malformed mode intent to fail")
+	// A new selection with a distinct target keeps the current baseline.
+	appended, err := PlanColumns(project, map[string]index.ModeColumnSelection{
+		"skills": {Strategy: "increment", Settings: []string{"Skill-Old"}},
+	}, current, PlanOptions{HomeDir: "/home/test", Env: map[string]string{}, OS: "linux"})
+	if err != nil {
+		t.Fatalf("plan increment appended: %v", err)
 	}
-	if _, err := PlanIntentColumnUpdateMappings(project, linker.ApplyIntent{Kind: "unknown"}, "skills", nil, PlanOptions{HomeDir: "/home/test", Env: map[string]string{}, OS: "linux"}); err == nil {
-		t.Fatalf("expected unsupported intent to fail")
+	if len(appended) != 2 {
+		t.Fatalf("len(appended) = %d, want 2", len(appended))
 	}
+	assertContainsTarget(t, appended, "/tmp/skills/a", filepath.Join(project.Columns["Skills"].Path, "Skill-A"))
+	assertContainsTarget(t, appended, "/tmp/skills/old", filepath.Join(project.Columns["Skills"].Path, "Skill-Old"))
 }
 
 func sampleProject() warehouse.Project {

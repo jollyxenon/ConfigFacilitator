@@ -330,14 +330,14 @@ func prepareRenameData(plan *RenamePlan, loaded warehouse.Warehouse, project war
 		if err := rewriteModeColumns(&data.modeIndex, project, oldName, request.NewName, &plan.IndexReferences); err != nil {
 			return err
 		}
-		if data.current.Intent != nil && intentResolvesColumn(project, data.current.Intent, oldName) {
-			from := data.current.Intent.Column
-			data.current.Intent = cloneIntent(data.current.Intent)
-			data.current.Intent.Column = request.NewName
-			plan.IntentReferences = append(plan.IntentReferences, RenameReference{Owner: "current.intent.column", From: from, To: request.NewName})
+		if selection, ok := data.current.Columns[oldName]; ok {
+			data.current.Columns = cloneColumnsMap(data.current.Columns)
+			delete(data.current.Columns, oldName)
+			data.current.Columns[request.NewName] = selection
+			plan.IntentReferences = append(plan.IntentReferences, RenameReference{Owner: "current.columns", From: oldName, To: request.NewName})
 		}
 		for index := range data.history {
-			rewriteHistoryIntentColumn(&data.history[index], project, oldName, request.NewName, &plan.IntentReferences)
+			rewriteHistoryColumns(&data.history[index], oldName, request.NewName, &plan.IntentReferences)
 		}
 	case SettingKind:
 		data.settingIndex = column.SettingIndex
@@ -351,11 +351,11 @@ func prepareRenameData(plan *RenamePlan, loaded warehouse.Warehouse, project war
 		if err := rewriteModeSettings(&data.modeIndex, project, column.Name, oldName, request.NewName, &plan.IndexReferences); err != nil {
 			return err
 		}
-		if err := rewriteIntentSettings(&data.current, column, oldName, request.NewName, &plan.IntentReferences); err != nil {
+		if err := rewriteCurrentSettings(&data.current, column, oldName, request.NewName, &plan.IntentReferences); err != nil {
 			return err
 		}
 		for index := range data.history {
-			if err := rewriteHistoryIntentSettings(&data.history[index], column, oldName, request.NewName, &plan.IntentReferences); err != nil {
+			if err := rewriteHistorySettings(&data.history[index], column, oldName, request.NewName, &plan.IntentReferences); err != nil {
 				return err
 			}
 		}
@@ -366,11 +366,12 @@ func prepareRenameData(plan *RenamePlan, loaded warehouse.Warehouse, project war
 		data.modeIndex.Modes[request.NewName] = entry
 		delete(data.modeIndex.Modes, oldName)
 		data.saveModeIndex = !project.Missing
-		if err := rewriteIntentMode(&data.current, project, oldName, request.NewName, &plan.IntentReferences); err != nil {
-			return err
+		if data.current.Relation != nil && data.current.Relation.OriginMode == oldName {
+			data.current.Relation = &repository.CurrentRelation{Kind: data.current.Relation.Kind, OriginMode: request.NewName}
+			plan.IntentReferences = append(plan.IntentReferences, RenameReference{Owner: "current.relation.originMode", From: oldName, To: request.NewName})
 		}
 		for index := range data.history {
-			rewriteHistoryIntentMode(&data.history[index], project, oldName, request.NewName, &plan.IntentReferences)
+			rewriteHistoryRelation(&data.history[index], oldName, request.NewName, &plan.IntentReferences)
 		}
 	}
 
@@ -580,117 +581,97 @@ func rewriteModeSettings(modeIndex *index.ModeIndex, project warehouse.Project, 
 	return nil
 }
 
-// rewriteIntentSettings rewrites Setting references in one current apply intent.
-func rewriteIntentSettings(state *repository.CurrentState, column warehouse.Column, oldName, newName string, refs *[]RenameReference) error {
-	if state.Intent == nil {
-		return nil
+// rewriteCurrentSettings rewrites Setting references inside Current Column selections.
+func rewriteCurrentSettings(state *repository.CurrentState, column warehouse.Column, oldName, newName string, refs *[]RenameReference) error {
+	for reference, selection := range state.Columns {
+		canonical, err := columnForReference(column, reference)
+		if err != nil || canonical != column.Name {
+			continue
+		}
+		settings := append([]string{}, selection.Settings...)
+		changed := false
+		for index, settingReference := range settings {
+			setting, resolveErr := column.ResolveSetting(settingReference)
+			if resolveErr == nil && setting.Name == oldName {
+				settings[index] = newName
+				changed = true
+				*refs = append(*refs, RenameReference{Owner: "current.columns." + reference + ".settings", From: settingReference, To: newName})
+			}
+		}
+		if changed {
+			selection.Settings = settings
+			state.Columns[reference] = selection
+		}
 	}
-	intent := cloneIntent(state.Intent)
-	columnMatches := intent.Column == column.Name
+	return nil
+}
+
+// columnForReference resolves one Current column reference to its canonical name when possible.
+func columnForReference(column warehouse.Column, reference string) (string, error) {
+	if reference == column.Name {
+		return column.Name, nil
+	}
 	for _, alias := range column.Metadata.Aliases {
-		columnMatches = columnMatches || intent.Column == alias
-	}
-	if intent.Kind == "column" && columnMatches {
-		for index, reference := range intent.Settings {
-			setting, err := column.ResolveSetting(reference)
-			if err == nil && setting.Name == oldName {
-				intent.Settings[index] = newName
-				*refs = append(*refs, RenameReference{Owner: "current.intent.settings", From: reference, To: newName})
-			}
+		if reference == alias {
+			return column.Name, nil
 		}
 	}
-	state.Intent = intent
+	return "", fmt.Errorf("column %q does not match", reference)
+}
+
+// rewriteHistorySettings rewrites Setting references inside both history column maps.
+func rewriteHistorySettings(entry *repository.HistoryEntry, column warehouse.Column, oldName, newName string, refs *[]RenameReference) error {
+	rewriteHistoryColumnsSettings(&entry.PreviousColumns, column, oldName, newName, refs)
+	rewriteHistoryColumnsSettings(&entry.NextColumns, column, oldName, newName, refs)
 	return nil
 }
 
-// rewriteIntentMode rewrites a Mode reference in one current apply intent.
-func rewriteIntentMode(state *repository.CurrentState, project warehouse.Project, oldName, newName string, refs *[]RenameReference) error {
-	if state.Intent == nil || state.Intent.Mode == "" {
-		return nil
-	}
-	mode, err := project.ResolveMode(state.Intent.Mode)
-	if err == nil && mode.Name == oldName {
-		state.Intent = cloneIntent(state.Intent)
-		state.Intent.Mode = newName
-		*refs = append(*refs, RenameReference{Owner: "current.intent.mode", From: mode.Name, To: newName})
-	}
-	return nil
-}
-
-// rewriteHistoryIntentColumn rewrites a Column reference in both history intent directions.
-func rewriteHistoryIntentColumn(entry *repository.HistoryEntry, project warehouse.Project, oldName, newName string, refs *[]RenameReference) {
-	for _, intent := range []*repository.ApplyIntent{entry.PreviousIntent, entry.NextIntent} {
-		if intentResolvesColumn(project, intent, oldName) {
-			from := intent.Column
-			intentCopy := cloneIntent(intent)
-			intentCopy.Column = newName
-			if intent == entry.PreviousIntent {
-				entry.PreviousIntent = intentCopy
-			} else {
-				entry.NextIntent = intentCopy
-			}
-			*refs = append(*refs, RenameReference{Owner: "history.intent.column", From: from, To: newName})
-		}
-	}
-}
-
-// intentResolvesColumn reports whether one direct intent names a canonical Column or alias.
-func intentResolvesColumn(project warehouse.Project, intent *repository.ApplyIntent, canonicalName string) bool {
-	if intent == nil || intent.Column == "" {
-		return false
-	}
-	column, err := project.ResolveColumn(intent.Column)
-	return err == nil && column.Name == canonicalName
-}
-
-// rewriteHistoryIntentSettings rewrites Setting references in both history intent directions.
-func rewriteHistoryIntentSettings(entry *repository.HistoryEntry, column warehouse.Column, oldName, newName string, refs *[]RenameReference) error {
-	for _, intent := range []*repository.ApplyIntent{entry.PreviousIntent, entry.NextIntent} {
-		if intent == nil || intent.Kind != "column" {
+func rewriteHistoryColumnsSettings(columns *map[string]repository.ColumnSelection, column warehouse.Column, oldName, newName string, refs *[]RenameReference) {
+	for reference, selection := range *columns {
+		canonical, err := columnForReference(column, reference)
+		if err != nil || canonical != column.Name {
 			continue
 		}
-		columnMatches := intent.Column == column.Name
-		for _, alias := range column.Metadata.Aliases {
-			columnMatches = columnMatches || intent.Column == alias
-		}
-		if !columnMatches {
-			continue
-		}
-		updated := cloneIntent(intent)
-		for index, reference := range updated.Settings {
-			setting, err := column.ResolveSetting(reference)
-			if err == nil && setting.Name == oldName {
-				updated.Settings[index] = newName
-				*refs = append(*refs, RenameReference{Owner: "history.intent.settings", From: reference, To: newName})
+		settings := append([]string{}, selection.Settings...)
+		changed := false
+		for index, settingReference := range settings {
+			setting, resolveErr := column.ResolveSetting(settingReference)
+			if resolveErr == nil && setting.Name == oldName {
+				settings[index] = newName
+				changed = true
+				*refs = append(*refs, RenameReference{Owner: "history.columns." + reference + ".settings", From: settingReference, To: newName})
 			}
 		}
-		if intent == entry.PreviousIntent {
-			entry.PreviousIntent = updated
-		} else {
-			entry.NextIntent = updated
+		if changed {
+			selection.Settings = settings
+			(*columns)[reference] = selection
 		}
 	}
-	return nil
 }
 
-// rewriteHistoryIntentMode rewrites a Mode reference in both history intent directions.
-func rewriteHistoryIntentMode(entry *repository.HistoryEntry, project warehouse.Project, oldName, newName string, refs *[]RenameReference) {
-	for _, intent := range []*repository.ApplyIntent{entry.PreviousIntent, entry.NextIntent} {
-		if intent == nil || intent.Mode == "" {
-			continue
-		}
-		mode, err := project.ResolveMode(intent.Mode)
-		if err != nil || mode.Name != oldName {
-			continue
-		}
-		updated := cloneIntent(intent)
-		updated.Mode = newName
-		if intent == entry.PreviousIntent {
-			entry.PreviousIntent = updated
-		} else {
-			entry.NextIntent = updated
-		}
-		*refs = append(*refs, RenameReference{Owner: "history.intent.mode", From: mode.Name, To: newName})
+// rewriteHistoryColumns rewrites one Column key inside both history column maps.
+func rewriteHistoryColumns(entry *repository.HistoryEntry, oldName, newName string, refs *[]RenameReference) {
+	rewriteHistoryColumnsKey(&entry.PreviousColumns, oldName, newName, refs)
+	rewriteHistoryColumnsKey(&entry.NextColumns, oldName, newName, refs)
+}
+
+func rewriteHistoryColumnsKey(columns *map[string]repository.ColumnSelection, oldName, newName string, refs *[]RenameReference) {
+	if selection, ok := (*columns)[oldName]; ok {
+		delete(*columns, oldName)
+		(*columns)[newName] = selection
+		*refs = append(*refs, RenameReference{Owner: "history.columns", From: oldName, To: newName})
+	}
+}
+
+// rewriteHistoryRelation rewrites a Mode reference inside both history relations.
+func rewriteHistoryRelation(entry *repository.HistoryEntry, oldName, newName string, refs *[]RenameReference) {
+	if entry.PreviousRelation != nil && entry.PreviousRelation.OriginMode == oldName {
+		entry.PreviousRelation = &repository.CurrentRelation{Kind: entry.PreviousRelation.Kind, OriginMode: newName}
+		*refs = append(*refs, RenameReference{Owner: "history.previousRelation.originMode", From: oldName, To: newName})
+	}
+	if entry.NextRelation != nil && entry.NextRelation.OriginMode == oldName {
+		entry.NextRelation = &repository.CurrentRelation{Kind: entry.NextRelation.Kind, OriginMode: newName}
+		*refs = append(*refs, RenameReference{Owner: "history.nextRelation.originMode", From: oldName, To: newName})
 	}
 }
 
@@ -734,7 +715,7 @@ func settingRenameTargetMap(project warehouse.Project, column warehouse.Column, 
 	if column.SettingIndex.TargetNumber == 0 {
 		return map[string]string{}, nil
 	}
-	oldMappings, err := planner.PlanColumnMappings(project, column.Name, []string{oldName}, options)
+	oldMappings, err := planner.PlanColumns(project, map[string]index.ModeColumnSelection{column.Name: {Strategy: "cover", Settings: []string{oldName}}}, nil, options)
 	if err != nil {
 		return nil, err
 	}
@@ -751,7 +732,7 @@ func settingRenameTargetMap(project warehouse.Project, column warehouse.Column, 
 	delete(clonedColumn.SettingIndex.Settings, oldName)
 	clonedColumn.SettingIndex.Settings[newName] = entry
 	clonedProject.Columns[column.Name] = clonedColumn
-	newMappings, err := planner.PlanColumnMappings(clonedProject, column.Name, []string{newName}, options)
+	newMappings, err := planner.PlanColumns(clonedProject, map[string]index.ModeColumnSelection{column.Name: {Strategy: "cover", Settings: []string{newName}}}, nil, options)
 	if err != nil {
 		return nil, err
 	}
@@ -795,17 +776,6 @@ func cloneModeEntry(entry index.ModeEntry) index.ModeEntry {
 	}
 	copied.Extra = cloneRawMap(entry.Extra)
 	return copied
-}
-
-// cloneIntent copies apply intent slices and unknown fields.
-func cloneIntent(intent *repository.ApplyIntent) *repository.ApplyIntent {
-	if intent == nil {
-		return nil
-	}
-	copied := *intent
-	copied.Settings = append([]string{}, intent.Settings...)
-	copied.Extra = cloneRawMap(intent.Extra)
-	return &copied
 }
 
 // cloneRawMap copies JSONC extension values byte-for-byte.

@@ -318,11 +318,17 @@ func newColumnDeleteCommand(context *commandContext, scope *projectScope) *cobra
 	var yes, cascade, forceTargets bool
 	command := &cobra.Command{Use: "delete <Column>", Short: "Delete one Column", Args: usageArgs(cobra.ExactArgs(1)), RunE: func(command *cobra.Command, args []string) error {
 		project, err := resolveProjectForCommand(context.dependencies, scope.project)
-		if err != nil { return err }
+		if err != nil {
+			return err
+		}
 		rootPath, err := effectiveWarehouseRoot(context.dependencies)
-		if err != nil { return err }
+		if err != nil {
+			return err
+		}
 		report, err := mutate.DeleteColumn(repository.New(rootPath), project.Name, args[0], yes, cascade, forceTargets)
-		if err != nil { return classifyMutateError(err) }
+		if err != nil {
+			return classifyMutateError(err)
+		}
 		return context.renderResult(HumanResult{Message: fmt.Sprintf("Deleted column %q", report.Name), Data: map[string]any{"project": project.Name, "column": report.Name, "dependencies": report}})
 	}}
 	addDeleteFlags(command, &yes, &cascade, &forceTargets)

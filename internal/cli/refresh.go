@@ -4,25 +4,24 @@ import (
 	"fmt"
 
 	"github.com/spf13/cobra"
-	"github.com/xenon/ConfigFacilitator/internal/linker"
-	"github.com/xenon/ConfigFacilitator/internal/planner"
+	"github.com/xenon/ConfigFacilitator/internal/repository"
 	"github.com/xenon/ConfigFacilitator/internal/warehouse"
+	"github.com/xenon/ConfigFacilitator/internal/workflow"
 )
 
-// newRefreshCommand constructs intent-aware Project, Column, and all-Project refresh scopes.
+// newRefreshCommand constructs Project refresh scopes backed by the shared workflow.
 func newRefreshCommand(context *commandContext) *cobra.Command {
 	var scope projectScope
-	var column string
 	var all bool
 	var forceTargets bool
 	command := &cobra.Command{
 		Use:     "refresh",
 		Short:   "Re-plan current managed configuration",
 		Args:    usageArgs(cobra.NoArgs),
-		Example: "  cfgfc refresh -p OpenCode\n  cfgfc refresh --column Skills\n  cfgfc refresh --all",
+		Example: "  cfgfc refresh -p OpenCode\n  cfgfc refresh --all",
 		PreRunE: func(command *cobra.Command, args []string) error {
-			if all && (scope.project != "" || column != "") {
-				return NewUsageError("conflicting_scope", "refresh --all cannot be combined with --project or --column", nil)
+			if all && scope.project != "" {
+				return NewUsageError("conflicting_scope", "refresh --all cannot be combined with --project", nil)
 			}
 			return nil
 		},
@@ -34,37 +33,36 @@ func newRefreshCommand(context *commandContext) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return refreshProject(context, project, column, forceTargets)
+			return refreshProject(context, project, forceTargets)
 		},
 	}
 	addProjectFlag(command, &scope)
-	command.Flags().StringVar(&column, "column", "", "Refresh only one Column")
 	command.Flags().BoolVar(&all, "all", false, "Refresh every Project with active state")
 	command.Flags().BoolVar(&forceTargets, "force-targets", false, "Reclaim occupied recorded target paths")
 	return command
 }
 
-// runRefreshAll refreshes every Project containing current mappings or intent.
+// runRefreshAll refreshes every Project containing a Current state.
 func runRefreshAll(context *commandContext, forceTargets bool) error {
-	warehouseRoot, err := effectiveWarehouseRoot(context.dependencies)
+	rootPath, err := effectiveWarehouseRoot(context.dependencies)
 	if err != nil {
 		return err
 	}
-	loaded, loadErr := warehouse.LoadWarehouse(warehouseRoot)
-	if loadErr != nil {
-		return NewInvalidDataError("warehouse_data", loadErr.Error(), nil, loadErr)
+	loaded, _, err := loadWarehouseForInspection(context.dependencies)
+	if err != nil {
+		return err
 	}
 	updated := make([]string, 0, len(loaded.Projects))
 	for _, projectName := range sortedKeys(loaded.Projects) {
 		project := loaded.Projects[projectName]
-		state, stateErr := linker.New().LoadCurrentState(project)
+		state, stateErr := repository.New(rootPath).LoadCurrentState(project.Name)
 		if stateErr != nil {
 			return NewInvalidDataError("current_state", stateErr.Error(), map[string]any{"project": project.Name}, stateErr)
 		}
-		if len(state.Mappings) == 0 && state.Intent == nil {
+		if len(state.Mappings) == 0 && len(state.Columns) == 0 {
 			continue
 		}
-		if err := refreshProjectMutation(project, "", forceTargets, context.dependencies); err != nil {
+		if err := refreshProjectMutation(project, forceTargets, context.dependencies); err != nil {
 			return err
 		}
 		updated = append(updated, project.Name)
@@ -76,29 +74,12 @@ func runRefreshAll(context *commandContext, forceTargets bool) error {
 }
 
 // refreshProject refreshes one Project and renders its stable command result.
-func refreshProject(context *commandContext, project warehouse.Project, columnReference string, forceTargets bool) error {
+func refreshProject(context *commandContext, project warehouse.Project, forceTargets bool) error {
 	if project.Missing {
-		return classifyPlanError("refresh_plan", planner.MissingResourceError{Kind: "project", Project: project.Name})
+		return NewResourceError("project_missing", fmt.Sprintf("project %q source is missing", project.Name), nil, nil)
 	}
-	columnName := ""
-	if columnReference != "" {
-		column, err := project.ResolveColumn(columnReference)
-		if err != nil {
-			return NewResourceError("column_not_found", err.Error(), nil, err)
-		}
-		if column.Missing {
-			return classifyPlanError("refresh_plan", planner.MissingResourceError{Kind: "column", Project: project.Name, Column: column.Name})
-		}
-		columnName = column.Name
-	}
-	if err := refreshProjectMutation(project, columnName, forceTargets, context.dependencies); err != nil {
+	if err := refreshProjectMutation(project, forceTargets, context.dependencies); err != nil {
 		return err
-	}
-	if columnName != "" {
-		return context.renderResult(HumanResult{
-			Message: fmt.Sprintf("Refreshed column %q for project %q", columnName, displayStatusName(project.Metadata.DisplayName, project.Name)),
-			Data:    map[string]any{"project": project.Name, "column": columnName},
-		})
 	}
 	return context.renderResult(HumanResult{
 		Message: fmt.Sprintf("Refreshed project %q", displayStatusName(project.Metadata.DisplayName, project.Name)),
@@ -106,40 +87,14 @@ func refreshProject(context *commandContext, project warehouse.Project, columnRe
 	})
 }
 
-// refreshProjectMutation reuses the established planner and linker behavior without exposing removed syntax.
-func refreshProjectMutation(project warehouse.Project, columnName string, forceTargets bool, dependencies Dependencies) error {
-	engine := linker.New()
-	state, err := engine.LoadCurrentState(project)
+// refreshProjectMutation replans the Current state through the shared workflow.
+func refreshProjectMutation(project warehouse.Project, forceTargets bool, dependencies Dependencies) error {
+	rootPath, err := effectiveWarehouseRoot(dependencies)
 	if err != nil {
-		return NewInvalidDataError("current_state", err.Error(), nil, err)
+		return err
 	}
-	var mappings []linker.Mapping
-	if columnName != "" {
-		if state.Intent != nil {
-			mappings, err = planner.PlanIntentColumnUpdateMappings(project, *state.Intent, columnName, state.Mappings, planOptions(dependencies))
-		} else {
-			mappings, err = planner.PlanColumnUpdateMappings(project, columnName, state.Mappings, planOptions(dependencies))
-		}
-	} else if state.Intent != nil {
-		mappings, err = planner.PlanIntentUpdateMappings(project, *state.Intent, state.Mappings, planOptions(dependencies))
-	} else {
-		mappings, err = planner.PlanUpdateMappings(project, state.Mappings, planOptions(dependencies))
-	}
-	if err != nil {
-		return classifyPlanError("refresh_plan", err)
-	}
-	if err := engine.ReplaceState(project, linker.CurrentState{Mappings: mappings, Intent: cloneApplyIntent(state.Intent)}, linker.WithForce(forceTargets)); err != nil {
-		return classifyMutationError("refresh_failed", err)
+	if err := workflow.RefreshCurrent(repository.New(rootPath), project.Name, forceTargets, planOptions(dependencies)); err != nil {
+		return classifyWorkflowError(err)
 	}
 	return nil
-}
-
-// cloneApplyIntent copies persisted apply intent before replacing refreshed state.
-func cloneApplyIntent(intent *linker.ApplyIntent) *linker.ApplyIntent {
-	if intent == nil {
-		return nil
-	}
-	clone := *intent
-	clone.Settings = append([]string(nil), intent.Settings...)
-	return &clone
 }

@@ -9,6 +9,7 @@ import (
 	"github.com/xenon/ConfigFacilitator/internal/mutate"
 	"github.com/xenon/ConfigFacilitator/internal/repository"
 	"github.com/xenon/ConfigFacilitator/internal/warehouse"
+	"github.com/xenon/ConfigFacilitator/internal/workflow"
 )
 
 // modeView is the stable inspection shape for one Mode.
@@ -202,6 +203,7 @@ func newModeColumnListCommand(context *commandContext, scope *projectScope) *cob
 func newModeColumnSetCommand(context *commandContext, scope *projectScope) *cobra.Command {
 	var strategy string
 	var settings []string
+	var forceTargets bool
 	command := &cobra.Command{Use: "set <Mode> <Column>", Short: "Set a Mode Column selection", Args: usageArgs(cobra.ExactArgs(2)), RunE: func(command *cobra.Command, args []string) error {
 		if !command.Flags().Changed("strategy") {
 			return NewUsageError("mode_strategy_required", "provide --strategy cover, increment, none, or full", nil)
@@ -214,21 +216,22 @@ func newModeColumnSetCommand(context *commandContext, scope *projectScope) *cobr
 		if err != nil {
 			return err
 		}
-		mode, column, canonicalSettings, err := mutate.SetModeColumnSelection(repository.New(rootPath), project.Name, args[0], args[1], strategy, settings)
-		if err != nil {
-			return classifyMutateError(err)
+		if err := workflow.SetModeColumn(repository.New(rootPath), project.Name, args[0], args[1], strategy, settings, forceTargets, planOptions(context.dependencies)); err != nil {
+			return classifyWorkflowError(err)
 		}
-		selection := modeColumnView{Strategy: strategy, Settings: stringsOrEmpty(canonicalSettings)}
-		return context.renderResult(HumanResult{Message: fmt.Sprintf("Set column %q in mode %q", column, mode), Data: map[string]any{"project": project.Name, "mode": mode, "column": column, "selection": selection}})
+		selection := modeColumnView{Strategy: strategy, Settings: stringsOrEmpty(settings)}
+		return context.renderResult(HumanResult{Message: fmt.Sprintf("Set column %q in mode %q", args[1], args[0]), Data: map[string]any{"project": project.Name, "mode": args[0], "column": args[1], "selection": selection}})
 	}}
 	command.Flags().StringVar(&strategy, "strategy", "", "Selection strategy: cover, increment, none, or full")
 	command.Flags().StringArrayVar(&settings, "setting", nil, "Select one Setting; repeat for multiple Settings")
+	command.Flags().BoolVar(&forceTargets, "force-targets", false, "Reclaim occupied recorded target paths")
 	return command
 }
 
 // newModeColumnDeleteCommand transactionally removes one selection without resource deletion confirmation.
 func newModeColumnDeleteCommand(context *commandContext, scope *projectScope) *cobra.Command {
-	return &cobra.Command{Use: "delete <Mode> <Column>", Short: "Delete a Mode Column selection", Args: usageArgs(cobra.ExactArgs(2)), RunE: func(command *cobra.Command, args []string) error {
+	var forceTargets bool
+	command := &cobra.Command{Use: "delete <Mode> <Column>", Short: "Delete a Mode Column selection", Args: usageArgs(cobra.ExactArgs(2)), RunE: func(command *cobra.Command, args []string) error {
 		project, err := resolveProjectForCommand(context.dependencies, scope.project)
 		if err != nil {
 			return err
@@ -237,12 +240,13 @@ func newModeColumnDeleteCommand(context *commandContext, scope *projectScope) *c
 		if err != nil {
 			return err
 		}
-		mode, column, err := mutate.DeleteModeColumnSelection(repository.New(rootPath), project.Name, args[0], args[1])
-		if err != nil {
-			return classifyMutateError(err)
+		if err := workflow.DeleteModeColumn(repository.New(rootPath), project.Name, args[0], args[1], forceTargets, planOptions(context.dependencies)); err != nil {
+			return classifyWorkflowError(err)
 		}
-		return context.renderResult(HumanResult{Message: fmt.Sprintf("Deleted column %q from mode %q", column, mode), Data: map[string]any{"project": project.Name, "mode": mode, "column": column}})
+		return context.renderResult(HumanResult{Message: fmt.Sprintf("Deleted column %q from mode %q", args[1], args[0]), Data: map[string]any{"project": project.Name, "mode": args[0], "column": args[1]}})
 	}}
+	command.Flags().BoolVar(&forceTargets, "force-targets", false, "Reclaim occupied recorded target paths")
+	return command
 }
 
 // newModeRenameCommand constructs transactional canonical Mode rename.
@@ -271,12 +275,17 @@ func newModeDeleteCommand(context *commandContext, scope *projectScope) *cobra.C
 	var yes, cascade, forceTargets bool
 	command := &cobra.Command{Use: "delete <Mode>", Short: "Delete one Mode", Args: usageArgs(cobra.ExactArgs(1)), RunE: func(command *cobra.Command, args []string) error {
 		project, err := resolveProjectForCommand(context.dependencies, scope.project)
-		if err != nil { return err }
+		if err != nil {
+			return err
+		}
 		rootPath, err := effectiveWarehouseRoot(context.dependencies)
-		if err != nil { return err }
-		report, err := mutate.DeleteMode(repository.New(rootPath), project.Name, args[0], yes, cascade, forceTargets)
-		if err != nil { return classifyMutateError(err) }
-		return context.renderResult(HumanResult{Message: fmt.Sprintf("Deleted mode %q", report.Name), Data: map[string]any{"project": project.Name, "mode": report.Name, "dependencies": report}})
+		if err != nil {
+			return err
+		}
+		if err := workflow.DeleteModeWorkflow(repository.New(rootPath), project.Name, args[0], yes, forceTargets); err != nil {
+			return classifyWorkflowError(err)
+		}
+		return context.renderResult(HumanResult{Message: fmt.Sprintf("Deleted mode %q", args[0]), Data: map[string]any{"project": project.Name, "mode": args[0]}})
 	}}
 	addDeleteFlags(command, &yes, &cascade, &forceTargets)
 	return command

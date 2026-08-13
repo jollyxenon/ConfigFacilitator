@@ -1,13 +1,12 @@
 package cli
 
 import (
-	"errors"
 	"fmt"
 
 	"github.com/spf13/cobra"
-	"github.com/xenon/ConfigFacilitator/internal/linker"
-	"github.com/xenon/ConfigFacilitator/internal/planner"
+	"github.com/xenon/ConfigFacilitator/internal/repository"
 	"github.com/xenon/ConfigFacilitator/internal/warehouse"
+	"github.com/xenon/ConfigFacilitator/internal/workflow"
 )
 
 // newApplyCommand constructs the nested apply mode and apply column syntax.
@@ -44,108 +43,52 @@ func newApplyCommand(context *commandContext) *cobra.Command {
 	return command
 }
 
-// runApplyMode plans and commits one canonical Mode intent through the existing engine.
+// runApplyMode applies one Mode as the new Current state through the shared workflow.
 func runApplyMode(context *commandContext, explicitProject string, modeReference string, forceTargets bool) error {
 	project, err := resolveProjectForCommand(context.dependencies, explicitProject)
 	if err != nil {
 		return err
 	}
-	if project.Missing {
-		return classifyPlanError("apply_plan", planner.MissingResourceError{Kind: "project", Project: project.Name})
+	rootPath, err := effectiveWarehouseRoot(context.dependencies)
+	if err != nil {
+		return err
 	}
-	mode, resolveErr := project.ResolveMode(modeReference)
-	if resolveErr != nil {
-		return NewResourceError("mode_not_found", resolveErr.Error(), nil, resolveErr)
-	}
-	engine := linker.New()
-	currentState, loadErr := engine.LoadCurrentState(project)
-	if loadErr != nil {
-		return NewInvalidDataError("current_state", loadErr.Error(), nil, loadErr)
-	}
-	mappings, planErr := planner.PlanModeMappings(project, mode.Name, currentState.Mappings, planOptions(context.dependencies))
-	if planErr != nil {
-		return classifyPlanError("apply_plan", planErr)
-	}
-	if replaceErr := engine.ReplaceState(project, linker.CurrentState{
-		Mappings: mappings,
-		Intent:   &linker.ApplyIntent{Kind: "mode", Mode: mode.Name},
-	}, linker.WithForce(forceTargets)); replaceErr != nil {
-		return classifyMutationError("apply_failed", replaceErr)
+	if err := workflow.ApplyMode(repository.New(rootPath), project.Name, modeReference, forceTargets, planOptions(context.dependencies)); err != nil {
+		return classifyWorkflowError(err)
 	}
 	return context.renderResult(HumanResult{
-		Message: fmt.Sprintf("Applied mode %q for project %q", displayStatusName(mode.Metadata.DisplayName, mode.Name), displayStatusName(project.Metadata.DisplayName, project.Name)),
-		Data: map[string]any{
-			"project":  project.Name,
-			"kind":     "mode",
-			"mode":     mode.Name,
-			"mappings": mappings,
-		},
+		Message: fmt.Sprintf("Applied mode %q for project %q", displayStatusName(displayNameOfMode(project, modeReference), modeReference), displayStatusName(project.Metadata.DisplayName, project.Name)),
+		Data:    map[string]any{"project": project.Name, "kind": "mode", "mode": modeReference},
 	})
 }
 
-// runApplyColumn plans and commits one canonical direct-Column intent through the existing engine.
+// runApplyColumn applies one explicit Column cover selection as the new Current state.
 func runApplyColumn(context *commandContext, explicitProject string, columnReference string, settingReferences []string, forceTargets bool) error {
 	project, err := resolveProjectForCommand(context.dependencies, explicitProject)
 	if err != nil {
 		return err
 	}
-	column, resolveErr := project.ResolveColumn(columnReference)
-	if resolveErr != nil {
-		return NewResourceError("column_not_found", resolveErr.Error(), nil, resolveErr)
+	rootPath, err := effectiveWarehouseRoot(context.dependencies)
+	if err != nil {
+		return err
 	}
-	if project.Missing {
-		return classifyPlanError("apply_plan", planner.MissingResourceError{Kind: "project", Project: project.Name})
+	column, err := project.ResolveColumn(columnReference)
+	if err != nil {
+		return NewResourceError("column_not_found", err.Error(), nil, err)
 	}
-	if column.Missing {
-		return classifyPlanError("apply_plan", planner.MissingResourceError{Kind: "column", Project: project.Name, Column: column.Name})
-	}
-	settingNames, settingErr := canonicalSettingNames(column, settingReferences)
-	if settingErr != nil {
-		return NewResourceError("setting_not_found", settingErr.Error(), nil, settingErr)
-	}
-	mappings, planErr := planner.PlanColumnMappings(project, column.Name, settingNames, planOptions(context.dependencies))
-	if planErr != nil {
-		return classifyPlanError("apply_plan", planErr)
-	}
-	if replaceErr := linker.New().ReplaceState(project, linker.CurrentState{
-		Mappings: mappings,
-		Intent:   &linker.ApplyIntent{Kind: "column", Column: column.Name, Settings: settingNames},
-	}, linker.WithForce(forceTargets)); replaceErr != nil {
-		return classifyMutationError("apply_failed", replaceErr)
+	if err := workflow.ApplyColumn(repository.New(rootPath), project.Name, column.Name, settingReferences, forceTargets, planOptions(context.dependencies)); err != nil {
+		return classifyWorkflowError(err)
 	}
 	return context.renderResult(HumanResult{
 		Message: fmt.Sprintf("Applied column %q for project %q", displayStatusName(column.Metadata.DisplayName, column.Name), displayStatusName(project.Metadata.DisplayName, project.Name)),
-		Data: map[string]any{
-			"project":  project.Name,
-			"kind":     "column",
-			"column":   column.Name,
-			"settings": settingNames,
-			"mappings": mappings,
-		},
+		Data:    map[string]any{"project": project.Name, "kind": "column", "column": column.Name, "settings": settingReferences},
 	})
 }
 
-// canonicalSettingNames resolves Setting aliases into canonical persisted identities.
-func canonicalSettingNames(column warehouse.Column, references []string) ([]string, error) {
-	settings := make([]string, 0, len(references))
-	for _, reference := range references {
-		setting, err := column.ResolveSetting(reference)
-		if err != nil {
-			return nil, err
-		}
-		if setting.Missing {
-			return nil, planner.MissingResourceError{Kind: "setting", Column: column.Name, Name: setting.Name}
-		}
-		settings = append(settings, setting.Name)
+// displayNameOfMode resolves a Mode display label when possible.
+func displayNameOfMode(project warehouse.Project, reference string) string {
+	if mode, err := project.ResolveMode(reference); err == nil {
+		return mode.Metadata.DisplayName
 	}
-	return settings, nil
-}
-
-// classifyPlanError reports missing filesystem-backed resources as resource failures.
-func classifyPlanError(code string, err error) error {
-	var missing planner.MissingResourceError
-	if errors.As(err, &missing) {
-		return NewResourceError("resource_missing", err.Error(), missing, err)
-	}
-	return NewInvalidDataError(code, err.Error(), nil, err)
+	return reference
 }
