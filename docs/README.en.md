@@ -1,46 +1,38 @@
 # ConfigFacilitator Documentation
 
-ConfigFacilitator is a portable Go CLI that manages configuration warehouses whose default root is `~/.configfacilitator/`.
+ConfigFacilitator manages a portable configuration warehouse entirely through resource-oriented CLI commands. JSONC remains an inspectable interoperability format, but normal workflows do not require an editor.
 
 ## Start here
 
-- [Architecture](architecture.en.md)
 - [Command Reference](commands.en.md)
-- [Workflow Example](example.en.md)
-- [JSONC Guide](jsonc-guide.en.md)
+- [CLI-only Workflow Example](example.en.md)
+- [Architecture](architecture.en.md)
+- [JSONC and Interoperability Guide](jsonc-guide.en.md)
 - [Platform Notes](platform-notes.en.md)
 - [Developer Setup](developer-setup.en.md)
 - [Agent Usage Skill](../skills/configfacilitator-usage/SKILL.md)
 
 ## Quick facts
 
-- Binary name: `cfgfc`
-- npm install: `npm install -g @jollyxenon/cfgfc`
-- Development build: `pixi run compile` checks all Go packages; `pixi run build` creates `dist/cfgfc`
-- License: MIT License (see [`LICENSE`](../LICENSE))
-- Warehouse root: default `~/.configfacilitator/`; use `cfgfc root` to inspect and `cfgfc root <path>` to persist a different root
-- Root-level project discovery: direct child project directories under the effective warehouse root, including `SettingWarehouse`, participate in discovery
-- Core entities: `Project`, `Column`, `Setting`, `Mode`
-- Commands: `new`, `sync`, `switch`, `root`, `list`, `apply`, `update`, `reset`, `revert`
-- Agent Skill maintenance: when user-facing commands, workflows, examples, or safety rules change, review and update [`configfacilitator-usage`](../skills/configfacilitator-usage/SKILL.md) with the docs
+- Binary: `cfgfc`
+- Install: `npm install -g @jollyxenon/cfgfc`
+- Default warehouse root: `~/.configfacilitator/`
+- Root inspection/change: `cfgfc root` and `cfgfc root <Path>`; changing roots never migrates contents
+- Resources: Project, Column, Setting, Mode, Column target positions, Setting target overrides, and Mode Column selections
+- Top-level commands: `project`, `column`, `setting`, `mode`, `use`, `status`, `apply`, `refresh`, `sync`, `root`, `reset`, `revert`, and `completion`
+- Project scope: explicit `-p/--project` takes precedence over the PPID-scoped Project selected by `cfgfc use`
+- Machine output: `--json` emits one stable success or error object; see the command reference for exit codes
+- Shell completion: `cfgfc completion <bash|zsh|fish|powershell>`
+- Symlinks: real symlinks only on Linux, macOS, native Windows, and WSL
 
-## What it does
+## Recommended model
 
-It scaffolds warehouses, reconciles indexes with filesystem reality, stores PPID-scoped convenience context, applies symlink-backed configurations, supports persistent warehouse-root switching with `cfgfc root`, and supports `reset` and single-step `revert`.
+1. Create and mutate warehouse resources with `project`, `column`, `setting`, and `mode` commands.
+2. Configure logical target positions with `column target` and per-Setting overrides with `setting target`.
+3. Create or change payloads with `setting create` and `setting content`; stdin preserves exact bytes.
+4. Inspect metadata with resource `list`/`show`, and inspect active state with `status`.
+5. Apply a Mode or direct Column intent, then use `refresh` only when replanning is needed.
+6. Use `sync` after Git or other external changes. It immediately removes Index metadata for disappeared Project, Column, or Setting sources, does not recreate sources or cascade Mode/runtime references, and provides no prune workflow.
+7. Treat `--yes`, `--cascade`, and `--force-targets` as separate authorizations.
 
-## Installation
-
-After maintainers publish a tagged GitHub Release and the matching npm package, install the CLI with:
-
-```bash
-npm install -g @jollyxenon/cfgfc
-cfgfc --help
-```
-
-The npm package is only an installation wrapper. It downloads the prebuilt Go binary from the GitHub Release whose tag matches the npm package version, then exposes that binary through npm's `cfgfc` command.
-
-## Identity model
-
-- Every `Project`, `Column`, `Setting`, and `Mode` uses the top-level index key as its canonical persisted identity, stores a presentation-only `displayName`, and supports zero or more `aliases`.
-- Commands resolve references through canonical names and aliases.
-- `switch` stores the normalized project identifier in session context.
+Canonical names are index keys and filesystem identities. Display names are presentation-only, while aliases are alternative command references. Commands resolve aliases and persist canonical identities.

@@ -1,13 +1,13 @@
 # ConfigFacilitator 文档
 
-ConfigFacilitator 是一个便携式 Go CLI，用于管理配置仓库；默认仓库根目录是 `~/.configfacilitator/`。
+ConfigFacilitator 通过面向资源的 CLI 命令完整管理可移植配置仓库。JSONC 仍然是可查看的互操作格式，但常规工作流不需要编辑器。
 
 ## 从这里开始
 
-- [架构说明](architecture.zh-CN.md)
 - [命令参考](commands.zh-CN.md)
-- [工作流示例](example.zh-CN.md)
-- [JSONC 指南](jsonc-guide.zh-CN.md)
+- [纯 CLI 工作流示例](example.zh-CN.md)
+- [架构说明](architecture.zh-CN.md)
+- [JSONC 与互操作指南](jsonc-guide.zh-CN.md)
 - [平台说明](platform-notes.zh-CN.md)
 - [开发环境](developer-setup.zh-CN.md)
 - [Agent 使用 Skill](../skills/configfacilitator-usage/SKILL.md)
@@ -15,32 +15,24 @@ ConfigFacilitator 是一个便携式 Go CLI，用于管理配置仓库；默认�
 ## 关键信息
 
 - 二进制名称：`cfgfc`
-- npm 安装：`npm install -g @jollyxenon/cfgfc`
-- 开发构建：`pixi run compile` 检查所有 Go package；`pixi run build` 生成 `dist/cfgfc`
-- 开源协议：MIT License（见 [`LICENSE`](../LICENSE)）
-- 仓库根目录：默认是 `~/.configfacilitator/`；使用 `cfgfc root` 查看当前生效根目录，使用 `cfgfc root <path>` 持久化切换
-- 根目录项目发现：当前生效仓库根目录下的直接项目目录都会参与发现，其中也包括 `SettingWarehouse`
-- 核心实体：`Project`、`Column`、`Setting`、`Mode`
-- 命令：`new`、`sync`、`switch`、`root`、`list`、`apply`、`update`、`reset`、`revert`
-- Agent Skill 维护：当面向用户的命令、工作流、示例或安全规则变化时，需要随文档一起检查并更新 [`configfacilitator-usage`](../skills/configfacilitator-usage/SKILL.md)
+- 安装命令：`npm install -g @jollyxenon/cfgfc`
+- 默认仓库根目录：`~/.configfacilitator/`
+- 根目录查看与切换：`cfgfc root` 和 `cfgfc root <Path>`；切换根目录不会迁移内容
+- 资源：Project、Column、Setting、Mode、Column 目标位置、Setting 目标覆盖和 Mode 的 Column 选择
+- 顶层命令：`project`、`column`、`setting`、`mode`、`use`、`status`、`apply`、`refresh`、`sync`、`root`、`reset`、`revert`、`completion`
+- Project 作用域：显式 `-p/--project` 优先于 `cfgfc use` 选择的 PPID 作用域 Project
+- 机器输出：`--json` 输出一个稳定的成功或错误对象；退出码见命令参考
+- Shell 补全：`cfgfc completion <bash|zsh|fish|powershell>`
+- 符号链接：Linux、macOS、原生 Windows 和 WSL 都只使用真实符号链接
 
-## 项目作用
+## 推荐使用模型
 
-它负责搭建仓库骨架、同步索引与磁盘实体、保存基于 PPID 的便利上下文、通过 `cfgfc root` 持久化切换仓库根目录、应用符号链接配置，并支持 `reset` 和单步 `revert`。
+1. 使用 `project`、`column`、`setting`、`mode` 命令创建和修改仓库资源。
+2. 使用 `column target` 配置逻辑目标位置，使用 `setting target` 配置每个 Setting 的覆盖值。
+3. 使用 `setting create` 和 `setting content` 创建或修改内容；stdin 会保留精确字节。
+4. 使用资源 `list`/`show` 查看元数据，使用 `status` 查看活动状态。
+5. 应用 Mode 或直接 Column 意图；只有需要重新规划时才使用 `refresh`。
+6. Git 或其他外部工具改变仓库后，使用 `sync`。已索引的 Project、Column 或 Setting 来源消失时，它会立即删除对应 Index 元数据，不重建来源，也不级联 Mode/runtime 引用；不存在 prune 流程。
+7. 把 `--yes`、`--cascade`、`--force-targets` 视为三种独立授权。
 
-## 安装
-
-维护者发布带 tag 的 GitHub Release 和匹配版本的 npm 包后，可以这样安装 CLI：
-
-```bash
-npm install -g @jollyxenon/cfgfc
-cfgfc --help
-```
-
-npm 包只是安装包装层。它会从与 npm 包版本匹配的 GitHub Release 下载预编译 Go 二进制文件，然后通过 npm 的 `cfgfc` 命令暴露该二进制文件。
-
-## 标识模型
-
-- `Project`、`Column`、`Setting`、`Mode` 都以顶层索引 key 作为 canonical 持久化标识，额外保存仅用于展示的 `displayName` 和零个或多个 `aliases`。
-- 命令解析同时支持 canonical 名称和别名。
-- `switch` 会在会话上下文中保存规范化后的项目标识符。
+Canonical 名称同时是索引 key 和文件系统标识。显示名称只用于展示，别名则是命令中的替代引用。命令会解析别名，并持久化 canonical 标识。

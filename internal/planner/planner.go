@@ -14,6 +14,26 @@ import (
 	"github.com/xenon/ConfigFacilitator/internal/warehouse"
 )
 
+// MissingResourceError identifies a filesystem-backed model resource unavailable to planning.
+type MissingResourceError struct {
+	Kind    string
+	Project string
+	Column  string
+	Name    string
+}
+
+// Error returns a stable, contextual missing-resource diagnostic.
+func (err MissingResourceError) Error() string {
+	switch err.Kind {
+	case "project":
+		return fmt.Sprintf("project %q is missing", err.Project)
+	case "column":
+		return fmt.Sprintf("column %q in project %q is missing", err.Column, err.Project)
+	default:
+		return fmt.Sprintf("setting %q in column %q is missing", err.Name, err.Column)
+	}
+}
+
 const (
 	modeStrategyCover     = "cover"
 	modeStrategyIncrement = "increment"
@@ -30,8 +50,14 @@ type PlanOptions struct {
 
 // PlanColumnMappings builds the mapping set for one explicit column selection.
 func PlanColumnMappings(project warehouse.Project, columnReference string, settingReferences []string, options PlanOptions) ([]linker.Mapping, error) {
+	if err := requirePresentProject(project); err != nil {
+		return nil, err
+	}
 	column, err := project.ResolveColumn(columnReference)
 	if err != nil {
+		return nil, err
+	}
+	if err := requirePresentColumn(project, column); err != nil {
 		return nil, err
 	}
 	mappings := []linker.Mapping{}
@@ -52,8 +78,79 @@ func PlanColumnMappings(project warehouse.Project, columnReference string, setti
 	return mappings, nil
 }
 
+// ValidateColumnTargets verifies defaults plus every Setting's effective target plan.
+func ValidateColumnTargets(column warehouse.Column, options PlanOptions) error {
+	if column.SettingIndex.TargetNumber != len(column.SettingIndex.DefaultTargetDir) || column.SettingIndex.TargetNumber != len(column.SettingIndex.DefaultTargetName) {
+		return fmt.Errorf("column %q target arrays do not match targetNumber", column.Name)
+	}
+	probe := warehouse.Setting{Name: "target", WarehouseName: "target", Path: filepath.Join(column.Path, "target"), Metadata: index.SettingEntry{WarehouseName: "target", TargetDir: repeatedString("", column.SettingIndex.TargetNumber), TargetName: repeatedString("", column.SettingIndex.TargetNumber)}}
+	if column.SettingIndex.TargetNumber > 0 {
+		probeMappings, err := resolveSettingMappings(column, probe, options)
+		if err != nil {
+			return err
+		}
+		if err := validateUniqueMappingTargets(probeMappings); err != nil {
+			return err
+		}
+	}
+	for name, setting := range column.Settings {
+		if len(setting.Metadata.TargetDir) != column.SettingIndex.TargetNumber || len(setting.Metadata.TargetName) != column.SettingIndex.TargetNumber {
+			return fmt.Errorf("setting %q in column %q target arrays do not match targetNumber", name, column.Name)
+		}
+		if column.SettingIndex.TargetNumber == 0 {
+			continue
+		}
+		mappings, err := resolveSettingMappings(column, setting, options)
+		if err != nil {
+			return err
+		}
+		if err := validateUniqueMappingTargets(mappings); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// ValidateProjectTargets verifies expanded targets stay unique across all Settings and Columns.
+func ValidateProjectTargets(project warehouse.Project, options PlanOptions) error {
+	mappings := []linker.Mapping{}
+	columnNames := make([]string, 0, len(project.Columns))
+	for name := range project.Columns {
+		columnNames = append(columnNames, name)
+	}
+	sort.Strings(columnNames)
+	for _, columnName := range columnNames {
+		column := project.Columns[columnName]
+		if err := ValidateColumnTargets(column, options); err != nil {
+			return err
+		}
+		settingNames := make([]string, 0, len(column.Settings))
+		for name := range column.Settings {
+			settingNames = append(settingNames, name)
+		}
+		sort.Strings(settingNames)
+		for _, settingName := range settingNames {
+			if column.SettingIndex.TargetNumber == 0 {
+				continue
+			}
+			resolved, err := resolveSettingMappings(column, column.Settings[settingName], options)
+			if err != nil {
+				return err
+			}
+			mappings, err = appendUniqueMappings(mappings, resolved)
+			if err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
 // PlanModeMappings builds the mapping set for a mode selection from current managed state.
 func PlanModeMappings(project warehouse.Project, modeReference string, current []linker.Mapping, options PlanOptions) ([]linker.Mapping, error) {
+	if err := requirePresentProject(project); err != nil {
+		return nil, err
+	}
 	mode, err := project.ResolveMode(modeReference)
 	if err != nil {
 		return nil, err
@@ -63,6 +160,9 @@ func PlanModeMappings(project warehouse.Project, modeReference string, current [
 	for columnReference, selection := range mode.Metadata.Columns {
 		column, err := project.ResolveColumn(columnReference)
 		if err != nil {
+			return nil, err
+		}
+		if err := requirePresentColumn(project, column); err != nil {
 			return nil, err
 		}
 		columnMappings, err := planModeColumnMappings(column, selection, byColumn[column.Name], options)
@@ -80,6 +180,9 @@ func PlanModeMappings(project warehouse.Project, modeReference string, current [
 
 // PlanUpdateMappings refreshes every currently active mapping from current project metadata.
 func PlanUpdateMappings(project warehouse.Project, current []linker.Mapping, options PlanOptions) ([]linker.Mapping, error) {
+	if err := requirePresentProject(project); err != nil {
+		return nil, err
+	}
 	result := []linker.Mapping{}
 	processedSources := map[string]struct{}{}
 	for _, mapping := range current {
@@ -105,8 +208,14 @@ func PlanUpdateMappings(project warehouse.Project, current []linker.Mapping, opt
 
 // PlanColumnUpdateMappings refreshes one active column and preserves mappings from other columns.
 func PlanColumnUpdateMappings(project warehouse.Project, columnReference string, current []linker.Mapping, options PlanOptions) ([]linker.Mapping, error) {
+	if err := requirePresentProject(project); err != nil {
+		return nil, err
+	}
 	selectedColumn, err := project.ResolveColumn(columnReference)
 	if err != nil {
+		return nil, err
+	}
+	if err := requirePresentColumn(project, selectedColumn); err != nil {
 		return nil, err
 	}
 	result := make([]linker.Mapping, 0, len(current))
@@ -161,8 +270,14 @@ func PlanIntentUpdateMappings(project warehouse.Project, intent linker.ApplyInte
 
 // PlanIntentColumnUpdateMappings refreshes one column from persisted intent and preserves other mappings.
 func PlanIntentColumnUpdateMappings(project warehouse.Project, intent linker.ApplyIntent, columnReference string, current []linker.Mapping, options PlanOptions) ([]linker.Mapping, error) {
+	if err := requirePresentProject(project); err != nil {
+		return nil, err
+	}
 	selectedColumn, err := project.ResolveColumn(columnReference)
 	if err != nil {
+		return nil, err
+	}
+	if err := requirePresentColumn(project, selectedColumn); err != nil {
 		return nil, err
 	}
 	switch intent.Kind {
@@ -199,6 +314,12 @@ func ParseSettingList(input string) []string {
 }
 
 func resolveSettingMappings(column warehouse.Column, setting warehouse.Setting, options PlanOptions) ([]linker.Mapping, error) {
+	if err := requirePresentColumn(warehouse.Project{Name: "", Missing: false}, column); err != nil {
+		return nil, err
+	}
+	if err := requirePresentSetting(column, setting); err != nil {
+		return nil, err
+	}
 	dirs, names, err := effectiveTargetParts(column, setting)
 	if err != nil {
 		return nil, err
@@ -313,6 +434,9 @@ type currentMappingMatch struct {
 
 // matchCurrentMapping finds the project setting represented by one persisted mapping source.
 func matchCurrentMapping(project warehouse.Project, mapping linker.Mapping) (currentMappingMatch, error) {
+	if project.Missing {
+		return currentMappingMatch{}, MissingResourceError{Kind: "project", Project: project.Name}
+	}
 	for _, column := range project.Columns {
 		for _, setting := range column.Settings {
 			if setting.Path == mapping.Source {
@@ -381,6 +505,9 @@ func resolveModeColumnSelection(project warehouse.Project, mode warehouse.Mode, 
 }
 
 func planModeColumnMappings(column warehouse.Column, selection index.ModeColumnSelection, current []linker.Mapping, options PlanOptions) ([]linker.Mapping, error) {
+	if err := requirePresentColumn(warehouse.Project{}, column); err != nil {
+		return nil, err
+	}
 	switch selection.Strategy {
 	case modeStrategyCover:
 		return resolveSelectedMappings(column, selection.Settings, options)
@@ -488,4 +615,28 @@ func appendUniqueMappings(current []linker.Mapping, next []linker.Mapping) ([]li
 func validateUniqueMappingTargets(mappings []linker.Mapping) error {
 	_, err := appendUniqueMappings(nil, mappings)
 	return err
+}
+
+// requirePresentProject rejects plans that need an absent Project source tree.
+func requirePresentProject(project warehouse.Project) error {
+	if project.Missing {
+		return MissingResourceError{Kind: "project", Project: project.Name}
+	}
+	return nil
+}
+
+// requirePresentColumn rejects plans that need an absent Column source tree.
+func requirePresentColumn(project warehouse.Project, column warehouse.Column) error {
+	if column.Missing {
+		return MissingResourceError{Kind: "column", Project: project.Name, Column: column.Name}
+	}
+	return nil
+}
+
+// requirePresentSetting rejects plans that need unreadable Setting source content.
+func requirePresentSetting(column warehouse.Column, setting warehouse.Setting) error {
+	if setting.Missing {
+		return MissingResourceError{Kind: "setting", Column: column.Name, Name: setting.Name}
+	}
+	return nil
 }

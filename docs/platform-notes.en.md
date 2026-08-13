@@ -1,39 +1,56 @@
 # Platform Notes
 
-## Symlink policy
+## Real-symlink policy
 
-ConfigFacilitator uses real symlinks only. It does not fall back to directory junctions, hardlinks, file copies, `mklink`, PowerShell helpers, or any other substitute mechanism.
+ConfigFacilitator creates real file and directory symlinks only. It does not fall back to junctions, hardlinks, copies, `mklink`, PowerShell helpers, or other substitutes. Source existence and kind are inspected when planning or linking; source kind is not persisted in runtime state.
 
-On native Windows, `cfgfc.exe` manages Windows user-directory configuration with real file and directory symlinks. Windows may require Developer Mode or Administrator privileges before it allows symlink creation. If Windows refuses a symlink, ConfigFacilitator reports the failure and stops instead of creating a junction or copy.
+On native Windows, Developer Mode or Administrator privileges may be required. If symlink creation is refused, cfgfc returns a persistence failure instead of silently using another mechanism.
 
-The source path is inspected at link creation time to confirm it exists and to let the platform infer whether the link is file-backed or directory-backed. ConfigFacilitator does not persist source type in its state files.
-
-## Portable layout
-
-The warehouse is resolved from the current user's home/profile directory, not beside the shell working directory. Moving the binary does not change the active warehouse root.
+## Roots and runtime boundaries
 
 - Default Unix-like root: `~/.configfacilitator/`
 - Default native Windows root: `%USERPROFILE%/.configfacilitator`
-- Persistent override bootstrap: `~/.cfgfc-root` on Unix-like platforms and `%USERPROFILE%/.cfgfc-root` on native Windows
+- Persistent override bootstrap: `~/.cfgfc-root` or `%USERPROFILE%/.cfgfc-root`
 
-`cfgfc root` prints the current effective warehouse root. `cfgfc root <path>` persists a new effective root in the bootstrap file after path expansion and normalization. Changing roots does not migrate, copy, or initialize warehouse contents.
+`cfgfc root` prints the effective root. `cfgfc root <Path>` expands and normalizes a new root, then persists it for later commands. It does not migrate, copy, or initialize contents. Moving the executable does not change the root.
 
-Root-level project discovery runs directly inside the effective warehouse root. Any directory there that matches the project layout, including `SettingWarehouse`, participates in discovery.
+Direct child Project directories under the effective root, including `SettingWarehouse`, participate in discovery. `.cfgfc-session/` and `.cfgfc-transactions/` are reserved and are not discovered as resources.
 
-## Native Windows and WSL boundary
+## Native Windows and WSL
 
-Native Windows `cfgfc.exe` and a Linux build running under WSL are separate runtimes. Native Windows follows `%USERPROFILE%` paths and Windows symlink permissions. WSL follows Linux path and symlink semantics for the paths it is given. ConfigFacilitator does not automatically translate between `%USERPROFILE%` and `/mnt/c/...`.
+Native `cfgfc.exe` and a Linux binary under WSL are separate runtimes:
 
-## Session context
+- native Windows uses `%USERPROFILE%`, Windows path syntax, and Windows symlink privileges;
+- WSL uses Linux home, path, permission, and symlink semantics;
+- cfgfc does not translate `%USERPROFILE%` to `/mnt/c/...` or convert warehouse paths between runtimes.
 
-`switch` stores the active project by parent process ID. This is a convenience feature for concurrent shells, not a hard isolation boundary.
+Choose the binary whose filesystem semantics match the targets you intend to manage. Avoid sharing active runtime/session/transaction state between native Windows and WSL processes.
 
-The `.cfgfc-session/` directory lives under the effective warehouse root, so switching roots also switches the session-context store.
+## Portable target paths
 
-## Revert scope
+Target directories may use `~`, `${VAR}`, and Windows `%VAR%`. Expansion follows the current runtime's home and environment. Target names must be a single normal file or directory name. Expanded targets must be non-empty and unique within one plan.
 
-`revert` is single-step only and restores the previous apply snapshot.
+Setting content paths are relative to the Setting root. Absolute paths, empty paths where a child is required, `.`/`..` traversal, escaped paths, and symlink components are rejected. Directory imports accept only regular files and directories and do not follow symlinks.
+
+## Context and transactions
+
+`cfgfc use` stores canonical Project context by parent process ID under the effective root. This is convenience state for concurrent shells, not a security or isolation boundary. Explicit `-p/--project` takes precedence. Changing roots also changes the context store.
+
+Mutating commands serialize through a warehouse-wide lock and recover an incomplete prepared transaction before new work. Read-only `status` reports transaction diagnostics without recovery. Do not edit or delete `.cfgfc-transactions/` manually.
+
+## Destructive behavior
+
+`--force-targets` can recursively reclaim only affected target paths already recorded by the requested apply, rename, delete, refresh, reset, or revert operation. It does not confirm repository deletion (`--yes`), authorize dependent-reference repair (`--cascade`), or back up/reconstruct overwritten unmanaged content.
 
 ## Native Windows smoke test
 
-To manually verify native Windows support, run `cfgfc.exe` from a Windows shell with Developer Mode enabled or Administrator privileges, then apply one file-backed setting and one directory-backed setting. Confirm both targets are real symlinks and that the warehouse root resolves to either the default `%USERPROFILE%/.configfacilitator` path or the root persisted with `cfgfc root`.
+From a Windows shell with Developer Mode enabled or Administrator privileges:
+
+1. persist a temporary root with `cfgfc root <Path>`;
+2. use resource/content commands to create one file-backed and one directory-backed Setting;
+3. configure distinct targets and apply them;
+4. confirm both targets are real symlinks and readable;
+5. replace target ownership deliberately and confirm normal operation refuses while `--force-targets` reclaims only the recorded path;
+6. confirm content relative-path and symlink-component rejection.
+
+Run an equivalent smoke independently under WSL when WSL support is needed; do not treat one runtime's result as proof for the other.

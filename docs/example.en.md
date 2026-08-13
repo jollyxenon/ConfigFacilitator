@@ -1,280 +1,187 @@
-# Workflow Example
+# CLI-only Workflow Example
 
-This page shows one realistic OpenCode-style workflow: you keep multiple model configs and skill directories in one warehouse, apply a single setting for quick testing, then switch back to a full mode when you want the complete environment. For the exact command surface, see [Command Reference](commands.en.md). For field-level JSONC rules, see [JSONC Guide](jsonc-guide.en.md).
+This lifecycle starts with an empty alternate warehouse and uses only `cfgfc` plus shell input redirection. It creates metadata, targets, file- and directory-backed Settings, content, and a Mode; applies and changes them; renames and deletes resources; and reconciles external changes safely.
 
-## Goal
-
-In this example, `OpenCode` stores two Columns:
-
-- `oh-my-openagent` for model config files such as `OMOMax.json` and `OMOLight.json`
-- `Skills` for skill directories such as `Skill-A` and `Skill-B`
-
-The workflow solves two common needs:
-
-- quickly apply one config file for temporary testing
-- restore a full working setup with one named Mode
-
-## Warehouse layout
-
-This example uses the default warehouse root `~/.configfacilitator/`. If you previously ran `cfgfc root <path>`, substitute that effective root instead. After scaffolding and manual edits, the representative layout looks like this:
-
-Project directories are discovered directly under the effective warehouse root. A root-level directory named `SettingWarehouse` participates the same way as any other project directory.
-
-```text
-~/.configfacilitator/
-├── ProjectIndex.jsonc
-└── OpenCode/
-    ├── Column/
-    │   ├── ColumnIndex.jsonc
-    │   ├── oh-my-openagent/
-    │   │   ├── SettingIndex.jsonc
-    │   │   ├── OMOMax.json
-    │   │   └── OMOLight.json
-    │   └── Skills/
-    │       ├── SettingIndex.jsonc
-    │       ├── Skill-A/
-    │       └── Skill-B/
-    ├── Mode/
-    │   └── ModeIndex.jsonc
-    └── Backup/
-        ├── current_state.json
-        └── history.log
-```
-
-`Backup/current_state.json` and `Backup/history.log` are state files used by `apply`, `reset`, and `revert`. Treat them as runtime data, not as files you edit by hand.
-
-## 1. Scaffold the project, columns, and mode
-
-Start by generating the project skeleton and the templates you will fill in later:
+## 1. Select an empty warehouse and create resources
 
 ```bash
-cfgfc new -p OpenCode
-cfgfc new -p OpenCode -c oh-my-openagent
-cfgfc new -p OpenCode -c Skills
-cfgfc new -p OpenCode -m Max
+cfgfc root ~/.configfacilitator-demo
+cfgfc project create OpenCode \
+  --display-name "OpenCode Demo" \
+  --aliases oc \
+  --description "CLI-managed OpenCode configuration"
+cfgfc use oc
+
+cfgfc column create Models --description "Main model file"
+cfgfc column target add Models \
+  --dir ~/.config/opencode \
+  --name opencode.json
+
+cfgfc column create Skills --description "Installed skill directories"
+cfgfc column target add Skills \
+  --dir ~/.config/opencode/skills \
+  --name-from-setting
 ```
 
-`new` creates templates for Projects, Columns, and Modes. It does not create individual Settings for you. Put the real setting files or directories into each Column yourself.
+Creation is immediately usable; no `sync` is required after these CLI-owned mutations. Target indexes are zero-based. The Models target has a fixed name; each Skills target derives its name from the Setting canonical name.
 
-## 2. Add the real files and edit JSONC manually
+## 2. Create file and directory Settings
 
-After scaffolding, copy the real payloads into the warehouse:
-
-- put `OMOMax.json` and `OMOLight.json` into `OpenCode/Column/oh-my-openagent/`
-- put `Skill-A/` and `Skill-B/` into `OpenCode/Column/Skills/`
-
-Then edit the JSONC indexes. These manual edits are part of the intended workflow today.
-
-### Project and column metadata
-
-Use `description` for durable notes, `displayName` for presentation, and `aliases` for extra CLI references. `displayName` is not an implicit CLI alias, and the top-level key is the canonical identity.
-
-```jsonc
-// ProjectIndex.jsonc
-{
-  "OpenCode": {
-    "displayName": "OpenCode",
-    "aliases": ["oc"],
-    "description": "OpenCode workspace config set"
-  }
-}
-```
-
-```jsonc
-// OpenCode/Column/ColumnIndex.jsonc
-{
-  "oh-my-openagent": {
-    "displayName": "Main Config",
-    "aliases": ["omo"],
-    "description": "Primary model config file"
-  },
-  "Skills": {
-    "displayName": "Skills",
-    "aliases": ["ski"],
-    "description": "Skill directories"
-  }
-}
-```
-
-The top-level key is the canonical identity. `displayName` and `aliases` stay available as authored metadata around that key.
-
-### Setting targets
-
-Targets are split into directory and name arrays. `targetNumber` is the required number of target positions; after `cfgfc sync`, all four target arrays in the Column have exactly that length. `defaultTargetDir` / `defaultTargetName` define Column-level defaults, while `targetDir` / `targetName` can override them per Setting by matching index. Empty setting entries inherit defaults; an empty default target name falls back to the Setting warehouse name. When sync grows an array, it repeats a uniform existing value or appends `""` for a varied or empty array; lowering `targetNumber` discards trailing entries.
-
-```jsonc
-// OpenCode/Column/oh-my-openagent/SettingIndex.jsonc
-{
-  "description": "Main config settings",
-  "targetNumber": 1,
-  "defaultTargetDir": ["~/.config/opencode"],
-  "defaultTargetName": ["oh-my-openagent.jsonc"],
-  "settings": {
-    "OMOMax.json": {
-      "displayName": "OMOMax Config",
-      "aliases": ["max"],
-      "description": "OMOMax model config"
-    },
-    "OMOLight.json": {
-      "displayName": "OMOLight Config",
-      "aliases": ["light"],
-      "description": "OMOLight model config"
-    }
-  }
-}
-```
-
-```jsonc
-// OpenCode/Column/Skills/SettingIndex.jsonc
-{
-  "description": "Skills column",
-  "targetNumber": 1,
-  "defaultTargetDir": ["~/.config/opencode/skills"],
-  "defaultTargetName": [""],
-  "settings": {
-    "Skill-A": {
-      "displayName": "Skill A",
-      "aliases": ["a"],
-      "description": "First skill directory",
-      "targetDir": [""],
-      "targetName": ["Skill-A"]
-    },
-    "Skill-B": {
-      "displayName": "Skill B",
-      "aliases": ["b"],
-      "description": "Second skill directory",
-      "targetDir": [""],
-      "targetName": ["Skill-B"]
-    }
-  }
-}
-```
-
-Target directories can use `~`, `${VAR}`, and Windows `%VAR%` forms. Target names must be normal single-component file or directory names. After expansion, every target path in the planned state must be unique.
-
-### Mode selections
-
-Mode membership is also edited by hand in `ModeIndex.jsonc`. Use `settings` to pick the included Settings for each Column when the strategy is `cover` or `increment`, and use `strategy` to control the column behavior.
-
-```jsonc
-// OpenCode/Mode/ModeIndex.jsonc
-{
-  "Max": {
-    "displayName": "Max",
-    "aliases": ["m"],
-    "description": "Full OpenCode workspace",
-    "columns": {
-      "oh-my-openagent": {
-        "settings": ["OMOMax.json"],
-        "strategy": "cover"
-      },
-      "Skills": {
-        "settings": ["Skill-A", "Skill-B"],
-        "strategy": "increment"
-      }
-    }
-  }
-}
-```
-
-`cover` applies only the authored `settings` for that Column. `increment` keeps existing managed links and adds new ones. `none` links nothing for that Column. `full` links every known Setting in the Column. Only `none` and `full` may omit `settings`.
-
-## 3. Sync the warehouse after manual edits
-
-Once the files and JSONC indexes are ready, reconcile the warehouse with filesystem reality:
+Create exact file content from stdin. `printf` is used here because it does not add a newline:
 
 ```bash
-cfgfc sync -p OpenCode
+printf '%s' '{"model":"provider/example"}' | \
+  cfgfc setting create Main.json \
+    -c Models \
+    --kind file \
+    --stdin \
+    --aliases main \
+    --description "Primary model selection"
 ```
 
-Use `cfgfc sync -p <project>` when you want to target one project explicitly. Without an active project, plain `cfgfc sync` falls back to the whole warehouse. `cfgfc sync --all` and `cfgfc sync -a` always force a full-warehouse sync and ignore any active project context.
-
-## 4. Switch context and inspect the result
-
-Bind the current terminal session to `OpenCode` before using project-scoped commands without `-p`:
+Create a directory Setting, then create nested content through the CLI:
 
 ```bash
-cfgfc switch OpenCode
-cfgfc list
-cfgfc list -c Skills
-cfgfc list -m Max
+cfgfc setting create Review -c Skills --kind directory
+printf '%s' '# Review skill' | \
+  cfgfc setting content write Review SKILL.md -c Skills --stdin
+cfgfc setting content mkdir Review references -c Skills
+cfgfc setting content write Review references/checklist.md \
+  -c Skills \
+  --text 'Check scope, evidence, and rollback.'
 ```
 
-Before switching, the same warehouse-wide view would append one usage summary per project:
+Alternatives are `--text <Text>` for literal file bytes and `--from <Path>` for copying a regular file or directory tree. `--from`, `--stdin`, and `--text` are mutually exclusive. Directory imports reject symlinks and special objects.
 
-```text
-OpenCode (None)
-```
-
-After `cfgfc switch OpenCode`, plain `cfgfc list` becomes project-scoped and appends one usage label per Column:
-
-```text
-Project: OpenCode
-Columns:
-  - Main Config [oh-my-openagent] (None)
-  - Skills (None)
-Modes:
-  - Max
-```
-
-`cfgfc list -c Skills` shows every Setting whose source remains in the Column after sync. If a source is deleted, the next `cfgfc sync` removes that Setting from the index and this listing:
-
-```text
-Column: Skills
-  - Skill A [Skill-A] (present)
-  - Skill B [Skill-B] (present)
-```
-
-`cfgfc list -m Max` continues to show the Mode's declared strategies and Settings:
-
-```text
-Mode: Max
-  - Main Config [oh-my-openagent]: strategy=cover settings=OMOMax Config [OMOMax.json]
-  - Skills: strategy=increment settings=Skill A [Skill-A],Skill B [Skill-B]
-```
-
-After `cfgfc switch OpenCode`, later project-scoped `new`, `sync`, `list`, `apply`, `reset`, and `revert` commands can omit `-p`. `cfgfc switch global` clears that PPID-scoped convenience context and returns later commands to global resolution.
-
-## 5. Apply one setting or a full mode
-
-For quick testing, apply a single Setting from one Column:
+Inspect the results:
 
 ```bash
-cfgfc apply -c oh-my-openagent -s OMOLight.json
+cfgfc setting show Main.json -c Models
+cfgfc setting content read Main.json -c Models
+cfgfc setting content list Review -c Skills
+cfgfc setting content read Review SKILL.md -c Skills
 ```
 
-That form is useful when you only want one config file linked to `~/.config/opencode/oh-my-openagent.jsonc`.
+For a file-backed Setting, omit a relative path. For a directory-backed Setting, reads and writes name a file below the Setting root.
 
-When you want the full workspace again, apply the named Mode:
+## 3. Create and apply a Mode
 
 ```bash
-cfgfc apply -m Max
+cfgfc mode create Default --description "Complete OpenCode setup"
+cfgfc mode column set Default Models \
+  --strategy cover \
+  --setting Main.json
+cfgfc mode column set Default Skills --strategy full
+
+cfgfc mode show Default
+cfgfc apply mode Default
+cfgfc status
 ```
 
-In this example, `apply -m Max` replaces the `oh-my-openagent` link with `OMOMax.json` because that Column uses `cover`, then adds the `Skill-A` and `Skill-B` directory links because `Skills` uses `increment`.
+`cover` applies the explicitly repeated Settings. `full` applies every present Setting in that Column. `increment` also requires one or more repeated `--setting` flags, while `none` and `full` reject Setting flags.
 
-After that mode apply, `cfgfc list` shows both Columns as fully covered, the terminal highlights the active `Max` mode, and `cfgfc list -c Skills` highlights the enabled settings. If you clear the switched context, the global view shows the matched persisted mode name in parentheses:
+To apply only one Column instead:
 
-```text
-OpenCode (Max)
+```bash
+cfgfc apply column Models Main.json
 ```
 
-If a project still has active mappings but they no longer match any current Mode, that same global summary becomes `Unmatched`.
+This persists a direct-Column intent rather than a Mode intent.
 
-## 6. Recover with revert or reset
+## 4. Change content and metadata
 
-Use `revert` when you want to restore the previous apply state, and use `reset` when you want to remove the current project's managed links entirely. Add `-f` / `--force` when you intentionally want `cfgfc` to reclaim occupied files or directories recursively instead of stopping on unmanaged targets or drift.
+Replace file bytes atomically:
+
+```bash
+printf '%s' '{"model":"provider/new-example"}' | \
+  cfgfc setting content write Main.json -c Models --stdin
+```
+
+The active symlink still points to the same source, so the new bytes are visible immediately. Do not run `refresh` for byte-only content changes.
+
+Now add another directory Setting and update metadata:
+
+```bash
+cfgfc setting create Explain -c Skills --kind directory
+cfgfc setting content write Explain SKILL.md \
+  -c Skills \
+  --text '# Explain skill'
+printf '%s' 'Skills installed for this OpenCode profile.' | \
+  cfgfc column set Skills --description-file -
+```
+
+If `Default` is still the persisted Mode intent, its `full` Skills selection must be replanned to include `Explain`:
+
+```bash
+cfgfc refresh
+cfgfc status
+```
+
+Use `cfgfc refresh --column Skills` to replan only one Column while preserving other mappings, or `cfgfc refresh --all` to refresh every Project with active state.
+
+## 5. Rename active resources
+
+```bash
+cfgfc setting rename Main.json Primary.json -c Models
+cfgfc column rename Skills Extensions
+cfgfc mode rename Default Work
+cfgfc project rename OpenCode OpenCodeWork
+cfgfc status
+```
+
+Rename rewrites schema-defined references, current and historical intents, source paths, PPID Project context, and owned managed links in one recoverable operation. Fixed target names stay fixed. A target name derived from a Setting canonical name changes with that Setting. If a recorded target has drifted, rename stops unless you deliberately add `--force-targets`.
+
+## 6. Delete content and resources safely
+
+Content deletion removes only a path below a directory Setting and requires confirmation:
+
+```bash
+cfgfc setting content move Review references/checklist.md notes.md -c Extensions
+cfgfc setting content delete Review notes.md -c Extensions --yes
+```
+
+Resource deletion separates three decisions. For example:
+
+```bash
+cfgfc setting delete Explain -c Extensions --yes --cascade
+```
+
+- `--yes` confirms deletion.
+- `--cascade` permits dependent Mode/current/history reference repair.
+- `--force-targets` is needed only if an affected recorded target is occupied or ownership has drifted.
+
+No flag implies another. `--force-targets` does not confirm deletion and does not authorize cascade. It can reclaim only affected recorded target paths and cannot reconstruct overwritten unmanaged content.
+
+## 7. Revert or reset managed state
 
 ```bash
 cfgfc revert
 cfgfc reset
 ```
 
-`revert` is single-step only: it restores the previous apply snapshot, not an arbitrary point in history. `reset` removes the currently managed mappings and clears the current state for that project. Forced `apply`, `update`, `reset`, or `revert` only restore the last confirmed managed state—they do not reconstruct overwritten unmanaged file or directory contents.
+`revert` restores the previous snapshot only. `reset` removes current managed mappings while preserving warehouse resources. Add `--force-targets` only when you explicitly accept reclaiming affected recorded drifted or occupied paths.
 
-## When to read the reference docs
+## 8. Reconcile external changes
 
-Use this page as a representative workflow, not as the only supported shape. For field-level identity rules, follow the top-level key, `displayName`, and `aliases` model described in the JSONC guide.
+`sync` is for changes made outside resource/content commands, such as a Git checkout. Suppose an external operation removes the `Review` source directory. Run:
 
-- Read [Command Reference](commands.en.md) when you need the full help-aligned command forms.
-- Read [JSONC Guide](jsonc-guide.en.md) when you need the exact identity and target-field rules.
+```bash
+cfgfc sync
+cfgfc setting show Review -c Extensions
+cfgfc status
+```
+
+Sync immediately removes `Review` metadata from `SettingIndex.jsonc`; `setting show` no longer resolves it. Sync does not recreate the source or implicitly cascade Mode selections, current/history runtime records, or PPID context. If apply or refresh requires the removed Setting, it fails before managed targets change.
+
+Recreating the former source path and running sync may discover a new Setting, but it does not restore the deleted description, aliases, target overrides, unknown fields, or other metadata. Recreate the intended metadata explicitly with resource commands.
+
+`sync --prune` and `sync --prune --yes` are unsupported. Use `cfgfc sync --all` for the full warehouse or `cfgfc sync -p OpenCodeWork` for an explicit Project; those scopes are mutually exclusive. Resource CLI deletion remains separate and uses `--yes`, `--cascade`, and `--force-targets` independently.
+
+## 9. Automation
+
+```bash
+cfgfc status --json
+cfgfc project show OpenCodeWork --json
+```
+
+JSON success goes to stdout as one object. JSON failure goes to stderr as one object with stable `error.code` and `error.message`. Exit codes classify usage (`2`), resource/scope (`3`), invalid data (`4`), refusal (`5`), and persistence/transaction (`6`) failures.

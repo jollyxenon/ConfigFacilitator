@@ -200,8 +200,8 @@ func TestLoadWarehousePreservesMissingEntriesAndBackupReferences(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected orphaned mode to remain present")
 	}
-	if !orphanedMode.Missing {
-		t.Fatalf("expected orphaned mode to retain missing marker")
+	if orphanedMode.Missing {
+		t.Fatalf("Mode is metadata-backed and must not be treated as a missing filesystem source")
 	}
 }
 

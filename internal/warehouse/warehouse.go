@@ -13,7 +13,11 @@ import (
 	"github.com/xenon/ConfigFacilitator/internal/pathvars"
 )
 
-const warehouseRootBootstrapFileName = ".cfgfc-root"
+const (
+	warehouseRootBootstrapFileName = ".cfgfc-root"
+	transactionDirectoryName       = ".cfgfc-transactions"
+	mutationLockDirectoryName      = ".cfgfc-lock"
+)
 
 // Warehouse stores the parsed warehouse root and all discovered projects.
 type Warehouse struct {
@@ -106,6 +110,16 @@ func SetEffectiveWarehouseRoot(rootPath string) (string, error) {
 	return setEffectiveWarehouseRootForHome(homeDir, runtime.GOOS, rootPath, currentEnvironmentMap())
 }
 
+// EffectiveWarehouseRootFor resolves the persisted override for an injected home directory.
+func EffectiveWarehouseRootFor(homeDir string) (string, error) {
+	return effectiveWarehouseRootForHome(homeDir)
+}
+
+// SetEffectiveWarehouseRootFor normalizes and persists an override using injected process dependencies.
+func SetEffectiveWarehouseRootFor(homeDir string, operatingSystem string, rootPath string, env map[string]string) (string, error) {
+	return setEffectiveWarehouseRootForHome(homeDir, operatingSystem, rootPath, env)
+}
+
 // defaultWarehouseRootForHome keeps default root joining testable without
 // depending on the host OS-specific os.UserHomeDir implementation.
 func defaultWarehouseRootForHome(homeDir string) string {
@@ -134,10 +148,36 @@ func setEffectiveWarehouseRootForHome(homeDir string, operatingSystem string, ro
 		return "", err
 	}
 	bootstrapPath := bootstrapFilePathForHome(homeDir)
-	if err := os.WriteFile(bootstrapPath, []byte(normalizedRoot+"\n"), 0o644); err != nil {
+	if err := writeBootstrapFileAtomic(bootstrapPath, []byte(normalizedRoot+"\n")); err != nil {
 		return "", fmt.Errorf("write warehouse root bootstrap %q: %w", bootstrapPath, err)
 	}
 	return normalizedRoot, nil
+}
+
+// writeBootstrapFileAtomic replaces the root bootstrap through a same-directory temporary file.
+func writeBootstrapFileAtomic(path string, data []byte) error {
+	temporary, err := os.CreateTemp(filepath.Dir(path), ".cfgfc-tmp-*")
+	if err != nil {
+		return err
+	}
+	temporaryPath := temporary.Name()
+	defer os.Remove(temporaryPath)
+	if err := temporary.Chmod(0o644); err != nil {
+		_ = temporary.Close()
+		return err
+	}
+	if _, err := temporary.Write(data); err != nil {
+		_ = temporary.Close()
+		return err
+	}
+	if err := temporary.Sync(); err != nil {
+		_ = temporary.Close()
+		return err
+	}
+	if err := temporary.Close(); err != nil {
+		return err
+	}
+	return os.Rename(temporaryPath, path)
 }
 
 // bootstrapFilePathForHome returns the user-scoped bootstrap file path that
@@ -298,7 +338,7 @@ func loadProject(rootPath string, projectWarehouseName string, entry index.Proje
 		mode := Mode{
 			Name:          modeEntry.WarehouseName,
 			WarehouseName: modeEntry.WarehouseName,
-			Missing:       hasMissingMarker(modeEntry.Extra),
+			Missing:       false,
 			Metadata:      modeEntry,
 		}
 		if err := registerMode(project.Modes, mode, project.Name); err != nil {
@@ -357,7 +397,7 @@ func loadColumn(columnRoot string, columnWarehouseName string, entry index.Colum
 			WarehouseName: metadata.WarehouseName,
 			Path:          filepath.Join(columnPath, metadata.WarehouseName),
 			Exists:        discovered.exists,
-			Missing:       !discovered.exists || hasMissingMarker(metadata.Extra),
+			Missing:       !discovered.exists,
 			IsDir:         discovered.isDir,
 			Metadata:      metadata,
 		}
@@ -593,8 +633,9 @@ type discoveredEntry struct {
 	isDir  bool
 }
 
+// isReservedWarehouseRootDirectory identifies CLI-owned directories and staging artifacts.
 func isReservedWarehouseRootDirectory(name string) bool {
-	return name == ".cfgfc-session"
+	return name == ".cfgfc-session" || isReservedInternalArtifact(name)
 }
 
 // listWarehouseRootDirectories lists direct child project directories at the warehouse root.
@@ -644,7 +685,7 @@ func listSettingEntries(path string) (map[string]discoveredEntry, error) {
 
 	settings := map[string]discoveredEntry{}
 	for _, entry := range entries {
-		if entry.Name() == "SettingIndex.jsonc" {
+		if entry.Name() == "SettingIndex.jsonc" || isReservedSettingArtifact(entry.Name()) {
 			continue
 		}
 		settings[entry.Name()] = discoveredEntry{exists: true, isDir: entry.IsDir()}
@@ -652,7 +693,18 @@ func listSettingEntries(path string) (map[string]discoveredEntry, error) {
 	return settings, nil
 }
 
-// unionStringKeys returns the sorted union of two key slices.
+// isReservedSettingArtifact identifies transaction and atomic-write staging names.
+func isReservedSettingArtifact(name string) bool {
+	return isReservedInternalArtifact(name)
+}
+
+// isReservedInternalArtifact matches active, stale, and release-side transaction artifacts.
+func isReservedInternalArtifact(name string) bool {
+	return name == transactionDirectoryName || name == mutationLockDirectoryName ||
+		strings.HasPrefix(name, mutationLockDirectoryName+".") || strings.HasPrefix(name, ".cfgfc-tmp-")
+}
+
+// unionStringKeys returns the sorted union of two key collections.
 func unionStringKeys(left []string, right []string) []string {
 	keys := map[string]struct{}{}
 	for _, key := range left {
@@ -681,17 +733,4 @@ func sortedKeys(input map[string]struct{}) []string {
 	}
 	slices.Sort(keys)
 	return keys
-}
-
-// hasMissingMarker reports whether the extra-field map contains a truthy `missing` marker.
-func hasMissingMarker(extra map[string]json.RawMessage) bool {
-	raw, ok := extra["missing"]
-	if !ok {
-		return false
-	}
-	var missing bool
-	if err := json.Unmarshal(raw, &missing); err != nil {
-		return false
-	}
-	return missing
 }

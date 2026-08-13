@@ -1,39 +1,56 @@
 # 平台说明
 
-## 符号链接策略
+## 真实符号链接策略
 
-ConfigFacilitator 只使用真实 symlink，不会退回到目录 junction、硬链接、文件复制、`mklink`、PowerShell 辅助命令或其他替代机制。
+ConfigFacilitator 只创建真实的文件和目录符号链接，不会退回到 junction、硬链接、复制、`mklink`、PowerShell 辅助命令或其他替代机制。规划或创建链接时会检查来源是否存在以及来源类型；运行时状态不会持久化来源类型。
 
-在原生 Windows 下，`cfgfc.exe` 管理 Windows 用户目录中的配置，并使用真实的文件 symlink 和目录 symlink。Windows 可能要求开启 Developer Mode，或用 Administrator 权限运行，才允许创建 symlink。如果 Windows 拒绝创建 symlink，ConfigFacilitator 会报告错误并停止，不会改用 junction 或复制。
+原生 Windows 可能要求开启 Developer Mode 或使用 Administrator 权限。如果系统拒绝创建符号链接，cfgfc 会返回持久化失败，不会悄悄换用其他机制。
 
-创建链接时会先检查 source 路径是否存在，并让平台根据该路径推断文件/目录类型。ConfigFacilitator 不会在状态文件中持久化 source 类型。
+## 根目录与运行时边界
 
-## 便携式目录布局
-
-仓库根目录会从当前用户的 home/profile 目录解析，而不是按当前 shell 工作目录解析。移动二进制文件，不会改变生效的仓库根目录。
-
-- Unix-like 平台默认根目录：`~/.configfacilitator/`
+- Unix-like 默认根目录：`~/.configfacilitator/`
 - 原生 Windows 默认根目录：`%USERPROFILE%/.configfacilitator`
-- 持久化 override bootstrap：Unix-like 平台是 `~/.cfgfc-root`，原生 Windows 是 `%USERPROFILE%/.cfgfc-root`
+- 持久化 override bootstrap：`~/.cfgfc-root` 或 `%USERPROFILE%/.cfgfc-root`
 
-`cfgfc root` 会输出当前生效的仓库根目录。`cfgfc root <path>` 会在 bootstrap 文件中持久化新的生效根目录，并在写入前完成路径展开和规范化。切换根目录不会迁移、复制或初始化任何仓库内容。
+`cfgfc root` 输出当前生效根目录。`cfgfc root <Path>` 展开并规范化新根目录，然后为后续命令持久化。它不会迁移、复制或初始化内容。移动可执行文件也不会改变根目录。
 
-根目录项目发现会直接在当前生效仓库根目录下进行。只要目录符合项目布局，像 `SettingWarehouse` 这样的目录名也会和其他项目目录一样参与发现。
+生效根目录下的直接 Project 子目录都会参与发现，其中包括 `SettingWarehouse`。`.cfgfc-session/` 和 `.cfgfc-transactions/` 是保留目录，不会被发现为资源。
 
-## 原生 Windows 与 WSL 边界
+## 原生 Windows 与 WSL
 
-原生 Windows `cfgfc.exe` 与 WSL 下运行的 Linux 构建是两个不同运行环境。原生 Windows 使用 `%USERPROFILE%` 路径和 Windows symlink 权限规则；WSL 使用传入路径对应的 Linux 路径与 symlink 语义。ConfigFacilitator 不会自动在 `%USERPROFILE%` 与 `/mnt/c/...` 之间转换。
+原生 `cfgfc.exe` 和 WSL 中的 Linux 二进制是两个独立运行环境：
 
-## 会话上下文
+- 原生 Windows 使用 `%USERPROFILE%`、Windows 路径语法和 Windows 符号链接权限；
+- WSL 使用 Linux home、路径、权限和符号链接语义；
+- cfgfc 不会把 `%USERPROFILE%` 转换成 `/mnt/c/...`，也不会在两个运行环境间转换仓库路径。
 
-`switch` 按父进程 ID 保存活动项目。这是为了多终端并行使用而提供的便利能力，不是强隔离边界。
+请选择文件系统语义与待管理目标一致的二进制。不要让原生 Windows 和 WSL 进程共享活动运行时、会话或事务状态。
 
-`.cfgfc-session/` 目录始终位于当前生效仓库根目录下，所以切换根目录也会切换会话上下文存储位置。
+## 可移植目标路径
 
-## 回退范围
+目标目录可以使用 `~`、`${VAR}` 和 Windows `%VAR%`。展开使用当前运行环境的 home 与环境变量。目标名称必须是一个普通文件名或目录名。同一规划中的展开目标必须非空且唯一。
 
-`revert` 只支持单步回退，只会恢复到上一次 `apply` 的快照状态。
+Setting 内容路径相对于 Setting 根目录。绝对路径、要求子路径时的空路径、`.`/`..` 遍历、逃逸路径和符号链接组件都会被拒绝。目录导入只接受普通文件和目录，不跟随符号链接。
+
+## 上下文与事务
+
+`cfgfc use` 会在生效根目录下按父进程 ID 保存 canonical Project 上下文。它只是多 shell 使用时的便利状态，不是安全或隔离边界。显式 `-p/--project` 优先。切换根目录也会切换上下文存储。
+
+变更命令通过全仓锁串行执行，并在开始新操作前恢复未完成的 prepared 事务。只读 `status` 只报告事务诊断，不执行恢复。不要手工编辑或删除 `.cfgfc-transactions/`。
+
+## 破坏性行为
+
+`--force-targets` 只能递归回收当前 apply、rename、delete、refresh、reset 或 revert 操作涉及且已有记录的目标路径。它不会确认仓库删除（`--yes`）、授权依赖引用修复（`--cascade`），也不会备份或重建被覆盖的外部内容。
 
 ## 原生 Windows 冒烟测试
 
-如需手动验证原生 Windows 支持，请在已开启 Developer Mode 或具有 Administrator 权限的 Windows shell 中运行 `cfgfc.exe`，分别应用一个文件型 setting 和一个目录型 setting。确认两个 target 都是真实 symlink，并确认仓库根目录要么是默认的 `%USERPROFILE%/.configfacilitator`，要么是通过 `cfgfc root` 持久化后的新根目录。
+在开启 Developer Mode 或具有 Administrator 权限的 Windows shell 中：
+
+1. 使用 `cfgfc root <Path>` 持久化临时根目录；
+2. 使用资源/内容命令创建一个文件型和一个目录型 Setting；
+3. 配置不同目标并应用；
+4. 确认两个目标都是真实且可读的符号链接；
+5. 故意替换目标所有权，确认普通操作会拒绝，而 `--force-targets` 只回收已记录路径；
+6. 确认内容相对路径和符号链接组件会被拒绝。
+
+需要 WSL 支持时，应在 WSL 中独立运行同等冒烟测试；一个运行环境的结果不能证明另一个运行环境。

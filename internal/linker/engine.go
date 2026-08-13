@@ -11,6 +11,7 @@ import (
 	"runtime"
 	"time"
 
+	"github.com/xenon/ConfigFacilitator/internal/repository"
 	"github.com/xenon/ConfigFacilitator/internal/warehouse"
 )
 
@@ -24,33 +25,16 @@ const (
 )
 
 // Mapping stores one source-target pair managed by the engine.
-type Mapping struct {
-	Source string `json:"source"`
-	Target string `json:"target"`
-}
+type Mapping = repository.Mapping
 
 // ApplyIntent stores the semantic apply operation that produced the current mappings.
-type ApplyIntent struct {
-	Kind     string   `json:"kind"`
-	Mode     string   `json:"mode,omitempty"`
-	Column   string   `json:"column,omitempty"`
-	Settings []string `json:"settings,omitempty"`
-}
+type ApplyIntent = repository.ApplyIntent
 
 // CurrentState stores the currently active project-owned mappings and optional apply intent.
-type CurrentState struct {
-	Mappings []Mapping    `json:"mappings"`
-	Intent   *ApplyIntent `json:"intent,omitempty"`
-}
+type CurrentState = repository.CurrentState
 
 // HistoryEntry stores one single-step restore snapshot event.
-type HistoryEntry struct {
-	Timestamp        string       `json:"timestamp"`
-	PreviousMappings []Mapping    `json:"previousMappings"`
-	NextMappings     []Mapping    `json:"nextMappings"`
-	PreviousIntent   *ApplyIntent `json:"previousIntent,omitempty"`
-	NextIntent       *ApplyIntent `json:"nextIntent,omitempty"`
-}
+type HistoryEntry = repository.HistoryEntry
 
 // Engine performs filesystem-safe link lifecycle operations.
 type Engine struct {
@@ -77,30 +61,13 @@ func WithForce(force bool) ReplaceOption {
 func New() Engine {
 	return Engine{
 		now:       time.Now,
-		writeFile: os.WriteFile,
+		writeFile: repository.WriteFileAtomic,
 	}
 }
 
 // LoadCurrentState reads the project's active mapping set.
 func (engine Engine) LoadCurrentState(project warehouse.Project) (CurrentState, error) {
-	data, err := os.ReadFile(project.CurrentStatePath)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return CurrentState{Mappings: []Mapping{}}, nil
-		}
-		return CurrentState{}, err
-	}
-	if len(bytes.TrimSpace(data)) == 0 {
-		return CurrentState{Mappings: []Mapping{}}, nil
-	}
-	var state CurrentState
-	if err := json.Unmarshal(data, &state); err != nil {
-		return CurrentState{}, err
-	}
-	if state.Mappings == nil {
-		state.Mappings = []Mapping{}
-	}
-	return state, nil
+	return repository.LoadCurrentState(project.CurrentStatePath)
 }
 
 // LoadPreviousSnapshot reads the most recent previous mapping set from history.
@@ -114,32 +81,14 @@ func (engine Engine) LoadPreviousSnapshot(project warehouse.Project) ([]Mapping,
 
 // LoadPreviousState reads the most recent previous state from history.
 func (engine Engine) LoadPreviousState(project warehouse.Project) (CurrentState, error) {
-	data, err := os.ReadFile(project.HistoryLogPath)
+	entries, err := repository.LoadHistory(project.HistoryLogPath)
 	if err != nil {
-		if os.IsNotExist(err) {
-			return CurrentState{Mappings: []Mapping{}}, nil
-		}
 		return CurrentState{}, err
 	}
-	scanner := bufio.NewScanner(bytes.NewReader(data))
-	var last HistoryEntry
-	found := false
-	for scanner.Scan() {
-		line := bytes.TrimSpace(scanner.Bytes())
-		if len(line) == 0 {
-			continue
-		}
-		if err := json.Unmarshal(line, &last); err != nil {
-			return CurrentState{}, err
-		}
-		found = true
-	}
-	if err := scanner.Err(); err != nil {
-		return CurrentState{}, err
-	}
-	if !found {
+	if len(entries) == 0 {
 		return CurrentState{Mappings: []Mapping{}}, nil
 	}
+	last := entries[len(entries)-1]
 	return cloneState(CurrentState{Mappings: last.PreviousMappings, Intent: last.PreviousIntent}), nil
 }
 
@@ -188,17 +137,38 @@ func (engine Engine) ReplaceState(project warehouse.Project, nextState CurrentSt
 	if err := engine.ensureReplacementAllowed(previousState.Mappings, nextState.Mappings, options); err != nil {
 		return err
 	}
-	if err := engine.applyMappingSet(previousState.Mappings, nextState.Mappings, options); err != nil {
+	snapshotPaths := []string{project.CurrentStatePath, project.HistoryLogPath}
+	for _, mapping := range append(append([]Mapping{}, previousState.Mappings...), nextState.Mappings...) {
+		snapshotPaths = append(snapshotPaths, mapping.Target)
+	}
+	repositoryRoot := filepath.Dir(project.Path)
+	transaction, err := repository.New(repositoryRoot).BeginMutation("link-state", snapshotPaths...)
+	if err != nil {
 		return err
 	}
-	if err := engine.persistState(project, previousState, nextState); err != nil {
-		rollbackErr := engine.applyMappingSet(nextState.Mappings, previousState.Mappings, options)
-		if rollbackErr != nil {
-			return fmt.Errorf("persist state: %w; rollback: %v", err, rollbackErr)
+	restoreManagedLinks := func() error {
+		if err := engine.applyMappingSet(nextState.Mappings, previousState.Mappings, replaceOptions{force: true}); err != nil {
+			return err
+		}
+		return nil
+	}
+	if err := engine.applyMappingSet(previousState.Mappings, nextState.Mappings, options); err != nil {
+		rollbackErr := transaction.Rollback()
+		linkRollbackErr := restoreManagedLinks()
+		if rollbackErr != nil || linkRollbackErr != nil {
+			return fmt.Errorf("apply mappings: %w; snapshot rollback: %v; link rollback: %v", err, rollbackErr, linkRollbackErr)
 		}
 		return err
 	}
-	return nil
+	if err := engine.persistState(project, previousState, nextState); err != nil {
+		rollbackErr := transaction.Rollback()
+		linkRollbackErr := restoreManagedLinks()
+		if rollbackErr != nil || linkRollbackErr != nil {
+			return fmt.Errorf("persist state: %w; snapshot rollback: %v; link rollback: %v", err, rollbackErr, linkRollbackErr)
+		}
+		return err
+	}
+	return transaction.Commit()
 }
 
 // Reset removes the current mappings and persists an empty current state.
@@ -324,44 +294,30 @@ func (engine Engine) persistState(project warehouse.Project, previous CurrentSta
 	if err := os.MkdirAll(filepath.Dir(project.CurrentStatePath), 0o755); err != nil {
 		return err
 	}
-	oldCurrent, err := readOptional(project.CurrentStatePath)
+	history, err := repository.LoadHistory(project.HistoryLogPath)
 	if err != nil {
 		return err
 	}
-	oldHistory, err := readOptional(project.HistoryLogPath)
-	if err != nil {
-		return err
-	}
-	stateData, err := json.MarshalIndent(cloneState(next), "", "  ")
-	if err != nil {
-		return err
-	}
-	historyEntry, err := json.Marshal(HistoryEntry{
+	history = append(history, repository.HistoryEntry{
 		Timestamp:        engine.now().UTC().Format(time.RFC3339Nano),
-		PreviousMappings: cloneMappings(previous.Mappings),
-		NextMappings:     cloneMappings(next.Mappings),
-		PreviousIntent:   cloneIntent(previous.Intent),
-		NextIntent:       cloneIntent(next.Intent),
+		PreviousMappings: previous.Mappings,
+		NextMappings:     next.Mappings,
+		PreviousIntent:   previous.Intent,
+		NextIntent:       next.Intent,
 	})
-	if err != nil {
-		return err
-	}
-	historyData := append([]byte{}, oldHistory...)
-	if len(bytes.TrimSpace(historyData)) > 0 {
-		historyData = append(historyData, '\n')
-	}
-	historyData = append(historyData, historyEntry...)
-	historyData = append(historyData, '\n')
-	if err := engine.writeFile(project.CurrentStatePath, stateData, 0o644); err != nil {
-		return err
-	}
-	if err := engine.writeFile(project.HistoryLogPath, historyData, 0o644); err != nil {
-		if writeBackErr := engine.writeFile(project.CurrentStatePath, oldCurrent, 0o644); writeBackErr != nil {
-			return fmt.Errorf("write history: %w; restore current state: %v", err, writeBackErr)
+	var historyData bytes.Buffer
+	for _, entry := range history {
+		encoded, marshalErr := json.Marshal(entry)
+		if marshalErr != nil {
+			return marshalErr
 		}
+		historyData.Write(encoded)
+		historyData.WriteByte('\n')
+	}
+	if err := engine.writeFile(project.CurrentStatePath, mustMarshalJSON(next), 0o644); err != nil {
 		return err
 	}
-	return nil
+	return engine.writeFile(project.HistoryLogPath, historyData.Bytes(), 0o644)
 }
 
 func removeOwnedSymlink(mapping Mapping) error {
@@ -504,6 +460,15 @@ func readOptional(path string) ([]byte, error) {
 		return nil, err
 	}
 	return data, nil
+}
+
+// mustMarshalJSON serializes a runtime state for injected linker writers.
+func mustMarshalJSON(value any) []byte {
+	data, err := json.MarshalIndent(value, "", "  ")
+	if err != nil {
+		return nil
+	}
+	return append(data, '\n')
 }
 
 // ReadHistoryEntries returns the parsed history log for inspection and tests.

@@ -1,280 +1,187 @@
-# 工作流示例
+# 纯 CLI 工作流示例
 
-本页展示一个贴近 OpenCode 使用方式的真实工作流：你把多个模型配置文件和技能目录维护在同一个仓库里，先临时应用一个 Setting 做快速测试，再在需要完整环境时切回一个命名好的 Mode。完整命令面请参考 [命令参考](commands.zh-CN.md)，字段级 JSONC 规则请参考 [JSONC 指南](jsonc-guide.zh-CN.md)。
+这个生命周期从空的备用仓库开始，只使用 `cfgfc` 和 shell 输入重定向。它会创建元数据、目标、文件型和目录型 Setting、内容和 Mode；完成应用、修改、重命名、删除，并安全同步外部变化。
 
-## 目标
-
-在这个示例里，`OpenCode` 包含两个 Column：
-
-- `oh-my-openagent`：存放 `OMOMax.json`、`OMOLight.json` 这类模型配置文件
-- `Skills`：存放 `Skill-A`、`Skill-B` 这类技能目录
-
-这个工作流解决两个常见需求：
-
-- 临时应用一个配置文件做快速测试
-- 用一个命名好的 Mode 恢复完整工作环境
-
-## 仓库结构
-
-这个示例使用默认仓库根目录 `~/.configfacilitator/`。如果你之前执行过 `cfgfc root <path>`，请把下面的路径理解为那个当前生效的根目录。完成骨架创建和手工编辑后，一个有代表性的目录结构如下：
-
-项目目录会直接从当前生效仓库根目录下发现。根目录下名为 `SettingWarehouse` 的目录也会和其他项目目录一样参与发现。
-
-```text
-~/.configfacilitator/
-├── ProjectIndex.jsonc
-└── OpenCode/
-    ├── Column/
-    │   ├── ColumnIndex.jsonc
-    │   ├── oh-my-openagent/
-    │   │   ├── SettingIndex.jsonc
-    │   │   ├── OMOMax.json
-    │   │   └── OMOLight.json
-    │   └── Skills/
-    │       ├── SettingIndex.jsonc
-    │       ├── Skill-A/
-    │       └── Skill-B/
-    ├── Mode/
-    │   └── ModeIndex.jsonc
-    └── Backup/
-        ├── current_state.json
-        └── history.log
-```
-
-`Backup/current_state.json` 和 `Backup/history.log` 是 `apply`、`reset`、`revert` 使用的状态文件。把它们当作运行时数据，不要手工编辑。
-
-## 1. 先搭建项目、栏目和模式骨架
-
-先生成项目骨架，以及后面要补全的模板文件：
+## 1. 选择空仓库并创建资源
 
 ```bash
-cfgfc new -p OpenCode
-cfgfc new -p OpenCode -c oh-my-openagent
-cfgfc new -p OpenCode -c Skills
-cfgfc new -p OpenCode -m Max
+cfgfc root ~/.configfacilitator-demo
+cfgfc project create OpenCode \
+  --display-name "OpenCode Demo" \
+  --aliases oc \
+  --description "CLI-managed OpenCode configuration"
+cfgfc use oc
+
+cfgfc column create Models --description "Main model file"
+cfgfc column target add Models \
+  --dir ~/.config/opencode \
+  --name opencode.json
+
+cfgfc column create Skills --description "Installed skill directories"
+cfgfc column target add Skills \
+  --dir ~/.config/opencode/skills \
+  --name-from-setting
 ```
 
-`new` 只会创建 Project、Column、Mode 的模板，不会直接替你创建具体 Setting。每个 Column 里的真实文件或目录，需要你自己放进去。
+这些 CLI 自有的创建操作完成后，资源立即可用，不需要再运行 `sync`。目标下标从零开始。Models 目标使用固定名称；每个 Skills 目标从 Setting 的 canonical 名称派生名称。
 
-## 2. 加入真实内容并手工编辑 JSONC
+## 2. 创建文件型和目录型 Setting
 
-完成脚手架后，把真实配置内容放进仓库：
-
-- 把 `OMOMax.json` 和 `OMOLight.json` 放到 `OpenCode/Column/oh-my-openagent/`
-- 把 `Skill-A/` 和 `Skill-B/` 放到 `OpenCode/Column/Skills/`
-
-然后手工编辑各个 JSONC 索引。这些手工编辑本来就是当前设计的一部分。
-
-### 项目和栏目的元数据
-
-用 `description` 写长期说明，用 `displayName` 控制展示名称，用 `aliases` 提供额外 CLI 引用。`displayName` 只是展示字段，不会自动变成 CLI 别名，而顶层 key 才是 canonical 标识。
-
-```jsonc
-// ProjectIndex.jsonc
-{
-  "OpenCode": {
-    "displayName": "OpenCode",
-    "aliases": ["oc"],
-    "description": "OpenCode 工作区配置集合"
-  }
-}
-```
-
-```jsonc
-// OpenCode/Column/ColumnIndex.jsonc
-{
-  "oh-my-openagent": {
-    "displayName": "主配置",
-    "aliases": ["omo"],
-    "description": "主要模型配置文件"
-  },
-  "Skills": {
-    "displayName": "Skills",
-    "aliases": ["ski"],
-    "description": "技能目录集合"
-  }
-}
-```
-
-顶层 key 本身就是 canonical 标识，而 `displayName` 与 `aliases` 则作为围绕这个 key 的书写元数据保留下来。
-
-### Setting 的目标路径
-
-目标路径拆成目录和名称数组。`targetNumber` 是必填的目标位置数量；执行 `cfgfc sync` 后，Column 中四种目标数组都会恰好达到这个长度。`defaultTargetDir` / `defaultTargetName` 定义 Column 级默认值，`targetDir` / `targetName` 可以在 Setting 级按相同下标覆盖。Setting 内的空字符串表示继承默认值；空的默认目标名称会回退为 Setting 的仓库侧名称。sync 扩展数组时会重复统一的已有值，或为不同值和空数组追加 `""`；降低 `targetNumber` 会删除末尾条目。
-
-```jsonc
-// OpenCode/Column/oh-my-openagent/SettingIndex.jsonc
-{
-  "description": "主配置集合",
-  "targetNumber": 1,
-  "defaultTargetDir": ["~/.config/opencode"],
-  "defaultTargetName": ["oh-my-openagent.jsonc"],
-  "settings": {
-    "OMOMax.json": {
-      "displayName": "OMOMax 配置",
-      "aliases": ["max"],
-      "description": "OMOMax 模型配置"
-    },
-    "OMOLight.json": {
-      "displayName": "OMOLight 配置",
-      "aliases": ["light"],
-      "description": "OMOLight 模型配置"
-    }
-  }
-}
-```
-
-```jsonc
-// OpenCode/Column/Skills/SettingIndex.jsonc
-{
-  "description": "Skills 栏目",
-  "targetNumber": 1,
-  "defaultTargetDir": ["~/.config/opencode/skills"],
-  "defaultTargetName": [""],
-  "settings": {
-    "Skill-A": {
-      "displayName": "Skill A",
-      "aliases": ["a"],
-      "description": "第一个技能目录",
-      "targetDir": [""],
-      "targetName": ["Skill-A"]
-    },
-    "Skill-B": {
-      "displayName": "Skill B",
-      "aliases": ["b"],
-      "description": "第二个技能目录",
-      "targetDir": [""],
-      "targetName": ["Skill-B"]
-    }
-  }
-}
-```
-
-目标目录可以使用 `~`、`${VAR}` 和 Windows `%VAR%` 形式。目标名称必须是普通的单层文件名或目录名。展开后，同一个规划状态中的所有目标路径必须非空且唯一。
-
-### Mode 选择与策略
-
-`ModeIndex.jsonc` 也需要手工编辑。当策略为 `cover` 或 `increment` 时，`settings` 用来声明每个 Column 要包含哪些 Setting；`strategy` 用来控制该 Column 的应用行为。
-
-```jsonc
-// OpenCode/Mode/ModeIndex.jsonc
-{
-  "Max": {
-    "displayName": "Max",
-    "aliases": ["m"],
-    "description": "完整 OpenCode 工作区",
-    "columns": {
-      "oh-my-openagent": {
-        "settings": ["OMOMax.json"],
-        "strategy": "cover"
-      },
-      "Skills": {
-        "settings": ["Skill-A", "Skill-B"],
-        "strategy": "increment"
-      }
-    }
-  }
-}
-```
-
-`cover` 只应用该 Column 中显式写出的 `settings`；`increment` 会保留现有受管链接并继续追加新的链接；`none` 表示该 Column 本次不建立任何链接；`full` 表示自动链接该 Column 下全部已知 Setting。只有 `none` 和 `full` 可以省略 `settings`。
-
-## 3. 手工编辑后执行 sync
-
-当文件内容和 JSONC 索引都准备好以后，用 `sync` 让仓库与磁盘现实重新对齐：
+从 stdin 创建精确文件内容。这里使用 `printf`，因为它不会增加换行：
 
 ```bash
-cfgfc sync -p OpenCode
+printf '%s' '{"model":"provider/example"}' | \
+  cfgfc setting create Main.json \
+    -c Models \
+    --kind file \
+    --stdin \
+    --aliases main \
+    --description "Primary model selection"
 ```
 
-当你只想同步一个项目时，使用 `cfgfc sync -p <project>`。如果当前没有活动项目，直接执行 `cfgfc sync` 会回退到同步整个仓库。`cfgfc sync --all` 和 `cfgfc sync -a` 则总是强制全仓同步，并忽略当前活动项目上下文。
-
-## 4. 切换上下文并检查结果
-
-在省略 `-p` 之前，先把当前终端会话绑定到 `OpenCode`：
+创建目录型 Setting，再通过 CLI 创建嵌套内容：
 
 ```bash
-cfgfc switch OpenCode
-cfgfc list
-cfgfc list -c Skills
-cfgfc list -m Max
+cfgfc setting create Review -c Skills --kind directory
+printf '%s' '# Review skill' | \
+  cfgfc setting content write Review SKILL.md -c Skills --stdin
+cfgfc setting content mkdir Review references -c Skills
+cfgfc setting content write Review references/checklist.md \
+  -c Skills \
+  --text 'Check scope, evidence, and rollback.'
 ```
 
-在切换上下文之前，同一个仓库级 `cfgfc list` 会在每个项目后面追加一个使用状态摘要：
+还可以用 `--text <Text>` 提供文字文件字节，或用 `--from <Path>` 复制普通文件或目录树。`--from`、`--stdin`、`--text` 互斥。目录导入会拒绝符号链接和特殊对象。
 
-```text
-OpenCode (None)
-```
-
-执行 `cfgfc switch OpenCode` 之后，直接运行 `cfgfc list` 就会进入项目作用域，并在每个 Column 后面追加一个使用状态标签：
-
-```text
-Project: OpenCode
-Columns:
-  - Main Config [oh-my-openagent] (None)
-  - Skills (None)
-Modes:
-  - Max
-```
-
-完成同步后，`cfgfc list -c Skills` 会列出这个 Column 中来源仍然存在的全部 Setting。如果删除来源，下一次 `cfgfc sync` 会从索引和该列表中移除对应 Setting：
-
-```text
-Column: Skills
-  - Skill A [Skill-A] (present)
-  - Skill B [Skill-B] (present)
-```
-
-`cfgfc list -m Max` 仍然会显示这个 Mode 声明的策略和 Setting：
-
-```text
-Mode: Max
-  - Main Config [oh-my-openagent]: strategy=cover settings=OMOMax Config [OMOMax.json]
-  - Skills: strategy=increment settings=Skill A [Skill-A],Skill B [Skill-B]
-```
-
-执行 `cfgfc switch OpenCode` 之后，后续带项目作用域的 `new`、`sync`、`list`、`apply`、`reset`、`revert` 才可以省略 `-p`。`cfgfc switch global` 会清除这个基于 PPID 的便利上下文，让后续命令重新回到全局解析模式。
-
-## 5. 应用单个 Setting，或应用完整 Mode
-
-如果只是想临时测试一个配置文件，可以先应用单个 Column 里的一个 Setting：
+查看结果：
 
 ```bash
-cfgfc apply -c oh-my-openagent -s OMOLight.json
+cfgfc setting show Main.json -c Models
+cfgfc setting content read Main.json -c Models
+cfgfc setting content list Review -c Skills
+cfgfc setting content read Review SKILL.md -c Skills
 ```
 
-这种形式适合把单个配置文件临时链接到 `~/.config/opencode/oh-my-openagent.jsonc`。
+文件型 Setting 必须省略相对路径；目录型 Setting 的 read/write 要指定 Setting 根目录下的文件。
 
-当你想恢复完整工作环境时，再应用命名好的 Mode：
+## 3. 创建并应用 Mode
 
 ```bash
-cfgfc apply -m Max
+cfgfc mode create Default --description "Complete OpenCode setup"
+cfgfc mode column set Default Models \
+  --strategy cover \
+  --setting Main.json
+cfgfc mode column set Default Skills --strategy full
+
+cfgfc mode show Default
+cfgfc apply mode Default
+cfgfc status
 ```
 
-在这个示例里，`apply -m Max` 会先把 `oh-my-openagent` 的目标链接替换成 `OMOMax.json`，因为这个 Column 使用了 `cover`；随后再把 `Skill-A` 和 `Skill-B` 的目录链接补上，因为 `Skills` 使用的是 `increment`。
+`cover` 应用重复列出的 Setting。`full` 应用该 Column 中全部存在的 Setting。`increment` 也要求重复提供一个或多个 `--setting`，而 `none` 和 `full` 会拒绝 Setting 参数。
 
-完成这次 mode apply 之后，`cfgfc list` 会把两个 Column 都显示成已完整覆盖，终端会高亮当前活动的 `Max` mode，而 `cfgfc list -c Skills` 会高亮当前启用的 settings。如果你清掉切换上下文再回到全局视图，那么项目后面的括号会显示匹配到的持久化 mode 名：
+如果只想应用一个 Column：
 
-```text
-OpenCode (Max)
+```bash
+cfgfc apply column Models Main.json
 ```
 
-如果某个项目仍然有活动映射，但它们已经不再匹配任何当前 Mode，那么这里的全局摘要就会显示成 `Unmatched`。
+这会持久化直接 Column 意图，而不是 Mode 意图。
 
-## 6. 用 revert 或 reset 恢复环境
+## 4. 修改内容和元数据
 
-如果你想恢复到上一次 `apply` 之前的状态，用 `revert`；如果你想把当前项目的受管链接全部移除，用 `reset`。如果你是有意让 `cfgfc` 递归回收已占用的文件或目录，而不是在失管目标或状态漂移时停下，可以额外加 `-f` / `--force`。
+原子替换文件字节：
+
+```bash
+printf '%s' '{"model":"provider/new-example"}' | \
+  cfgfc setting content write Main.json -c Models --stdin
+```
+
+活动符号链接仍然指向同一来源，所以新字节立即可见。仅修改内容字节时不要运行 `refresh`。
+
+现在增加另一个目录型 Setting，并更新元数据：
+
+```bash
+cfgfc setting create Explain -c Skills --kind directory
+cfgfc setting content write Explain SKILL.md \
+  -c Skills \
+  --text '# Explain skill'
+printf '%s' 'Skills installed for this OpenCode profile.' | \
+  cfgfc column set Skills --description-file -
+```
+
+如果 `Default` 仍是已持久化 Mode 意图，那么它的 `full` Skills 选择需要重新规划，才能包含 `Explain`：
+
+```bash
+cfgfc refresh
+cfgfc status
+```
+
+使用 `cfgfc refresh --column Skills` 只重新规划一个 Column，同时保留其他映射；使用 `cfgfc refresh --all` 刷新所有存在活动状态的 Project。
+
+## 5. 重命名活动资源
+
+```bash
+cfgfc setting rename Main.json Primary.json -c Models
+cfgfc column rename Skills Extensions
+cfgfc mode rename Default Work
+cfgfc project rename OpenCode OpenCodeWork
+cfgfc status
+```
+
+Rename 会在一个可恢复操作中重写 schema 定义的引用、当前和历史意图、来源路径、PPID Project 上下文和自有受管链接。固定目标名称保持不变；从 Setting canonical 名称派生的目标名称会随 Setting 改名。如果已记录目标发生漂移，rename 会停止，除非你明确添加 `--force-targets`。
+
+## 6. 安全删除内容和资源
+
+内容删除只删除目录型 Setting 下的路径，并要求确认：
+
+```bash
+cfgfc setting content move Review references/checklist.md notes.md -c Extensions
+cfgfc setting content delete Review notes.md -c Extensions --yes
+```
+
+资源删除把三个决定分开。例如：
+
+```bash
+cfgfc setting delete Explain -c Extensions --yes --cascade
+```
+
+- `--yes` 确认删除。
+- `--cascade` 允许修复依赖的 Mode、当前状态和历史引用。
+- 只有受影响的已记录目标被占用或所有权发生漂移时，才需要 `--force-targets`。
+
+任何参数都不隐含另一个参数。`--force-targets` 不确认删除，也不授权 cascade。它只能回收受影响且已有记录的目标路径，无法重建被覆盖的外部内容。
+
+## 7. 回退或重置受管状态
 
 ```bash
 cfgfc revert
 cfgfc reset
 ```
 
-`revert` 只支持单步回退：它恢复的是上一次 `apply` 的快照，而不是任意历史点。`reset` 会移除当前项目受管的映射，并清空该项目的当前状态。强制 `apply`、`update`、`reset` 或 `revert` 只会恢复到上一次确认的受管状态，不会重建被覆盖的外部文件或目录内容。
+`revert` 只恢复前一个快照。`reset` 删除当前受管映射，但保留仓库资源。只有明确接受回收受影响且已记录的漂移或占用路径时，才添加 `--force-targets`。
 
-## 什么时候再去看参考文档
+## 8. 同步外部变化
 
-把这页当作一个代表性工作流，而不是唯一支持的使用形态。涉及标识字段时，请始终以顶层 key、`displayName` 与 `aliases` 这一套模型为准。
+`sync` 用于同步资源/内容命令之外造成的变化，例如 Git checkout。假设外部操作删除了 `Review` 来源目录，运行：
 
-- 需要完整、和帮助输出对齐的命令形式时，请看 [命令参考](commands.zh-CN.md)。
-- 需要精确确认标识字段和目标路径规则时，请看 [JSONC 指南](jsonc-guide.zh-CN.md)。
+```bash
+cfgfc sync
+cfgfc setting show Review -c Extensions
+cfgfc status
+```
+
+Sync 会立即从 `SettingIndex.jsonc` 删除 `Review` 元数据；`setting show` 不再能解析它。Sync 不会重建来源，也不会隐式级联 Mode 选择、当前/历史 runtime 记录或 PPID 上下文。如果 apply 或 refresh 需要这个已移除的 Setting，会在受管目标变化前失败。
+
+重新创建旧来源路径并运行 sync，可能会发现一个新的 Setting，但不会恢复已删除的说明、别名、目标覆盖、未知字段或其他元数据。请通过资源命令显式重建需要的元数据。
+
+`sync --prune` 和 `sync --prune --yes` 均不受支持。全仓使用 `cfgfc sync --all`，显式 Project 使用 `cfgfc sync -p OpenCodeWork`；两个作用域互斥。资源 CLI delete 仍是独立流程，分别使用 `--yes`、`--cascade`、`--force-targets`。
+
+## 9. 自动化
+
+```bash
+cfgfc status --json
+cfgfc project show OpenCodeWork --json
+```
+
+JSON 成功结果以一个对象写入 stdout。JSON 失败结果以一个对象写入 stderr，并带稳定的 `error.code` 和 `error.message`。退出码分别表示用法错误（`2`）、资源/作用域错误（`3`）、无效数据（`4`）、拒绝（`5`）、持久化/事务错误（`6`）。

@@ -1,45 +1,67 @@
-# JSONC Guide
+# JSONC and Interoperability Guide
 
-## Purpose
+## Role of JSONC
 
-Indexes are stored as JSONC so generated templates can end with one disposable example comment block while still round-trip through the project serializer.
+`ProjectIndex.jsonc`, `ColumnIndex.jsonc`, `SettingIndex.jsonc`, and `ModeIndex.jsonc` remain the durable, inspectable interoperability format. Normal users manage supported metadata, targets, Setting sources, content, and Mode selections with CLI commands. Direct index editing is optional and intended for external tools, Git merges, or advanced interoperability—not as a required setup step.
 
-## Rules
+Valid external JSONC, including comments, is parsed on the next load or `sync`. Invalid JSONC or invalid required field types cause the command to fail before normalization or related mutation.
 
-- The trailing example comment block may disappear after `sync`.
-- Permanent notes belong in the `"description"` field.
-- Unknown fields are preserved by the index layer.
-- Normalized entries persist `displayName` and `aliases`, and the top-level key remains the canonical authored identity.
-- For `ProjectIndex.jsonc`, `ColumnIndex.jsonc`, and `ModeIndex.jsonc`, each top-level key is the canonical warehouse-side name.
+## Identity and metadata
 
-## Main files
+- A resource's map key is its canonical identity and corresponds to its filesystem position where applicable.
+- `displayName` is presentation-only and is not an implicit alias.
+- `aliases` are explicit alternative command references. Empty aliases normalize to `"aliases": []`.
+- `description` is durable metadata and is preserved unless explicitly replaced or the owning resource is deleted.
+- CLI input through an alias is resolved before persistence, so selections, contexts, and apply intent contain canonical identities.
+- Alias updates reject empty/duplicate values and collisions with canonical names or aliases in the same resolution scope.
 
-- `ProjectIndex.jsonc`
-- `ColumnIndex.jsonc`
-- `SettingIndex.jsonc`
-- `ModeIndex.jsonc`
+Use resource `create`, `set`, and `rename` commands rather than changing these fields directly.
 
-## Identity fields
+## Unknown fields
 
-- The top-level index key is the normalized persisted identifier and keeps filesystem layout unchanged.
-- Additional authored fields such as `warehouseName` or `folderName` remain outside the canonical identity model; the top-level key continues to define identity.
-- `displayName` is presentation-only and is not used as an implicit CLI alias.
-- `aliases` provide additional callable references for projects, columns, settings, and modes, and normalized output emits `"aliases": []` when no aliases are declared.
+Unknown parseable fields are preserved through unrelated set, target, selection, rename, sync, and serialization operations whenever they do not collide with schema-defined keys. Schema-defined values win on collision. Deleting a resource also deletes unknown fields owned by that resource.
 
-## Target resolution
+The CLI rewrites only schema-defined references. Extensions that store identities or paths inside unknown fields must update those references themselves.
 
-- `defaultTargetDir` and `defaultTargetName` are column-level default target directory/name arrays.
-- `targetDir` and `targetName` are setting-level directory/name arrays that override defaults by matching index.
-- `targetNumber` is the required non-negative number of target positions for a Column. `cfgfc sync` rewrites `defaultTargetDir`, `defaultTargetName`, and every Setting's `targetDir` and `targetName` to exactly that length.
-- When sync shortens an array, it discards trailing values. When it extends a non-empty array whose values are all identical, it repeats that value; otherwise it appends `""` values. An empty array is extended with `""` values.
-- In setting entries, `""` means inherit the matching default. In `defaultTargetName`, `""` falls back to the setting warehouse name. In `defaultTargetDir`, `""` means unconfigured and cannot be applied.
-- Target directories can use `~`, `${VAR}`, and Windows `%VAR%` forms. Target names must resolve to one normal file name or single-level directory name.
-- Expanded target paths must be non-empty and unique in the planned state.
+## Disappearance and synchronization
 
-## Mode semantics
+If an indexed Project directory, Column directory, or Setting file/directory disappears, `sync` immediately removes its metadata from the corresponding Index. Sync does not recreate absent source paths or child indexes.
 
-- `cover` applies only the authored `settings` for that column.
-- `increment` keeps existing managed links for that column and then adds the authored `settings`.
-- `none` applies no mappings for that column.
-- `full` links every known Setting in that column.
-- `settings` may be omitted only when `strategy` is `none` or `full`.
+Mode selections, current/history runtime records, and PPID context are not implicitly cascaded. They remain available for diagnostics as unresolved references, and `apply` or `refresh` fails before target mutation when it requires one. Use resource CLI deletion with independent `--yes`, `--cascade`, and `--force-targets` controls when dependent cleanup is intended.
+
+`sync --prune` and `sync --prune --yes` are unsupported. Recreating a former source path may discover a new resource, but sync does not restore descriptions, aliases, targets, unknown fields, or other metadata deleted from the Index.
+
+## Target persistence
+
+The CLI exposes logical positions while retaining the existing array schema:
+
+- Column `targetNumber` is the number of zero-based positions.
+- `defaultTargetDir` and `defaultTargetName` are Column defaults.
+- Each Setting's `targetDir` and `targetName` arrays have exactly the same length.
+- Empty Setting entries mean inherit the matching Column component.
+- An empty Column default name means derive the target name from the Setting canonical name.
+- An empty effective target directory is invalid for planning.
+
+Use `column target add/set/delete` and `setting target set/reset`. These commands resize or update arrays consistently across all Settings. Target directories support `~`, `${VAR}`, and Windows `%VAR%`; expanded targets must be non-empty and unique, and target names must be one normal path component.
+
+## Mode persistence
+
+Mode Column strategies are:
+
+- `cover`: apply exactly the selected Settings.
+- `increment`: retain existing managed mappings for that Column and add selected Settings.
+- `none`: apply no mappings for that Column.
+- `full`: apply every present Setting in that Column.
+
+`cover` and `increment` require one or more Settings. `none` and `full` store no Setting list. Use `mode column set/delete` so references are canonicalized and validated.
+
+## CLI-owned files
+
+Do not manually edit:
+
+- `Backup/current_state.json`
+- `Backup/history.log`
+- `.cfgfc-session/`
+- `.cfgfc-transactions/`
+
+They contain apply intent, current/previous mappings, PPID context, mutation locks, snapshots, staging, and recovery records. Read-only `status` can report incomplete transactions; the next mutating command performs recovery.

@@ -1,67 +1,137 @@
 ---
 name: configfacilitator-usage
-description: Guide agents operating ConfigFacilitator warehouses and modifying config through cfgfc. Use for configuration inspection, warehouse edits, mode apply/update, and managed-state recovery.
+description: Guide agents using cfgfc resource, content, apply, reconciliation, and recovery commands without direct warehouse editing.
 license: MIT
 compatibility: Requires cfgfc CLI and ConfigFacilitator repository docs.
 metadata:
   author: ConfigFacilitator
-  version: "1.0"
+  version: "2.0"
   generatedBy: "1.3.1"
 ---
 
-Use this Skill when an agent needs to inspect or change ConfigFacilitator-managed configuration through `cfgfc`.
+Use this Skill whenever an agent inspects or changes a ConfigFacilitator warehouse.
 
-## When to Use
+## Required reading
 
-- Configuration inspection: checking roots, projects, columns, modes, settings, or managed mappings.
-- Warehouse edits: adding or editing project metadata, column metadata, mode metadata, or source files.
-- Mode apply/update: applying modes or columns and refreshing persisted apply intent after warehouse changes.
-- Managed-state recovery: considering `reset`, `revert`, `-f`, or `--force` to restore or reclaim targets.
+1. Read repository `README.md` and `AGENTS.md`.
+2. Read `docs/commands.en.md` or `docs/commands.zh-CN.md` for exact syntax.
+3. For a complete lifecycle, read `docs/example.en.md` or `docs/example.zh-CN.md`.
+4. For persistence, paths, and validation, read the matching JSONC, platform, architecture, and developer pages.
+5. Run `cfgfc <command> --help` before using unfamiliar or destructive forms.
 
-## First Read
+## Core rule: use cfgfc, not an editor
 
-- Read `README.md` for the project summary and top-level docs links.
-- Read `AGENTS.md` for repository rules, validation expectations, and safety requirements.
-- Read the relevant docs under `docs/` before changing state: start with `docs/README.en.md` or `docs/README.zh-CN.md`, then use `docs/commands.en.md` / `docs/commands.zh-CN.md`, `docs/example.en.md` / `docs/example.zh-CN.md`, `docs/jsonc-guide.en.md` / `docs/jsonc-guide.zh-CN.md`, and `docs/platform-notes.en.md` / `docs/platform-notes.zh-CN.md` as needed.
-- For validation choices, check `docs/developer-setup.en.md` or `docs/developer-setup.zh-CN.md`.
+Normal warehouse work must use resource and content commands. Do not directly create or edit Project/Column/Setting/Mode indexes, Setting source files, target arrays, Mode selections, runtime state, session records, or transaction records.
 
-## Command Map
+External JSONC or filesystem changes are supported only as an interoperability boundary. After Git or another explicit external tool changes a warehouse, inspect and reconcile with `cfgfc sync`.
 
-Use `docs/commands.en.md` or `docs/commands.zh-CN.md` for exact syntax and examples.
+Never manually edit:
 
-| Command | Use |
+- `Backup/current_state.json`
+- `Backup/history.log`
+- `.cfgfc-session/`
+- `.cfgfc-transactions/`
+
+## Command map
+
+| Intent | Commands |
 | --- | --- |
-| `root` | Inspect the effective warehouse root or persist a new root without moving data. |
-| `switch` | Set or clear PPID-scoped convenience context for a project. |
-| `list` | Inspect projects, columns, modes, settings, and current warehouse state. |
-| `new` | Scaffold project, column, and mode data before manual edits. |
-| `sync` | Reconcile indexes with on-disk warehouse metadata and source files. |
-| `apply` | Apply a mode or single-column mapping to targets. |
-| `update` | Refresh the persisted apply intent from current warehouse metadata. |
-| `reset` | Clear current managed mappings after explicit user approval. |
-| `revert` | Restore the previous managed snapshot after explicit user approval. |
+| Root | `cfgfc root`, `cfgfc root <Path>` |
+| Project context | `cfgfc use <Project>`, `cfgfc use global` |
+| Project CRUD | `cfgfc project list/show/create/set/rename/delete` |
+| Column CRUD | `cfgfc column list/show/create/set/rename/delete` |
+| Column targets | `cfgfc column target list/add/set/delete` |
+| Setting CRUD | `cfgfc setting list/show/create/set/rename/delete` |
+| Setting target overrides | `cfgfc setting target list/set/reset` |
+| Setting content | `cfgfc setting content list/read/write/mkdir/move/delete` |
+| Mode CRUD | `cfgfc mode list/show/create/set/rename/delete` |
+| Mode selections | `cfgfc mode column list/set/delete` |
+| Runtime inspection | `cfgfc status` |
+| Activate intent | `cfgfc apply mode ...`, `cfgfc apply column ...` |
+| Replan active state | `cfgfc refresh`, `cfgfc refresh --column ...`, `cfgfc refresh --all` |
+| External reconciliation | `cfgfc sync`, `cfgfc sync -p ...`, `cfgfc sync --all` |
+| Disappeared-resource reconciliation | `cfgfc sync`, which removes corresponding Index metadata immediately without cascading references |
+| Managed-state recovery | `cfgfc reset`, `cfgfc revert` |
+| Shell completion | `cfgfc completion <bash|zsh|fish|powershell>` |
 
-## Safe Modification Workflow
+The removed `new`, `switch`, `list`, and `update` commands, flag-only apply forms, `-a`, `-f`, and `--force` are not compatibility aliases.
 
-1. Select and confirm the effective warehouse root with `cfgfc root`; only persist a different root with clear user intent.
-2. Inspect current state with `cfgfc list` and relevant docs before editing metadata or source files.
-3. Modify only the needed warehouse metadata or source files, following the JSONC and platform rules in `docs/`. Every `SettingIndex.jsonc` must declare `targetNumber`; `sync` normalizes all target arrays to that declared length.
-4. Run `cfgfc sync` after manual warehouse edits; use full-warehouse sync only when the requested scope needs it.
-5. Apply or update mappings with `cfgfc apply` or `cfgfc update` according to the requested change.
-6. Verify the result with `cfgfc list`, targeted file/link checks, and command output that matches the user's intent.
+## Scope and identity
 
-## Destructive Guardrails
+- Prefer explicit `-p/--project` when automation should not depend on shell context.
+- Otherwise, select a Project with `cfgfc use <Project>`; `cfgfc use global` clears the PPID-scoped context.
+- Setting commands require `-c/--column`.
+- Canonical names and unique aliases are accepted as input; cfgfc persists canonical identities.
+- `displayName` is presentation-only, not an alias.
+- Before mutation, inspect relevant resources with `list`/`show` and active state with `status`.
+- Use `--json` for automation and parse the single stable envelope. Respect exit codes `2` through `6` documented in the command reference.
 
-- Require explicit user intent and current-state inspection before `-f`, `--force`, `reset`, or `revert`.
-- Never use destructive recovery casually, to hide an unclear error, or before confirming the root, project, mode, and affected targets.
-- Prefer non-destructive inspection first; document what will be reclaimed, cleared, or restored before running recovery commands.
+## Safe creation and content workflow
+
+1. Confirm the effective root with `cfgfc root`. Change it only with explicit user intent; changing roots does not migrate data.
+2. Create the Project and select it or pass `-p` explicitly.
+3. Create Columns, then configure zero-based positions with `column target`.
+4. Create Settings with `--kind file|directory`:
+   - use `--stdin` for exact file bytes from stdin;
+   - use `--text` for exact literal bytes without an added newline;
+   - use `--from` to copy a regular file or directory tree;
+   - omit all three for an empty file/directory.
+5. Use `setting content` for later inspection and mutation. Never substitute direct source editing.
+6. Create Modes and configure selections with `mode column set`; repeat `--setting` for `cover`/`increment`, and omit it for `none`/`full`.
+7. Apply with nested syntax and verify with `status` plus targeted content/link checks.
+
+`--from`, `--stdin`, and `--text` are mutually exclusive. Directory imports and content paths reject symlinks, special objects, absolute paths, and traversal. For human `setting content read`, preserve exact output bytes; use JSON when text/base64 encoding metadata is needed.
+
+Content writes under an existing source path are immediately visible through active symlinks. Do not run `refresh` for byte-only changes. Use `refresh` after target/selection metadata changes or when a persisted `full` intent must include a newly created/discovered Setting.
+
+## Synchronization and disappeared resources
+
+`sync` is not needed after successful CLI-owned mutations. Use it after Git, file-manager, or valid direct JSONC interoperability changes.
+
+- Sync discovers new resources.
+- If an indexed Project directory, Column directory, or Setting file/directory disappears, sync immediately removes its metadata from the corresponding Index.
+- Sync does not recreate absent sources or child indexes.
+- Sync does not implicitly cascade Mode selections, current/history runtime records, or PPID context.
+- Inspect unresolved references with `status` and relevant `show` commands; apply/refresh fails before target changes when required references cannot resolve.
+- `sync --prune` and `sync --prune --yes` are unsupported.
+- Recreating a former source path does not restore deleted metadata; recreate intended metadata through resource commands.
+- `sync --all` and `-p/--project` are mutually exclusive.
+
+## Independent destructive controls
+
+Treat these as separate user authorizations:
+
+- `--yes`: confirm resource, Column-target, or Setting-content deletion; no interactive prompt exists.
+- `--cascade`: permit dependent-reference cleanup during resource deletion.
+- `--force-targets`: reclaim only affected recorded target paths whose ownership is unsafe or drifted.
+
+Never infer one authorization from another. Before resource deletion or forced target reclamation:
+
+1. confirm root, Project, Column, resource, and active mappings;
+2. run `status` and relevant `show` commands;
+3. explain what repository data, references, and recorded targets are affected;
+4. require explicit user intent for each needed control;
+5. verify unrelated resources and targets remain intact afterward.
+
+`--force-targets` can recursively remove recorded occupied paths. It does not back up or reconstruct unmanaged content.
+
+## Transactions and recovery
+
+Mutating commands recover an incomplete prepared transaction before new work. Read-only `status` only reports transaction diagnostics. If status reports an incomplete transaction, do not delete or edit `.cfgfc-transactions/`; run a suitable mutating cfgfc command only after confirming the effective root and user intent, then verify recovery.
+
+Rename and cascade delete may update indexes, source paths, Mode references, current/history state, PPID contexts, and managed links together. Do not reproduce these operations manually.
 
 ## Validation
 
-- For docs-only or Skill-only changes, run OpenSpec validation/status when appropriate: `openspec validate <change>` and `openspec status --change "<change>"`.
-- Run the full Go test suite only when Go code is touched.
-- If user-facing command behavior changes, run the relevant baseline commands from `AGENTS.md` and any targeted smoke tests for the changed workflow.
+For docs/Skill-only work, run the applicable help/doc checks plus:
+
+```bash
+openspec validate replace-editor-workflows-with-cli --strict
+openspec status --change replace-editor-workflows-with-cli --json
+```
+
+For command or behavior changes, use the complete help sweep and temp-HOME alternate-root lifecycle smoke in `AGENTS.md` and `docs/developer-setup.*.md`. Run the full Go suite when Go code changes.
 
 ## Maintenance
 
-- Future user-facing command, workflow, example, or safety-semantics changes must review `skills/configfacilitator-usage/SKILL.md` and update it when the agent workflow is affected.
+When commands, flags, workflow, output, safety behavior, storage responsibility, or validation changes, update this Skill together with `README.md`, English/Chinese docs, `AGENTS.md`, and CLI help. English and Chinese docs must remain behaviorally equivalent.
