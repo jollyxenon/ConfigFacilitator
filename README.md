@@ -30,9 +30,9 @@ cfgfc apply mode Default
 cfgfc status
 ```
 
-Use `setting content` to inspect or change Setting bytes. Existing managed symlinks expose byte changes immediately; use `refresh` when current metadata or persisted apply intent must be replanned.
+Use `setting content` to inspect or change Setting bytes. Existing managed symlinks expose byte changes immediately; use `refresh` when the Current state must be replanned from current metadata.
 
-使用 `setting content` 查看或修改 Setting 内容。已有受管符号链接会立即反映内容字节变化；只有当前元数据或已持久化应用意图需要重新规划时，才使用 `refresh`。
+使用 `setting content` 查看或修改 Setting 内容。已有受管符号链接会立即反映内容字节变化；只有需要根据当前元数据重新规划 Current 状态时，才使用 `refresh`。
 
 `sync` reconciles changes made by Git or another external tool. When an indexed Project directory, Column directory, or Setting file/directory disappears, sync immediately removes its metadata from the corresponding Index without recreating the source. Sync does not implicitly cascade Mode/runtime references; later apply or refresh fails if those references cannot resolve. There is no `sync --prune --yes` workflow, and recreating a former source path does not restore deleted metadata.
 
@@ -41,6 +41,12 @@ Use `setting content` to inspect or change Setting bytes. Existing managed symli
 Destructive controls are independent: `--yes` confirms resource, Column-target, or Setting-content deletion; `--cascade` permits dependent-reference repair during resource deletion; and `--force-targets` permits reclamation of recorded drifted or occupied targets.
 
 三个破坏性控制彼此独立：`--yes` 确认资源、Column 目标或 Setting 内容删除；`--cascade` 允许资源删除时修复依赖引用；`--force-targets` 允许回收已记录但发生漂移或被占用的目标。
+
+## Web UI / Web 界面
+
+`cfgfc web` serves a local Web UI on `127.0.0.1` (default port `49631`). The frontend is embedded in the single binary — no separate install, no network access, fully offline. Open http://127.0.0.1:49631 in a browser; the UI talks to the backend through `/api/snapshot`, `/api/command`, and `/api/preview`. Write commands carry the warehouse-wide `revision`; a stale revision returns HTTP `409`. An occupied port is a persistence failure, not an automatic fallback; press Ctrl-C to exit.
+
+`cfgfc web` 在本机 `127.0.0.1` 提供 Web UI（默认端口 `49631`）。前端嵌入单二进制——无需单独安装、不联网、完全离线。浏览器打开 http://127.0.0.1:49631 即可使用；前端通过 `/api/snapshot`、`/api/command`、`/api/preview` 与后端交互。写命令携带全仓 `revision`，过期时返回 HTTP `409`。端口被占用属于持久化失败，不会自动换端口；按 Ctrl-C 退出。
 
 ## Warehouse root / 仓库根目录
 

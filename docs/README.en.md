@@ -19,11 +19,12 @@ ConfigFacilitator manages a portable configuration warehouse entirely through re
 - Default warehouse root: `~/.configfacilitator/`
 - Root inspection/change: `cfgfc root` and `cfgfc root <Path>`; changing roots never migrates contents
 - Resources: Project, Column, Setting, Mode, Column target positions, Setting target overrides, and Mode Column selections
-- Top-level commands: `project`, `column`, `setting`, `mode`, `use`, `status`, `apply`, `refresh`, `sync`, `root`, `reset`, `revert`, and `completion`
+- Top-level commands: `project`, `column`, `setting`, `mode`, `current`, `use`, `status`, `apply`, `refresh`, `sync`, `root`, `reset`, `revert`, `web`, and `completion`
 - Project scope: explicit `-p/--project` takes precedence over the PPID-scoped Project selected by `cfgfc use`
 - Machine output: `--json` emits one stable success or error object; see the command reference for exit codes
 - Shell completion: `cfgfc completion <bash|zsh|fish|powershell>`
 - Symlinks: real symlinks only on Linux, macOS, native Windows, and WSL
+- Web UI: `cfgfc web` serves an embedded offline UI on `127.0.0.1:49631`
 
 ## Recommended model
 
@@ -31,7 +32,7 @@ ConfigFacilitator manages a portable configuration warehouse entirely through re
 2. Configure logical target positions with `column target` and per-Setting overrides with `setting target`.
 3. Create or change payloads with `setting create` and `setting content`; stdin preserves exact bytes.
 4. Inspect metadata with resource `list`/`show`, and inspect active state with `status`.
-5. Apply a Mode or direct Column intent, then use `refresh` only when replanning is needed.
+5. Apply a Mode (the Current follows it) or set an independent Current with `apply column`, then use `refresh` only when replanning is needed.
 6. Use `sync` after Git or other external changes. It immediately removes Index metadata for disappeared Project, Column, or Setting sources, does not recreate sources or cascade Mode/runtime references, and provides no prune workflow.
 7. Treat `--yes`, `--cascade`, and `--force-targets` as separate authorizations.
 

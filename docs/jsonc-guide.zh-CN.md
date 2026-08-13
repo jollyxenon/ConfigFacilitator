@@ -12,7 +12,7 @@
 - `displayName` 只用于展示，不是隐式别名。
 - `aliases` 是明确的替代命令引用。空别名会规范化为 `"aliases": []`。
 - `description` 是持久元数据；除非显式替换或删除所属资源，否则会保留。
-- 通过别名输入时，CLI 会在持久化前解析，因此选择、上下文和应用意图都保存 canonical 标识。
+- 通过别名输入时，CLI 会在持久化前解析，因此选择、上下文和 Current 状态都保存 canonical 标识。
 - 更新别名时，会拒绝空值、重复值，以及同一解析作用域中的 canonical 名称或别名冲突。
 
 应使用资源 `create`、`set`、`rename` 命令，而不是直接改这些字段。
@@ -55,6 +55,20 @@ Mode 的 Column 策略包括：
 
 `cover` 和 `increment` 需要一个或多个 Setting；`none` 和 `full` 不保存 Setting 列表。使用 `mode column set/delete`，让引用得到 canonical 化和验证。
 
+## Current 状态持久化
+
+`Backup/current_state.json` 用一个 JSON 对象保存 Current 状态：
+
+```json
+{
+  "columns": { "Models": { "strategy": "cover", "settings": ["Alpha.txt"] } },
+  "relation": { "kind": "following", "originMode": "Max" },
+  "mappings": [ { "source": "...", "target": "..." } ]
+}
+```
+
+`columns` 是权威选择；`mappings` 是规划出的链接（`increment` 策略下还保存累积基线）；`relation` 只描述与具名 Mode 的关系。`relation.kind` 只有 `following` 与 `detached`；无 `relation` 表示 Current 独立。旧格式文件（含 `intent` 字段或缺 `columns`）会被拒绝，不提供兼容迁移；删除文件后运行 `sync` 会重建空 Current 并删除旧 `history.log`。`history.log` 每一行保存变更前后的 `columns`、`relation`、`mappings`；`revert` 只回退 Current 状态，不回退资源元数据或内容。
+
 ## CLI 自有文件
 
 不要手工编辑：
@@ -64,4 +78,4 @@ Mode 的 Column 策略包括：
 - `.cfgfc-session/`
 - `.cfgfc-transactions/`
 
-它们保存应用意图、当前/前一个映射、PPID 上下文、变更锁、快照、暂存和恢复记录。只读 `status` 可以报告未完成事务；下一个变更命令会执行恢复。
+它们保存 Current 状态及其前一个快照、PPID 上下文、变更锁、快照、暂存和恢复记录。只读 `status` 可以报告未完成事务；下一个变更命令会执行恢复。

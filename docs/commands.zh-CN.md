@@ -6,7 +6,7 @@
 
 ### Project 作用域
 
-`column`、`setting`、`mode`、`apply`、`refresh`、`status`、`reset`、`revert` 接受 `-p/--project`。没有该参数时，需要单个 Project 的命令会使用 `cfgfc use <Project>` 选择的 PPID 作用域 Project。显式作用域优先。`cfgfc use global` 清除上下文。`sync --all` 和 `refresh --all` 忽略上下文。
+`column`、`setting`、`mode`、`current`、`apply`、`refresh`、`status`、`reset`、`revert` 接受 `-p/--project`。没有该参数时，需要单个 Project 的命令会使用 `cfgfc use <Project>` 选择的 PPID 作用域 Project。显式作用域优先。`cfgfc use global` 清除上下文。`sync --all` 和 `refresh --all` 忽略上下文。
 
 ### 元数据参数
 
@@ -143,11 +143,26 @@ cfgfc mode set <Mode> <元数据参数>
 cfgfc mode rename <Old> <New> [--force-targets]
 cfgfc mode delete <Mode> --yes [--cascade] [--force-targets]
 cfgfc mode column list <Mode>
-cfgfc mode column set <Mode> <Column> --strategy <cover|increment|none|full> [--setting <Setting> ...]
-cfgfc mode column delete <Mode> <Column>
+cfgfc mode column set <Mode> <Column> --strategy <cover|increment|none|full> [--setting <Setting> ...] [--force-targets]
+cfgfc mode column delete <Mode> <Column> [--force-targets]
 ```
 
 `cover` 和 `increment` 必须重复提供一个或多个 `--setting`；`none` 和 `full` 不能提供该参数。删除 Mode 的 Column 选择不是删除资源，不使用 `--yes`。
+
+修改 Current 正在 `following` 的 Mode 的选择，会在同一事务内自动重新规划并更新 Current 与链接；参见 [Current 状态](#current-状态临时-mode)。删除被跟随的 Mode 只清除 Current 的 `relation`，保留 columns 与 mappings；重命名被跟随的 Mode 会自动更新 `originMode`。`--force-targets` 只授权回收受影响且已有记录的漂移或占用目标。
+
+## Current 状态（临时 Mode）
+
+(Current) 是活动配置状态，本身就是一个「临时 Mode」：`columns` 是权威选择，`mappings` 是规划出的链接（`increment` 策略下还保存累积基线），`relation` 只描述与具名 Mode 的关系。`relation.kind` 只有两种：`following`（跟随具名 Mode，修改该 Mode 的选择会自动同步 Current，`sync` 也会按最新 Mode 选择重规划）与 `detached`（已分叉，修改 Mode 不影响 Current，`refresh` 只按自身 columns 重规划）。无 `relation` 表示独立。
+
+```text
+cfgfc current show [-p <Project>]
+cfgfc current column list [-p <Project>]
+cfgfc current column set <Column> --strategy <cover|increment|none|full> [--setting <Setting> ...] [-p <Project>] [--force-targets]
+cfgfc current column delete <Column> [-p <Project>] [--force-targets]
+```
+
+`current show` 输出 relation、每个 Column 的选择和规划的映射。直接编辑 (Current)（`current column set/delete` 或 Web 提交）会把 `following` 改为 `detached` 并保留 `originMode`。删除被跟随的 Mode 只清除 `relation`，保留 columns 与 mappings；重命名被跟随的 Mode 会更新 `originMode`。
 
 ## 上下文、状态、应用与维护
 
@@ -168,7 +183,7 @@ cfgfc status -p OpenCode
 cfgfc status --json
 ```
 
-没有有效 Project 作用域时，status 汇总所有 Project；有作用域时，报告应用意图、映射、匹配 Mode、每个 Column 的覆盖情况、无法解析的引用和未完成事务诊断。它是只读命令，不会恢复事务。
+没有有效 Project 作用域时，status 汇总所有 Project；有作用域时，报告 Current 状态——relation 类型、following 时的 origin Mode、每个 Column 的覆盖情况、规划的映射、无法解析的引用和未完成事务诊断。人类输出显示 `Current: following (Mode) [...]`、`Current: detached (Mode) [...]` 或 `Current: independent [...]`；JSON 通过 `current` 字段暴露同样的数据，包含 `columns`、`relation` 和 `mappings`。它是只读命令，不会恢复事务。
 
 ### `apply`
 
@@ -177,16 +192,16 @@ cfgfc apply mode <Mode> [-p <Project>] [--force-targets]
 cfgfc apply column <Column> <Setting>... [-p <Project>] [--force-targets]
 ```
 
-`apply mode` 持久化 Mode 意图。`apply column` 持久化一个包含全部 Setting 参数的直接 Column 意图。无法解析的资源引用会在目标变化前阻止规划。
+`apply mode <Mode>` 让 Current 跟随该 Mode，并按该 Mode 的最新选择重新规划映射。`apply column <Column> <Setting>...` 把 Current 设为只包含给定 Setting 的独立状态。无法解析的资源引用会在目标变化前阻止规划。
 
 ### `refresh`
 
 ```bash
-cfgfc refresh [-p <Project>] [--column <Column>] [--force-targets]
+cfgfc refresh [-p <Project>] [--force-targets]
 cfgfc refresh --all [--force-targets]
 ```
 
-`refresh` 根据当前元数据重新规划当前意图，也支持旧的仅映射状态。`--column` 只刷新一个 Column，并保留其他映射。`--all` 刷新所有存在活动映射或意图的 Project，不能与 Project 或 Column 作用域组合。仅修改内容字节不需要 refresh，因为受管链接仍指向同一来源。
+`refresh` 根据当前元数据重新规划 Current。`detached` 或独立的 Current 按自身 `columns` 重新规划；`following` 的 Current 按 origin Mode 的最新选择重新规划。`--all` 刷新所有存在活动 Current 状态的 Project，不能与 Project 作用域组合。仅修改内容字节不需要 refresh，因为受管链接仍指向同一来源。已移除的 `--column` 参数无效。
 
 ### `sync`
 
@@ -197,6 +212,8 @@ cfgfc sync --all
 ```
 
 Sync 是 Git、文件管理器或直接有效 JSONC 修改的同步边界。它会发现新资源，并立即删除来源已消失的 Project 目录、Column 目录、Setting 文件/目录对应的 Index 元数据。它不会重建来源，也不会隐式级联 Mode 选择、当前/历史 runtime 记录或 PPID 上下文；后续 `apply` 或 `refresh` 若无法解析这些引用，会在目标变化前失败。`sync --prune` 和 `sync --prune --yes` 均不受支持。重新创建旧来源路径不会恢复已删除元数据。`--all` 与 `-p/--project` 互斥。已移除的 `-a` 简写无效。
+
+每个 Project 在各自的事务中提交。`sync --all` 独立处理每个 Project：失败的 Project 回滚自身变更，成功的 Project 保留结果，命令汇总输出并列明失败项。缺失的 Project/Column/Setting 索引条目会从文件系统重建（canonical 名称、最小默认元数据）；`ModeIndex.jsonc` 没有目录来源，缺失时只重建为空。`current_state.json` 缺失时重建为空 Current，并删除旧 `history.log`。旧格式或损坏的 `current_state.json` 只会让该 Project 保持不可用（其他 Project 不受影响），需要用户删除后重新 sync。`sync` 也会按 origin Mode 的最新选择重新规划 `following` 的 Current。
 
 ### `completion`
 
@@ -217,7 +234,16 @@ cfgfc revert [-p <Project>] [--force-targets]
 cfgfc root [Path]
 ```
 
-`reset` 删除当前受管映射，但保留仓库资源。`revert` 只恢复前一个快照，不支持任意历史检出。`root <Path>` 持久化后续根目录解析，不迁移、复制或初始化仓库内容。
+`reset` 删除当前受管映射，但保留仓库资源。`revert` 只恢复前一个快照，不支持任意历史检出。
+`revert` 只回退 Current 状态（columns/relation/mappings），不回退资源元数据或内容。`root <Path>` 持久化后续根目录解析，不迁移、复制或初始化仓库内容。
+
+### `web`
+
+```bash
+cfgfc web [--port <Port>]
+```
+
+`web` 在本机 `127.0.0.1` 上提供 Web UI（默认端口 `49631`）。前端嵌入单二进制，无需单独安装或联网；浏览器通过 `/api/snapshot`、`/api/command`、`/api/preview` 与后端交互。写命令携带全仓 `revision`，过期时返回 HTTP `409`。端口被占用时命令直接报错，不会悄悄换端口。按 Ctrl-C 退出。
 
 ## 旧命令到新命令迁移
 
@@ -235,10 +261,10 @@ cfgfc root [Path]
 | `cfgfc list` | 运行时状态用 `cfgfc status`；资源用 `project/column/setting/mode list|show` |
 | `cfgfc list -p P -c C` | `cfgfc setting list -p P -c C` 或 `cfgfc column show C -p P` |
 | `cfgfc list -p P -m M` | `cfgfc mode show M -p P` 或 `cfgfc mode column list M -p P` |
-| `cfgfc apply -p P -m M` | `cfgfc apply mode M -p P` |
+| `cfgfc apply -p P -m M` | `cfgfc apply mode M -p P`（Current 将跟随该 Mode） |
 | `cfgfc apply -p P -c C -s A,B` | `cfgfc apply column C A B -p P` |
 | `cfgfc update -p P` | `cfgfc refresh -p P` |
-| `cfgfc update -c C` | `cfgfc refresh --column C` |
+| `cfgfc update -c C` | `cfgfc refresh`（单 Column 刷新已移除；refresh 重新规划整个 Current） |
 | `cfgfc update --all` / `-a` | `cfgfc refresh --all` |
 | `cfgfc sync -a` | `cfgfc sync --all` |
 | `-f` / `--force` | 只有需要回收目标时使用 `--force-targets`；还要按需独立添加 `--yes` 和/或 `--cascade` |

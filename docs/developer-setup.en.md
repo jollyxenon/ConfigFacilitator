@@ -33,7 +33,8 @@ commands=(
   "setting content mkdir" "setting content move" "setting content delete"
   "mode list" "mode show" "mode create" "mode set" "mode rename" "mode delete"
   "mode column list" "mode column set" "mode column delete"
-  "use" "status" "apply mode" "apply column" "refresh" "sync" "root" "reset" "revert"
+  "current show" "current column list" "current column set" "current column delete"
+  "use" "status" "apply mode" "apply column" "refresh" "sync" "root" "reset" "revert" "web"
   "completion bash" "completion zsh" "completion fish" "completion powershell"
 )
 for cmd in "${commands[@]}"; do
@@ -49,15 +50,16 @@ Also verify root help contains only the current top-level surface and that `new`
 For command/workflow changes, use a temporary HOME/profile and persist a separate alternate root with `cfgfc root <Path>`. Use only `cfgfc` plus stdin/redirection to cover:
 
 1. Project, Column, zero-based target, file Setting from stdin, directory Setting and nested content, Mode, and Mode selections;
-2. `apply mode` and `apply column`, human `status`, and `--json` envelopes/exit codes;
+2. `apply mode` and `apply column`, human `status` (shows `Current: following/independent [...]`), `current show`, and `--json` envelopes/exit codes;
 3. byte-only content write showing immediate visibility through an active link;
-4. metadata change plus `refresh`, including `full` selection adding a new Setting;
+4. metadata change plus `refresh`, a `full` selection adding a new Setting, and automatic re-planning when the selections of a followed Mode change;
 5. active Setting/Column/Mode/Project rename and canonical context/reference updates;
 6. content and resource deletion with independent `--yes`, `--cascade`, and `--force-targets` behavior;
 7. `reset` and one-step `revert`;
-8. external disappearance, immediate Index removal, unresolved Mode/runtime references, apply/refresh failure, unsupported prune flags, and explicit resource recreation;
+8. external disappearance, per-Project sync transaction isolation, index and empty-Current rebuild, unresolved Mode/runtime references, apply/refresh failure, unsupported prune flags, and explicit resource recreation;
 9. prepared-transaction diagnostics, restart recovery, rollback, and concurrent mutation locking;
-10. file-backed and directory-backed target ownership/drift reclamation limited to recorded paths.
+10. file-backed and directory-backed target ownership/drift reclamation limited to recorded paths;
+11. Web UI smoke: start `cfgfc web`, open `http://127.0.0.1:49631`, exercise `/api/snapshot` and a `/api/command` write, confirm a stale `revision` returns `409`, a used port fails with a persistence error, and Ctrl-C exits cleanly.
 
 Do not use direct index/source editing to build the primary lifecycle. External file removal is allowed only for the explicit sync interoperability portion; recreate resources through cfgfc rather than claiming sync restores deleted metadata.
 

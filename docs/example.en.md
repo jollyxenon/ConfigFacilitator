@@ -86,7 +86,17 @@ To apply only one Column instead:
 cfgfc apply column Models Main.json
 ```
 
-This persists a direct-Column intent rather than a Mode intent.
+This makes the Current follow no Mode: it becomes an independent Current with exactly this Column/Setting selection.
+
+Inspect the Current state and its relationship to the Mode:
+
+```bash
+cfgfc current show
+cfgfc current column list
+cfgfc status
+```
+
+After `apply mode Default`, `status` shows `Current: following (Default) [...]`; after the `apply column` above, the Current is independent. Editing the Current directly — for example `cfgfc current column set Models --strategy none` — turns `following` into `detached` and keeps the origin Mode recorded.
 
 ## 4. Change content and metadata
 
@@ -110,14 +120,14 @@ printf '%s' 'Skills installed for this OpenCode profile.' | \
   cfgfc column set Skills --description-file -
 ```
 
-If `Default` is still the persisted Mode intent, its `full` Skills selection must be replanned to include `Explain`:
+If the Current is following `Default`, its `full` Skills selection must be replanned to include `Explain`:
 
 ```bash
 cfgfc refresh
 cfgfc status
 ```
 
-Use `cfgfc refresh --column Skills` to replan only one Column while preserving other mappings, or `cfgfc refresh --all` to refresh every Project with active state.
+Use `cfgfc refresh` to replan the Current from current metadata, or `cfgfc refresh --all` to refresh every Project with active Current state. The removed `--column` flag is invalid; refresh always replans the whole Current.
 
 ## 5. Rename active resources
 
@@ -129,7 +139,9 @@ cfgfc project rename OpenCode OpenCodeWork
 cfgfc status
 ```
 
-Rename rewrites schema-defined references, current and historical intents, source paths, PPID Project context, and owned managed links in one recoverable operation. Fixed target names stay fixed. A target name derived from a Setting canonical name changes with that Setting. If a recorded target has drifted, rename stops unless you deliberately add `--force-targets`.
+Rename rewrites schema-defined references, Current state, source paths, PPID Project context, and owned managed links in one recoverable operation. Fixed target names stay fixed. A target name derived from a Setting canonical name changes with that Setting. If a recorded target has drifted, rename stops unless you deliberately add `--force-targets`.
+
+Renaming a Mode that the Current follows automatically updates the Current's `originMode`.
 
 ## 6. Delete content and resources safely
 
@@ -147,7 +159,7 @@ cfgfc setting delete Explain -c Extensions --yes --cascade
 ```
 
 - `--yes` confirms deletion.
-- `--cascade` permits dependent Mode/current/history reference repair.
+- `--cascade` permits dependent Mode/Current/history reference repair.
 - `--force-targets` is needed only if an affected recorded target is occupied or ownership has drifted.
 
 No flag implies another. `--force-targets` does not confirm deletion and does not authorize cascade. It can reclaim only affected recorded target paths and cannot reconstruct overwritten unmanaged content.
@@ -159,7 +171,7 @@ cfgfc revert
 cfgfc reset
 ```
 
-`revert` restores the previous snapshot only. `reset` removes current managed mappings while preserving warehouse resources. Add `--force-targets` only when you explicitly accept reclaiming affected recorded drifted or occupied paths.
+`revert` restores the previous snapshot only: it rewinds the Current state (columns/relation/mappings), never resource metadata or content. `reset` removes current managed mappings while preserving warehouse resources. Add `--force-targets` only when you explicitly accept reclaiming affected recorded drifted or occupied paths.
 
 ## 8. Reconcile external changes
 
@@ -171,7 +183,7 @@ cfgfc setting show Review -c Extensions
 cfgfc status
 ```
 
-Sync immediately removes `Review` metadata from `SettingIndex.jsonc`; `setting show` no longer resolves it. Sync does not recreate the source or implicitly cascade Mode selections, current/history runtime records, or PPID context. If apply or refresh requires the removed Setting, it fails before managed targets change.
+Sync immediately removes `Review` metadata from `SettingIndex.jsonc`; `setting show` no longer resolves it. Sync does not recreate the source or implicitly cascade Mode selections, Current/history runtime records, or PPID context. If apply or refresh requires the removed Setting, it fails before managed targets change. Each Project commits in its own transaction, and `sync --all` isolates failures per Project.
 
 Recreating the former source path and running sync may discover a new Setting, but it does not restore the deleted description, aliases, target overrides, unknown fields, or other metadata. Recreate the intended metadata explicitly with resource commands.
 
@@ -181,6 +193,7 @@ Recreating the former source path and running sync may discover a new Setting, b
 
 ```bash
 cfgfc status --json
+cfgfc current show --json
 cfgfc project show OpenCodeWork --json
 ```
 

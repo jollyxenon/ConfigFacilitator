@@ -34,7 +34,7 @@ Never manually edit:
 
 ## Command map
 
-| Intent | Commands |
+| Task | Commands |
 | --- | --- |
 | Root | `cfgfc root`, `cfgfc root <Path>` |
 | Project context | `cfgfc use <Project>`, `cfgfc use global` |
@@ -47,8 +47,10 @@ Never manually edit:
 | Mode CRUD | `cfgfc mode list/show/create/set/rename/delete` |
 | Mode selections | `cfgfc mode column list/set/delete` |
 | Runtime inspection | `cfgfc status` |
-| Activate intent | `cfgfc apply mode ...`, `cfgfc apply column ...` |
-| Replan active state | `cfgfc refresh`, `cfgfc refresh --column ...`, `cfgfc refresh --all` |
+| Activate the Current | `cfgfc apply mode ...` (Current follows the Mode), `cfgfc apply column ...` (independent Current) |
+| Replan active state | `cfgfc refresh`, `cfgfc refresh --all` (single-Column `--column` was removed) |
+| Current state | `cfgfc current show`, `cfgfc current column list/set/delete` |
+| Web UI | `cfgfc web [--port ...]` on `127.0.0.1` (default `49631`) |
 | External reconciliation | `cfgfc sync`, `cfgfc sync -p ...`, `cfgfc sync --all` |
 | Disappeared-resource reconciliation | `cfgfc sync`, which removes corresponding Index metadata immediately without cascading references |
 | Managed-state recovery | `cfgfc reset`, `cfgfc revert` |
@@ -82,7 +84,13 @@ The removed `new`, `switch`, `list`, and `update` commands, flag-only apply form
 
 `--from`, `--stdin`, and `--text` are mutually exclusive. Directory imports and content paths reject symlinks, special objects, absolute paths, and traversal. For human `setting content read`, preserve exact output bytes; use JSON when text/base64 encoding metadata is needed.
 
-Content writes under an existing source path are immediately visible through active symlinks. Do not run `refresh` for byte-only changes. Use `refresh` after target/selection metadata changes or when a persisted `full` intent must include a newly created/discovered Setting.
+Content writes under an existing source path are immediately visible through active symlinks. Do not run `refresh` for byte-only changes. Use `refresh` after target/selection metadata changes, or when a `full` selection must include a newly created/discovered Setting.
+
+## Current state and automatic synchronization
+
+(Current) is a temporary Mode: `current show` reports its `relation` (kind `following` or `detached`, or none for independent), per-Column selections, and planned mappings. `apply mode` makes the Current follow a Mode; `apply column` sets an independent Current. Editing the Current directly (`current column set/delete` or a Web UI write) turns `following` into `detached` while keeping `originMode`. Deleting a followed Mode clears only `relation`; renaming a followed Mode updates `originMode`.
+
+Mutations that change what the Current would plan re-plan it in the same transaction: changing the selections of a followed Mode, or changing resources that affect planning (targets, renames, deletions, a new Setting entering a `full` selection). Description/display-name/alias changes and content byte changes do not rebuild links. `revert` rewinds only Current state, never resource metadata or content.
 
 ## Synchronization and disappeared resources
 
@@ -96,6 +104,9 @@ Content writes under an existing source path are immediately visible through act
 - `sync --prune` and `sync --prune --yes` are unsupported.
 - Recreating a former source path does not restore deleted metadata; recreate intended metadata through resource commands.
 - `sync --all` and `-p/--project` are mutually exclusive.
+- Each Project commits in its own transaction, so `sync --all` isolates failures per Project.
+- Missing Project/Column/Setting index entries are rebuilt from the filesystem with canonical names and minimal default metadata; a missing `ModeIndex.jsonc` is rebuilt empty. A missing `current_state.json` is rebuilt as an empty Current and the old `history.log` is deleted; a legacy-format or corrupted one keeps only that Project unusable until the user deletes it and syncs again.
+- `sync` also replans a `following` Current from the origin Mode's latest selections.
 
 ## Independent destructive controls
 

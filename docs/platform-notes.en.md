@@ -38,6 +38,10 @@ Setting content paths are relative to the Setting root. Absolute paths, empty pa
 
 Mutating commands serialize through a warehouse-wide lock and recover an incomplete prepared transaction before new work. Read-only `status` reports transaction diagnostics without recovery. Do not edit or delete `.cfgfc-transactions/` manually.
 
+## Web UI networking
+
+`cfgfc web` binds to `127.0.0.1` only (default port `49631`), so the UI is reachable only from the same machine. The frontend is embedded in the single binary and makes no external network requests. The port can be changed with `--port`; an occupied port is a persistence failure, not an automatic fallback. Ctrl-C stops the server.
+
 ## Destructive behavior
 
 `--force-targets` can recursively reclaim only affected target paths already recorded by the requested apply, rename, delete, refresh, reset, or revert operation. It does not confirm repository deletion (`--yes`), authorize dependent-reference repair (`--cascade`), or back up/reconstruct overwritten unmanaged content.

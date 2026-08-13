@@ -12,7 +12,7 @@ Valid external JSONC, including comments, is parsed on the next load or `sync`. 
 - `displayName` is presentation-only and is not an implicit alias.
 - `aliases` are explicit alternative command references. Empty aliases normalize to `"aliases": []`.
 - `description` is durable metadata and is preserved unless explicitly replaced or the owning resource is deleted.
-- CLI input through an alias is resolved before persistence, so selections, contexts, and apply intent contain canonical identities.
+- CLI input through an alias is resolved before persistence, so selections, contexts, and Current state contain canonical identities.
 - Alias updates reject empty/duplicate values and collisions with canonical names or aliases in the same resolution scope.
 
 Use resource `create`, `set`, and `rename` commands rather than changing these fields directly.
@@ -55,6 +55,20 @@ Mode Column strategies are:
 
 `cover` and `increment` require one or more Settings. `none` and `full` store no Setting list. Use `mode column set/delete` so references are canonicalized and validated.
 
+## Current state persistence
+
+`Backup/current_state.json` stores the Current state in one JSON object:
+
+```json
+{
+  "columns": { "Models": { "strategy": "cover", "settings": ["Alpha.txt"] } },
+  "relation": { "kind": "following", "originMode": "Max" },
+  "mappings": [ { "source": "...", "target": "..." } ]
+}
+```
+
+`columns` are the authoritative selections; `mappings` are the planned links (under `increment` they also keep the cumulative baseline); `relation` describes only the relationship to a named Mode. `relation.kind` is `following` or `detached`; no `relation` means the Current is independent. A legacy file (containing an `intent` field or missing `columns`) is rejected without a compatibility migration; deleting the file and running `sync` rebuilds an empty Current and deletes the old `history.log`. Each `history.log` line stores the before/after `columns`, `relation`, and `mappings`; `revert` rewinds only Current state, never resource metadata or content.
+
 ## CLI-owned files
 
 Do not manually edit:
@@ -64,4 +78,4 @@ Do not manually edit:
 - `.cfgfc-session/`
 - `.cfgfc-transactions/`
 
-They contain apply intent, current/previous mappings, PPID context, mutation locks, snapshots, staging, and recovery records. Read-only `status` can report incomplete transactions; the next mutating command performs recovery.
+They contain Current state and its previous snapshots, PPID context, mutation locks, snapshots, staging, and recovery records. Read-only `status` can report incomplete transactions; the next mutating command performs recovery.

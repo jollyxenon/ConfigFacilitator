@@ -33,7 +33,8 @@ commands=(
   "setting content mkdir" "setting content move" "setting content delete"
   "mode list" "mode show" "mode create" "mode set" "mode rename" "mode delete"
   "mode column list" "mode column set" "mode column delete"
-  "use" "status" "apply mode" "apply column" "refresh" "sync" "root" "reset" "revert"
+  "current show" "current column list" "current column set" "current column delete"
+  "use" "status" "apply mode" "apply column" "refresh" "sync" "root" "reset" "revert" "web"
   "completion bash" "completion zsh" "completion fish" "completion powershell"
 )
 for cmd in "${commands[@]}"; do
@@ -49,15 +50,16 @@ done
 命令或工作流变化时，使用临时 HOME/profile，并通过 `cfgfc root <Path>` 持久化一个独立备用根目录。只使用 `cfgfc` 和 stdin/重定向覆盖：
 
 1. Project、Column、从零开始的目标、stdin 文件 Setting、目录 Setting 与嵌套内容、Mode 和 Mode 选择；
-2. `apply mode`、`apply column`、人类模式 `status`、`--json` envelope 和退出码；
+2. `apply mode`、`apply column`、人类模式 `status`（显示 `Current: following/independent [...]`）、`current show`、`--json` envelope 和退出码；
 3. 仅修改内容字节，并确认活动链接立即可见；
-4. 修改元数据后执行 `refresh`，包括 `full` 选择加入新 Setting；
+4. 修改元数据后执行 `refresh`，`full` 选择加入新 Setting，以及修改被跟随 Mode 的选择时自动重新规划；
 5. 重命名活动 Setting/Column/Mode/Project，并确认 canonical 上下文和引用更新；
 6. 内容和资源删除，验证 `--yes`、`--cascade`、`--force-targets` 相互独立；
 7. `reset` 和单步 `revert`；
-8. 外部来源消失、立即删除 Index 元数据、Mode/runtime 引用无法解析、apply/refresh 失败、不支持 prune 参数，以及通过资源命令显式重建；
+8. 外部来源消失、sync 按 Project 隔离事务、索引与空 Current 重建、Mode/runtime 引用无法解析、apply/refresh 失败、不支持 prune 参数，以及通过资源命令显式重建；
 9. prepared 事务诊断、重启恢复、回滚和并发变更锁；
-10. 文件型与目录型目标所有权/漂移回收，并确认只处理已记录路径。
+10. 文件型与目录型目标所有权/漂移回收，并确认只处理已记录路径；
+11. Web UI 冒烟：启动 `cfgfc web`，打开 `http://127.0.0.1:49631`，演练 `/api/snapshot` 和一次 `/api/command` 写入，确认过期 `revision` 返回 `409`、端口被占用时报持久化错误、Ctrl-C 干净退出。
 
 主要生命周期不得通过直接编辑索引或来源来创建。只有明确测试 sync 互操作的部分才允许从外部删除文件；重建资源必须使用 cfgfc，不能声称 sync 会恢复已删除元数据。
 

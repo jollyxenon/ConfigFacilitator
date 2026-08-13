@@ -12,14 +12,13 @@
 
 - Resource metadata: `project`, `column`, `setting`, and `mode` with `list`, `show`, `create`, `set`, `rename`, and `delete`
 - Target structure: `column target list/add/set/delete` and `setting target list/set/reset`
-- Mode selections: `mode column list/set/delete`
-- Setting payloads: `setting create --kind file|directory` with mutually exclusive `--from` / `--stdin` / `--text`, plus `setting content list/read/write/mkdir/move/delete`
-- Context and inspection: `use <Project|global>` and `status`
-- Activation: `apply mode`, `apply column`, `refresh`, `reset`, and one-step `revert`
-- Reconciliation: `sync` discovers resources and immediately removes Index metadata for disappeared Project/Column/Setting sources; it does not cascade Mode/runtime references or provide prune; Project scope and `--all` remain supported
+- Current state: `current show`, `current column list/set/delete` — (Current) is itself the temporary Mode; `relation.kind` is `following` (edits to that Mode auto-sync Current) or `detached` (forked, preserved `originMode`)
+- Context and inspection: `use <Project|global>` and `status` (reports `Current: following (Mode) [...]`)
+- Activation: `apply mode`, `apply column`, `refresh`, `reset`, and one-step `revert` (Current-only history)
+- Reconciliation: per-Project atomic `sync` — removes Index metadata for disappeared Project/Column/Setting sources, rebuilds missing Index entries from the filesystem, recreates a missing `current_state.json` as empty (deleting stale `history.log`), replans following Currents; `sync --all` aggregates per-Project success/failure
 - Root selection: `root [Path]`, without content migration
 - Automation: stable `--json` envelopes and exit codes `0`, `2`-`6`
-- Destructive controls: independent `--yes`, `--cascade`, and `--force-targets`
+- Local Web UI: `cfgfc web [--port 49631]` — embedded zero-dependency frontend over `/api/snapshot`, `/api/command`, `/api/preview`; mutating commands require the whole-warehouse `revision` (409 on conflict)
 - Shell completion: `completion <bash|zsh|fish|powershell>` with scoped canonical-name and alias completion
 - Removed without compatibility aliases: `new`, `switch`, `list`, `update`, flag-only apply, `-a`, `-f`, and `--force`
 
@@ -52,7 +51,8 @@ commands=(
   "setting content mkdir" "setting content move" "setting content delete"
   "mode list" "mode show" "mode create" "mode set" "mode rename" "mode delete"
   "mode column list" "mode column set" "mode column delete"
-  "use" "status" "apply mode" "apply column" "refresh" "sync" "root" "reset" "revert"
+  "current show" "current column list" "current column set" "current column delete"
+  "use" "status" "apply mode" "apply column" "refresh" "sync" "root" "reset" "revert" "web"
   "completion bash" "completion zsh" "completion fish" "completion powershell"
 )
 for cmd in "${commands[@]}"; do
