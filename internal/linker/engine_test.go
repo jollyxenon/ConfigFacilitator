@@ -268,6 +268,31 @@ func TestReplaceMappingsWithForceOverridesUnmanagedTarget(t *testing.T) {
 	assertFileSymlinkTarget(t, target, source)
 }
 
+func TestReplaceMappingsIdempotentOverLegacyOwnedLinkWithoutRecordedState(t *testing.T) {
+	// Regression: after `sync` rebuilds a missing current_state.json the recorded
+	// mappings are empty while legacy owned links still exist on the filesystem.
+	// A non-forced replace must recognize the in-place owned link instead of
+	// failing with EEXIST (and must not delete the target on rollback).
+	engine := New()
+	project, root := newProjectPaths(t)
+	source := writeFile(t, root, "warehouse/source.txt", "alpha")
+	target := filepath.Join(root, "target.txt")
+	if err := os.Symlink(source, target); err != nil {
+		t.Fatalf("seed legacy link: %v", err)
+	}
+	if err := engine.ReplaceMappings(project, []Mapping{{Source: source, Target: target}}); err != nil {
+		t.Fatalf("replace over legacy owned link without recorded state: %v", err)
+	}
+	assertFileSymlinkTarget(t, target, source)
+	state, err := repository.LoadCurrentState(project.CurrentStatePath)
+	if err != nil {
+		t.Fatalf("load current state: %v", err)
+	}
+	if len(state.Mappings) != 1 {
+		t.Fatalf("expected 1 recorded mapping, got %d", len(state.Mappings))
+	}
+}
+
 func TestReplaceMappingsFailsClearlyWhenSourceIsMissing(t *testing.T) {
 	engine := New()
 	project, root := newProjectPaths(t)

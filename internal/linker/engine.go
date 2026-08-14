@@ -413,6 +413,14 @@ func createOwnedSymlink(mapping Mapping) error {
 	if err := os.MkdirAll(filepath.Dir(mapping.Target), 0o755); err != nil {
 		return err
 	}
+	// Idempotent: an already-in-place owned link (target is a symlink pointing
+	// at the recorded source) needs no replacement. This also covers states
+	// where the recorded Current mappings are empty but legacy owned links
+	// still exist on the filesystem, e.g. right after `sync` rebuilt a missing
+	// current_state.json.
+	if resolved, err := os.Readlink(mapping.Target); err == nil && resolved == mapping.Source {
+		return nil
+	}
 	if err := createSymlink(mapping.Source, mapping.Target); err != nil {
 		return err
 	}
