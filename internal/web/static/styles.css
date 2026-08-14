@@ -121,8 +121,9 @@ button, input, select, textarea { font: inherit; color: inherit; }
   width: 100%; text-align: left; cursor: pointer;
   background: none; border: 0;
   border-bottom: 1px solid var(--line-hair);
-  padding: 5px 10px 5px 12px;
-  min-height: 28px;
+  /* 所有侧栏行固定等高 28px（Project/Column/Mode 条目与分组头完全一致） */
+  padding: 4px 10px 4px 12px;
+  height: 28px;
   grid-template-columns: 3px 14px minmax(0,1fr) auto;
 }
 .nav-item:hover { background: var(--surface-2); }
@@ -163,9 +164,9 @@ button, input, select, textarea { font: inherit; color: inherit; }
   display: flex; align-items: center; gap: 6px;
   width: 100%; text-align: left; cursor: pointer;
   background: none; border: 0;
-  /* 与 .nav-item 同高（min-height 28px），避免点击区域/视觉高度不一 */
-  padding: 5px 10px 5px 28px;
-  min-height: 28px;
+  /* 与 .nav-item 完全同高（固定 28px），避免点击区域/视觉高度不一 */
+  padding: 4px 10px 4px 28px;
+  height: 28px;
   border-bottom: 1px solid var(--line-hair);
   color: var(--ink-muted);
 }

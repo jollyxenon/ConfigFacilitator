@@ -99,6 +99,8 @@ func (handler *Handler) serveStatic(writer http.ResponseWriter, request *http.Re
 		contentType = "application/javascript; charset=utf-8"
 	}
 	writer.Header().Set("Content-Type", contentType)
+	// 本地开发工具：禁止缓存静态资源，改完代码刷新即生效（浏览器/代理不缓存旧版）
+	writer.Header().Set("Cache-Control", "no-cache")
 	writer.WriteHeader(http.StatusOK)
 	_, _ = writer.Write(data)
 }
