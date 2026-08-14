@@ -338,3 +338,34 @@ func assertDoesNotContainTarget(t *testing.T, mappings []linker.Mapping, target 
 		}
 	}
 }
+
+// Force planning keeps the later mapping when two settings resolve to the
+// same target instead of failing the whole plan (force apply semantics).
+func TestPlanColumnsForceResolvesDuplicateTargets(t *testing.T) {
+	project := sampleProject()
+	column := project.Columns["opencode.json"]
+	gpt := column.Settings["GPT.json"]
+	gpt.Metadata.TargetDir = []string{"~/.config/opencode"}
+	gpt.Metadata.TargetName = []string{"opencode.json"}
+	column.Settings["GPT.json"] = gpt
+	project.Columns["opencode.json"] = column
+
+	options := PlanOptions{HomeDir: "/home/test", Env: map[string]string{}, OS: "linux"}
+	columns := map[string]index.ModeColumnSelection{"opencode.json": {Strategy: "cover", Settings: []string{"CLAUDE.json", "GPT.json"}}}
+
+	if _, err := PlanColumns(project, columns, nil, options); err == nil {
+		t.Fatal("expected duplicate target to fail without force")
+	}
+
+	options.Force = true
+	mappings, err := PlanColumns(project, columns, nil, options)
+	if err != nil {
+		t.Fatalf("force plan: %v", err)
+	}
+	if len(mappings) != 1 {
+		t.Fatalf("len(mappings) = %d, want 1 (duplicate merged)", len(mappings))
+	}
+	if mappings[0].Source != gpt.Path {
+		t.Fatalf("force mapping source = %q, want GPT.json to win", mappings[0].Source)
+	}
+}

@@ -121,8 +121,8 @@ button, input, select, textarea { font: inherit; color: inherit; }
   width: 100%; text-align: left; cursor: pointer;
   background: none; border: 0;
   border-bottom: 1px solid var(--line-hair);
-  padding: 5px 10px 5px 0;
-  grid-template-columns: 3px 1fr auto;
+  padding: 5px 10px 5px 12px;
+  grid-template-columns: 3px minmax(0,1fr) auto;
 }
 .nav-item:hover { background: var(--surface-2); }
 .nav-item[aria-current="true"] { background: var(--signal-bg); }
@@ -130,18 +130,25 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .bar { height: 100%; min-height: 22px; background: transparent; }
 .nav-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .nav-sub { color: var(--ink-faint); font-size: 10.5px; }
-.nav-item.lv1 { padding-left: 0; }
-.nav-item.lv2 { grid-template-columns: 3px 14px 1fr auto; }
-.nav-item.lv2 .nav-name { padding-left: 0; }
 
-/* Mode 段里的 Project 分组头（不可点，只是分组） */
+/* 层级字体：按上下级从重到轻（Project > 分组头 > 条目） */
+.nav-item.lv1 { padding-left: 12px; font-weight: 700; }
+.nav-item.lv1 .nav-name { font-size: 12.5px; }
+.nav-item.lv2 { padding-left: 40px; font-weight: 400; }
+.nav-item.lv2 .nav-name { font-size: 11.5px; }
+
+/* Project 段里的 Column / Mode 分组头（不可点，只是分组） */
 .nav-group {
   display: flex; align-items: center; gap: 6px;
-  padding: 6px 10px 4px 12px;
+  padding: 6px 10px 4px 28px;
   border-bottom: 1px solid var(--line-hair);
   color: var(--ink-muted);
 }
-.nav-group .gname { flex: 1; font-family: var(--font-cjk); font-size: 11px; }
+.nav-group .gname {
+  flex: 1; font-family: var(--font-disp);
+  font-size: 10.5px; font-weight: 600;
+  letter-spacing: .14em; text-transform: uppercase;
+}
 .nav-group .gid { font-size: 10px; color: var(--ink-faint); }
 
 /* (Current) 条目：运行时状态，视觉上和 Mode 区分 */
@@ -188,6 +195,9 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .tab[aria-selected="true"] { color: var(--signal); border-bottom-color: var(--signal); font-weight: 600; }
 .tab-fill { flex: 1; border-bottom: 0; }
 .pane { flex: 1; overflow: auto; min-height: 0; }
+.pane[hidden] { display: none; }
+/* 资源组织页：树与详情各自独立滚动，头部固定 */
+#ptab-targets { overflow: hidden; display: flex; flex-direction: column; }
 .pane[hidden] { display: none; }
 
 .vhead { display: flex; align-items: baseline; gap: 12px; padding: 13px 16px 9px; }
@@ -255,8 +265,8 @@ table.grid { width: 100%; border-collapse: collapse; }
 .callout.warn { border-left-color: var(--warn); background: var(--warn-bg); }
 
 /* ===== Column / Setting 视图 ===================================== */
-.split { display: grid; grid-template-columns: minmax(0,340px) minmax(0,1fr); }
-.tree { border-right: 1px solid var(--line); padding-bottom: 20px; }
+.split { display: grid; grid-template-columns: minmax(0,340px) minmax(0,1fr); flex: 1; min-height: 0; }
+.tree { border-right: 1px solid var(--line); padding-bottom: 20px; overflow: auto; min-height: 0; }
 .tree-col {
   display: flex; align-items: center; gap: 8px;
   width: 100%; text-align: left; cursor: pointer;
@@ -276,7 +286,7 @@ table.grid { width: 100%; border-collapse: collapse; }
 }
 .tree-set:hover { background: var(--signal-bg); }
 .tree-set[aria-current="true"] { background: var(--signal-bg); box-shadow: inset 3px 0 0 var(--signal); }
-.panel { padding: 13px 16px 24px; min-width: 0; }
+.panel { padding: 13px 16px 24px; min-width: 0; overflow: auto; min-height: 0; }
 .panel h2, .wire h2 {
   margin: 0 0 4px; font-family: var(--font-cjk);
   font-size: 10.5px; letter-spacing: .12em;
@@ -333,7 +343,7 @@ table.matrix { border-collapse: collapse; }
 .dot-pending { position: absolute; top: 4px; right: 4px; width: 5px; height: 5px; background: var(--signal-2); }
 .jack:disabled { cursor: not-allowed; background: repeating-linear-gradient(135deg, transparent 0 5px, var(--surface-2) 5px 6px); }
 
-.wire { border-left: 1px solid var(--line); background: var(--surface); padding: 13px 14px 20px; min-width: 0; }
+.wire { border-left: 1px solid var(--line); background: var(--surface); padding: 13px 14px 20px; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
 .wire .hint { font-family: var(--font-cjk); color: var(--ink-faint); font-size: 11px; padding: 9px 0; }
 .wireline {
   border: 1px solid var(--line); border-left: 3px solid var(--idle);
@@ -429,7 +439,7 @@ dialog::backdrop { background: rgba(26,26,24,.34); }
 .scope { display: flex; flex-direction: column; flex: 1; min-height: 0; }
 .scope[hidden] { display: none; }
 .mode-body { display: grid; grid-template-columns: minmax(0,1fr) 340px; flex: 1; min-height: 0; }
-.cards { padding: 0 16px 20px; overflow: auto; min-width: 0; }
+.cards { padding: 0 16px 20px; overflow: auto; min-width: 0; min-height: 0; }
 
 .card {
   border: 1px solid var(--line); background: var(--bg);
@@ -485,7 +495,7 @@ dialog::backdrop { background: rgba(26,26,24,.34); }
 .setrow .stgt { color: var(--signal); font-size: 10.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 .wireline.hot { border-color: var(--signal); background: var(--signal-bg); }
-.wire-scroll { overflow: auto; }
+.wire-scroll { overflow: auto; flex: 1; min-height: 0; }
 
 .diag {
   border: 1px solid var(--bad); border-left: 3px solid var(--bad);
@@ -495,9 +505,19 @@ dialog::backdrop { background: rgba(26,26,24,.34); }
 }
 .diag code { font-family: var(--font-mono); }
 
+/* 已记录映射表：过长时内部滚动，不把整页顶出（执行抽屉保持固定） */
+#modeLiveTable { max-height: 30vh; overflow: auto; }
 .maptable { margin: 0 16px 12px; }
 .mode-foot {
   display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
   padding: 9px 16px; border-top: 1px solid var(--line);
   background: var(--surface);
 }
+
+/* 强制应用条：阻塞时浮现在「应用到 (Current)」上方 */
+.force-bar {
+  display: flex; align-items: center; gap: 10px; flex-basis: 100%;
+  padding: 7px 10px; margin: -9px -16px 4px;
+  background: var(--warn-bg); border-bottom: 1px solid var(--line);
+}
+.force-bar .why { flex: 1; font-family: var(--font-cjk); font-size: 10.5px; color: var(--warn); }

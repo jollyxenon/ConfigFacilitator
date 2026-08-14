@@ -390,7 +390,8 @@ type commandRequest struct {
 	Yes          bool                                  `json:"yes"`
 	Cascade      bool                                  `json:"cascade"`
 	ForceTargets bool                                  `json:"forceTargets"`
-	All          bool                                  `json:"all"`
+	Force         bool                                  `json:"force"`
+	All           bool                                  `json:"all"`
 }
 
 // registeredCommands lists every command accepted by the local API.
@@ -477,6 +478,7 @@ type commandResult struct {
 func (handler *Handler) executeCommand(rootPath string, payload commandRequest) (int, commandResult, *errorBody) {
 	repo := repository.New(rootPath)
 	options := planOptions(handler.dependencies)
+	options.Force = payload.Force
 	force := payload.ForceTargets
 	switch payload.Command {
 	case "project.create":

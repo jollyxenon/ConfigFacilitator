@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/xenon/ConfigFacilitator/internal/content"
+	"github.com/xenon/ConfigFacilitator/internal/index"
 	"github.com/xenon/ConfigFacilitator/internal/mutate"
 	"github.com/xenon/ConfigFacilitator/internal/planner"
 	"github.com/xenon/ConfigFacilitator/internal/repository"
@@ -199,4 +200,97 @@ func TestStaticAssetsServed(t *testing.T) {
 	if recorder.Code != http.StatusOK || !bytes.Contains(recorder.Body.Bytes(), []byte("cfgfc")) {
 		t.Fatalf("app.js status=%d body=%q", recorder.Code, recorder.Body.String())
 	}
+}
+
+// Force apply bypasses duplicate-target planning errors: the later setting
+// wins the shared target and the rest of the plan still applies.
+func TestForceApplyBypassesDuplicateTarget(t *testing.T) {
+	handler, root := testHandler(t)
+	seedWarehouse(t, root)
+
+	repo := repository.New(root)
+	options := planner.PlanOptions{HomeDir: filepath.Dir(root), Env: map[string]string{}, OS: "linux"}
+	// Second Column whose setting resolves to the same target as Models/Alpha.txt.
+	if err := mutate.CreateColumn(repo, "OpenCode", "Profiles", mutate.Metadata{}); err != nil {
+		t.Fatalf("column create: %v", err)
+	}
+	if _, _, err := mutate.AddColumnTarget(repo, "OpenCode", "Profiles", mutate.TargetPosition{Dir: filepath.Join(filepath.Dir(root), "targets"), Name: "", DirMode: "fixed", NameMode: "setting"}, options); err != nil {
+		t.Fatalf("column target: %v", err)
+	}
+	if err := mutate.CreateSetting(repo, "OpenCode", "Profiles", "Beta.txt", "file", mutate.Metadata{}, contentSourceText("beta")); err != nil {
+		t.Fatalf("setting create: %v", err)
+	}
+	// Simulate a hand-edited index: Beta.txt resolves to the same target as
+	// Models/Alpha.txt. CLI mutation rejects this, but hand edits can slip in.
+	profilesIndex, err := repo.LoadSettingIndex("OpenCode", "Profiles")
+	if err != nil {
+		t.Fatal(err)
+	}
+	beta := profilesIndex.Settings["Beta.txt"]
+	beta.TargetName = []string{"Alpha.txt"}
+	profilesIndex.Settings["Beta.txt"] = beta
+	if err := repo.SaveSettingIndex("OpenCode", "Profiles", profilesIndex); err != nil {
+		t.Fatal(err)
+	}
+	if err := workflow.SetModeColumn(repo, "OpenCode", "Max", "Models", "cover", []string{"Alpha.txt"}, false, options); err != nil {
+		t.Fatalf("mode column set: %v", err)
+	}
+	// Hand-edit ModeIndex too: Max also selects Profiles/Beta.txt (CLI would
+	// reject the collision, but manual index edits can introduce it).
+	modeIndex, err := repo.LoadModeIndex("OpenCode")
+	if err != nil {
+		t.Fatal(err)
+	}
+	max := modeIndex.Modes["Max"]
+	max.Columns["Profiles"] = index.ModeColumnSelection{Strategy: "cover", Settings: []string{"Beta.txt"}}
+	modeIndex.Modes["Max"] = max
+	if err := repo.SaveModeIndex("OpenCode", modeIndex); err != nil {
+		t.Fatal(err)
+	}
+
+	revision := snapshotRevision(t, handler)
+
+	// Normal apply fails: the two columns resolve to the same target.
+	_, envelope := post(t, handler, "/api/command", map[string]any{
+		"command": "apply.mode", "revision": revision, "project": "OpenCode", "mode": "Max",
+	})
+	if envelope.OK {
+		t.Fatalf("duplicate apply unexpectedly succeeded")
+	}
+
+	// Force apply succeeds and the later Column (Profiles) wins the target.
+	_, envelope = post(t, handler, "/api/command", map[string]any{
+		"command": "apply.mode", "revision": revision, "project": "OpenCode", "mode": "Max", "force": true,
+	})
+	if !envelope.OK {
+		t.Fatalf("force apply failed: code=%s message=%s", envelope.Error.Code, envelope.Error.Message)
+	}
+	data := envelope.Data.(map[string]any)
+	snapshotData := data["snapshot"].(map[string]any)
+	projects := snapshotData["projects"].(map[string]any)
+	current := projects["OpenCode"].(map[string]any)["current"].(map[string]any)
+	mappings := current["mappings"].([]any)
+	if len(mappings) != 1 {
+		t.Fatalf("force apply mappings = %#v", mappings)
+	}
+	first := mappings[0].(map[string]any)
+	if first["source"] != filepath.Join(root, "OpenCode", "Column", "Profiles", "Beta.txt") {
+		t.Fatalf("force apply mapping source = %#v, want Profiles/Beta.txt", first)
+	}
+}
+
+func snapshotRevision(t *testing.T, handler *Handler) string {
+	t.Helper()
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/api/snapshot", nil))
+	var envelope responseEnvelope
+	if err := json.Unmarshal(recorder.Body.Bytes(), &envelope); err != nil {
+		t.Fatal(err)
+	}
+	data := envelope.Data.(map[string]any)
+	revision, _ := data["revision"].(string)
+	if revision == "" {
+		t.Fatal("snapshot has no revision")
+	}
+	return revision
 }

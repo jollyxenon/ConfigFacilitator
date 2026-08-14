@@ -46,6 +46,9 @@ type PlanOptions struct {
 	HomeDir string
 	Env     map[string]string
 	OS      string
+	// Force resolves duplicate-target conflicts by letting the later mapping
+	// win instead of failing the whole plan (used by force apply).
+	Force bool
 }
 
 // PlanColumnMappings builds the mapping set for one explicit column selection.
@@ -70,7 +73,7 @@ func PlanColumnMappings(project warehouse.Project, columnReference string, setti
 		if err != nil {
 			return nil, err
 		}
-		mappings, err = appendUniqueMappings(mappings, resolvedMappings)
+		mappings, err = appendUniqueMappings(mappings, resolvedMappings, options.Force)
 		if err != nil {
 			return nil, err
 		}
@@ -137,7 +140,7 @@ func ValidateProjectTargets(project warehouse.Project, options PlanOptions) erro
 			if err != nil {
 				return err
 			}
-			mappings, err = appendUniqueMappings(mappings, resolved)
+			mappings, err = appendUniqueMappings(mappings, resolved, false)
 			if err != nil {
 				return err
 			}
@@ -187,7 +190,7 @@ func PlanColumns(project warehouse.Project, columns map[string]index.ModeColumnS
 			return nil, err
 		}
 		var appendErr error
-		result, appendErr = appendUniqueMappings(result, columnMappings)
+		result, appendErr = appendUniqueMappings(result, columnMappings, options.Force)
 		if appendErr != nil {
 			return nil, appendErr
 		}
@@ -237,7 +240,7 @@ func resolveSettingMappings(column warehouse.Column, setting warehouse.Setting, 
 		}
 		mappings = append(mappings, linker.Mapping{Source: setting.Path, Target: cleanJoinedPathForOS(options.OS, resolvedDir, resolvedName)})
 	}
-	return appendUniqueMappings(nil, mappings)
+	return appendUniqueMappings(nil, mappings, options.Force)
 }
 
 // cleanJoinedPathForOS keeps planned target syntax aligned with PlanOptions.OS
@@ -395,7 +398,7 @@ func resolveSelectedMappings(column warehouse.Column, settingReferences []string
 		if err != nil {
 			return nil, err
 		}
-		mappings, err = appendUniqueMappings(mappings, resolvedMappings)
+		mappings, err = appendUniqueMappings(mappings, resolvedMappings, options.Force)
 		if err != nil {
 			return nil, err
 		}
@@ -415,7 +418,7 @@ func resolveAllColumnMappings(column warehouse.Column, options PlanOptions) ([]l
 		if err != nil {
 			return nil, err
 		}
-		mappings, err = appendUniqueMappings(mappings, resolvedMappings)
+		mappings, err = appendUniqueMappings(mappings, resolvedMappings, options.Force)
 		if err != nil {
 			return nil, err
 		}
@@ -447,24 +450,31 @@ func upsertMapping(current []linker.Mapping, next linker.Mapping) []linker.Mappi
 	return append(current, next)
 }
 
-func appendUniqueMappings(current []linker.Mapping, next []linker.Mapping) ([]linker.Mapping, error) {
+// appendUniqueMappings merges mappings without target collisions. In strict
+// mode a collision fails the plan; with force the newer mapping replaces the
+// older one (later columns/settings win), which force apply relies on.
+func appendUniqueMappings(current []linker.Mapping, next []linker.Mapping, force bool) ([]linker.Mapping, error) {
 	result := append([]linker.Mapping{}, current...)
-	seen := map[string]struct{}{}
-	for _, mapping := range result {
-		seen[mapping.Target] = struct{}{}
+	index := map[string]int{}
+	for position, mapping := range result {
+		index[mapping.Target] = position
 	}
 	for _, mapping := range next {
-		if _, exists := seen[mapping.Target]; exists {
-			return nil, fmt.Errorf("duplicate target %s", mapping.Target)
+		if position, exists := index[mapping.Target]; exists {
+			if !force {
+				return nil, fmt.Errorf("duplicate target %s", mapping.Target)
+			}
+			result[position] = mapping
+			continue
 		}
+		index[mapping.Target] = len(result)
 		result = append(result, mapping)
-		seen[mapping.Target] = struct{}{}
 	}
 	return result, nil
 }
 
 func validateUniqueMappingTargets(mappings []linker.Mapping) error {
-	_, err := appendUniqueMappings(nil, mappings)
+	_, err := appendUniqueMappings(nil, mappings, false)
 	return err
 }
 
