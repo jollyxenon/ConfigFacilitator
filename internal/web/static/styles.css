@@ -218,9 +218,9 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .tab-fill { flex: 1; border-bottom: 0; }
 .pane { flex: 1; overflow: auto; min-height: 0; }
 .pane[hidden] { display: none; }
-/* 资源组织页：树与详情各自独立滚动，头部固定 */
+/* 资源组织页：树与详情各自独立滚动，头部固定；切走时必须隐藏（ID 特异性高于 .pane[hidden]） */
 #ptab-targets { overflow: hidden; display: flex; flex-direction: column; }
-.pane[hidden] { display: none; }
+#ptab-targets[hidden] { display: none; }
 
 .vhead { display: flex; align-items: baseline; gap: 12px; padding: 13px 16px 9px; }
 .vhead h1 { margin: 0; font-family: var(--font-disp); font-size: 17px; font-weight: 700; }
@@ -460,12 +460,15 @@ dialog::backdrop { background: rgba(26,26,24,.34); }
 /* ===== 作用域容器（避免 hidden 被内联 display 覆盖） ============== */
 .scope { display: flex; flex-direction: column; flex: 1; min-height: 0; }
 .scope[hidden] { display: none; }
-/* Mode 作用域：已链接表 + 配置块 + 预览块共用一个滚动条，
-   配置与预览两列顶部对齐、下沿取较长者，一一对应不再分条同步 */
+/* Mode 作用域：已链接表 + 配置/预览共用一个滚动条；每个 Column 一个块，
+   块内左配置右预览从块顶对齐、下沿取较长者 */
 .mode-scroll { flex: 1; min-height: 0; overflow: auto; }
-.mode-body { display: grid; grid-template-columns: minmax(0,1fr) 340px; }
-.cards { padding: 0 16px 20px; min-width: 0; }
-
+.wire-head { margin: 0 16px 8px; font-family: var(--font-cjk); font-size: 10.5px; letter-spacing: .12em; color: var(--ink-faint); font-weight: 400; }
+.mode-body { padding-bottom: 20px; }
+.col-block { display: grid; grid-template-columns: minmax(0,1fr) 340px; }
+.col-block + .col-block { border-top: 1px solid var(--line-hair); }
+.col-cards { padding: 0 0 14px 16px; min-width: 0; }
+.col-wire { border-left: 1px solid var(--line); background: var(--surface); padding: 13px 14px 14px; min-width: 0; }
 .card {
   border: 1px solid var(--line); background: var(--bg);
   margin-bottom: 10px;

@@ -218,11 +218,10 @@ function renderStatusbar() {
 /* ================= 侧栏 ================= */
 const navLabel = (disp, id) => (!disp || disp === id) ? esc(id) : esc(disp) + ' <span class="nav-sub">[' + esc(id) + "]</span>";
 
-/* 展开/收起箭头：带 toggleKey 的可点，叶子行只占位保持列对齐 */
-const caret = (expanded, toggleKey) =>
-  '<span class="caret' + (expanded ? " open" : "") + '"' +
-  (toggleKey ? ' data-nav-toggle="' + esc(toggleKey) + '" aria-expanded="' + expanded + '"' : "") + ">" +
-  (toggleKey ? (expanded ? "▾" : "▸") : "") + "</span>";
+/* 展开/收起箭头：expandable 节点显示 ▸/▾（整行可点切换展开），叶子只占位保持列对齐 */
+const caret = (expanded, expandable) =>
+  '<span class="caret' + (expanded ? " open" : "") + '" aria-expanded="' + (expandable ? expanded : false) + '">' +
+  (expandable ? (expanded ? "▾" : "▸") : "") + "</span>";
 
 function renderNav() {
   const projects = S.snap ? Object.keys(S.snap.projects) : [];
@@ -236,7 +235,7 @@ function renderNav() {
     const on = S.sel.seg === "project" && S.sel.project === name;
     const live = liveState(name);
     let html = '<button class="nav-item lv1" data-nav="project" data-project="' + esc(name) + '" aria-current="' + on + '">' +
-      '<span class="bar"></span>' + caret(ns.open, "project|" + name) +
+      '<span class="bar"></span>' + caret(ns.open, true) +
       '<span class="nav-name">' + navLabel(p.displayName, name) + "</span>" +
       '<span class="nav-sub">' + nCol + "C · " + nSet + "S</span></button>";
     html += "<div class='nav-subtree'" + (ns.open ? "" : " hidden") + ">";
@@ -247,7 +246,7 @@ function renderNav() {
       const nS = Object.keys(p.columns[colName].settings || {}).length;
       let row = '<button class="nav-item lv2" data-nav="column" data-project="' + esc(name) + '"' +
         ' data-column="' + esc(colName) + '" aria-current="' + colOn + '">' +
-        '<span class="bar"></span>' + caret(colOpen, "column|" + name + "|" + colName) +
+        '<span class="bar"></span>' + caret(colOpen, true) +
         '<span class="nav-name">' + navLabel(p.columns[colName].displayName, colName) + "</span>" +
         '<span class="nav-sub">' + nS + "S</span></button>";
       row += "<div class='nav-subtree'" + (colOpen ? "" : " hidden") + ">" +
@@ -279,7 +278,7 @@ function renderNav() {
       const mOpen = !!ns.modes[m];
       let row = '<button class="nav-item lv2" data-nav="mode" data-project="' + esc(name) + '"' +
         ' data-mode="' + esc(m) + '" aria-current="' + on2 + '">' +
-        '<span class="bar"></span>' + caret(mOpen, "mode|" + name + "|" + m) +
+        '<span class="bar"></span>' + caret(mOpen, true) +
         '<span class="nav-name">' + navLabel(p.modes[m].displayName, m) + "</span>" +
         (isLive ? badge("b-ok", "生效中") : '<span class="nav-sub">' + n + "C</span>") + "</button>";
       row += "<div class='nav-subtree'" + (mOpen ? "" : " hidden") + ">" +
@@ -482,7 +481,7 @@ const duplicateBlocked = () => {
 function renderModeScope() {
   const p = cur();
   const isCurrent = S.sel.mode === null;
-  if (!p) { $("#modeCallout").innerHTML = ""; $("#modeLiveTable").innerHTML = ""; $("#cards").innerHTML = ""; $("#modeFoot").innerHTML = ""; return; }
+    if (!p) { $("#modeCallout").innerHTML = ""; $("#modeLiveTable").innerHTML = ""; $("#modeBody").innerHTML = ""; $("#modeFoot").innerHTML = ""; $("#wireHead").textContent = "线路预览"; return; }
   const live = liveState(S.sel.project);
   $("#modeTitle").textContent = isCurrent ? "（Current）" : ((p.modes[S.sel.mode] || {}).displayName || S.sel.mode);
   $("#modeSubtitle").textContent = isCurrent
@@ -492,9 +491,7 @@ function renderModeScope() {
   const callout = $("#modeCallout");
   if (!p.available) {
     callout.innerHTML = '<div class="callout warn">Project 当前状态不可用：' + esc((live.error) || "未知原因") + "</div>";
-    $("#modeLiveTable").innerHTML = ""; $("#cards").innerHTML = ""; $("#modeFoot").innerHTML = "";
-    renderWire();
-    return;
+    $("#modeLiveTable").innerHTML = ""; $("#modeBody").innerHTML = ""; $("#modeFoot").innerHTML = ""; $("#wireHead").textContent = "线路预览";
   }
   if (isCurrent) {
     let message;
@@ -518,8 +515,8 @@ function renderModeScope() {
     callout.innerHTML = '<div class="callout' + (isLive ? "" : " warn") + '">' + text + "</div>";
   }
   renderLiveTable(isCurrent, live);
-  renderCards(isCurrent, live);
-  renderWire();
+  renderModeBody();
+  renderModeFoot(isCurrent);
   renderModeFoot(isCurrent);
 }
 
@@ -540,63 +537,115 @@ function renderLiveTable(isCurrent, live) {
     "</tbody></table></div>";
 }
 
-function renderCards(isCurrent, live) {
+/* 单个 Column 的配置卡片 HTML（可被任意块复用） */
+function cardHtmlForColumn(colName) {
   const p = cur();
   const d = decls();
-  let html = "";
+  const col = p.columns[colName];
+  const decl = d[colName];
+  const on = !!decl;
+  const strategy = decl ? (decl.strategy || "cover") : "cover";
+  let html = "<div class='card" + (on ? " on" : "") + (S.hover === colName ? " hot" : "") +
+    "' data-card='" + esc(colName) + "'>" +
+    "<div class='card-head'>" +
+    "<button class='toggle' aria-pressed='" + on + "' data-toggle='" + esc(colName) + "'></button>" +
+    "<span><span class='cname'>" + esc(col.displayName || colName) + "</span> " +
+    "<span class='cid'>" + esc(colName) + "</span></span>" +
+    "<span class='nav-sub'>" + col.targetNumber + " target</span>" +
+    "</div>";
+  if (on) {
+    html += "<div class='card-body'>";
+    html += "<div class='field'><label>策略</label><div>" +
+      "<div class='seg'>" + STRATEGIES.map(([k]) =>
+        "<button data-strategy='" + esc(colName) + "|" + k + "' aria-pressed='" + (strategy === k) + "'>" +
+        k + "</button>").join("") + "</div>" +
+      "<div class='seg-why'>" + esc(STRATEGIES.find(s => s[0] === strategy)[1]) + "</div></div></div>";
+    const needPick = strategy === "cover" || strategy === "increment";
+    html += "<div class='field'><label>Setting</label><div class='setlist'>";
+    for (const setName of Object.keys(col.settings || {})) {
+      const checked = strategy === "full" ? true : (decl.settings || []).includes(setName);
+      const mine = currentMappingsOf(S.sel.project).filter(m => sourceSegsMatch(m.source, colName, setName));
+      const r = settingTargets(S.sel.project, colName, setName);
+      const tgt = mine.length
+        ? mine.map(m => m.target).join("  ·  ")
+        : (r.error ? r.error : "未应用");
+      html += "<label class='setrow'>" +
+        "<input type='checkbox'" + (checked ? " checked" : "") +
+        (needPick ? "" : " disabled") +
+        " data-pick='" + esc(colName) + "|" + esc(setName) + "' />" +
+        "<span class='sname'>" + esc(setName) + "</span>" +
+        "<span class='stgt'>" + esc(tgt) + "</span>" +
+        (mine.length ? targetBadge(mine[0].target)
+          : (r.error ? badge("b-bad", "目标无法解析") : badge("b-idle", "未应用"))) + "</label>";
+    }
+    html += "</div></div>";
+    if (strategy === "full")
+      html += "<div class='seg-why'>full 不看勾选，Column 里新增的 Setting 会自动进来；有无法解析的目标就整体失败。</div>";
+    html += "</div>";
+  }
+  html += "</div>";
+  return html;
+}
+
+/* 配置与线路按 Column 配对成块：左卡片右线路，块顶对齐、下沿取较长者 */
+function renderModeBody() {
+  const box = $("#modeBody");
+  const p = cur();
+  if (!p) { box.innerHTML = ""; $("#wireHead").textContent = "线路预览"; return; }
+  const pre = S.preview && S.preview.project === S.sel.project ? S.preview : null;
+  const isCurrent = S.sel.mode === null;
+  const live = liveState(S.sel.project);
+  /* 线路按 Column 收集：col -> source -> targets[]（preview 未就绪时为空） */
+  const wireByCol = new Map();
+  if (pre) {
+    for (const m of pre.mappings) {
+      const segs = String(m.source).split("/");
+      const col = segs[segs.length - 2] || "";
+      if (!wireByCol.has(col)) wireByCol.set(col, new Map());
+      const groups = wireByCol.get(col);
+      if (!groups.has(m.source)) groups.set(m.source, []);
+      groups.get(m.source).push(m.target);
+    }
+    $("#wireHead").textContent = "线路预览（" + pre.mappings.length + " 个来源）";
+  } else {
+    $("#wireHead").textContent = "线路预览（规划中…）";
+  }
+  let html = (pre ? pre.errors : []).map(e => "<div class='diag'>" + esc(e) + "</div>").join("");
   if (isCurrent && live.kind === "mode") {
-    html += "<div class='note' style='padding:10px 0 4px'>" +
+    html += "<div class='note' style='padding:10px 16px 4px'>" +
       (live.temporary
         ? "当前正在使用临时 Mode <b>" + esc(live.text) + "</b>。修改只会继续改临时 Mode，不会改回原 Mode。"
         : "当前来自 <b>mode " + esc(live.mode) + "</b>。这里的修改会创建临时 Mode，不会修改原 Mode。") +
       "</div>";
   }
-  for (const colName of Object.keys(p.columns || {})) {
-    const col = p.columns[colName];
-    const decl = d[colName];
-    const on = !!decl;
-    const strategy = decl ? (decl.strategy || "cover") : "cover";
-    html += "<div class='card" + (on ? " on" : "") + (S.hover === colName ? " hot" : "") +
-      "' data-card='" + esc(colName) + "'>" +
-      "<div class='card-head'>" +
-      "<button class='toggle' aria-pressed='" + on + "' data-toggle='" + esc(colName) + "'></button>" +
-      "<span><span class='cname'>" + esc(col.displayName || colName) + "</span> " +
-      "<span class='cid'>" + esc(colName) + "</span></span>" +
-      "<span class='nav-sub'>" + col.targetNumber + " target</span>" +
-      "</div>";
-    if (on) {
-      html += "<div class='card-body'>";
-      html += "<div class='field'><label>策略</label><div>" +
-        "<div class='seg'>" + STRATEGIES.map(([k]) =>
-          "<button data-strategy='" + esc(colName) + "|" + k + "' aria-pressed='" + (strategy === k) + "'>" +
-          k + "</button>").join("") + "</div>" +
-        "<div class='seg-why'>" + esc(STRATEGIES.find(s => s[0] === strategy)[1]) + "</div></div></div>";
-      const needPick = strategy === "cover" || strategy === "increment";
-      html += "<div class='field'><label>Setting</label><div class='setlist'>";
-      for (const setName of Object.keys(col.settings || {})) {
-        const checked = strategy === "full" ? true : (decl.settings || []).includes(setName);
-        const mine = currentMappingsOf(S.sel.project).filter(m => sourceSegsMatch(m.source, colName, setName));
-        const r = settingTargets(S.sel.project, colName, setName);
-        const tgt = mine.length
-          ? mine.map(m => m.target).join("  ·  ")
-          : (r.error ? r.error : "未应用");
-        html += "<label class='setrow'>" +
-          "<input type='checkbox'" + (checked ? " checked" : "") +
-          (needPick ? "" : " disabled") +
-          " data-pick='" + esc(colName) + "|" + esc(setName) + "' />" +
-          "<span class='sname'>" + esc(setName) + "</span>" +
-          "<span class='stgt'>" + esc(tgt) + "</span>" +
-          (mine.length ? targetBadge(mine[0].target)
-            : (r.error ? badge("b-bad", "目标无法解析") : badge("b-idle", "未应用"))) + "</label>";
-      }
-      html += "</div></div>";
-      if (strategy === "full")
-        html += "<div class='seg-why'>full 不看勾选，Column 里新增的 Setting 会自动进来；有无法解析的目标就整体失败。</div>";
-      html += "</div>";
-    }
-    html += "</div>";
+  const colNames = Object.keys(p.columns || {});
+  if (!colNames.length) { box.innerHTML = html; return; }
+  if (pre && !pre.mappings.length && !pre.errors.length) {
+    box.innerHTML = html + "<div class='hint'>没有任何选择，应用后会解除全部受管链接。</div>";
+    return;
   }
-  $("#cards").innerHTML = html;
+  const force = new Set((pre && pre.forceTargets) || []);
+  html += colNames.map(colName => {
+    const groups = wireByCol.get(colName);
+    const wire = groups ? [...groups.entries()].map(([source, targets]) => {
+      const segs = String(source).split("/");
+      const col = segs[segs.length - 2] || "";
+      const tag = segs.slice(-2).join(" · ");
+      const forceAny = targets.some(t => force.has(t));
+      return "<div class='wireline " + worstLineClass(targets) + (S.hover === col ? " hot" : "") +
+        "' data-line-col='" + esc(col) + "'>" +
+        "<div class='src'>" + esc(source) + "</div>" +
+        "<div><span class='arr'>→</span>" +
+        targets.map(t => "<span class='tgt'>" + esc(t) + "</span>").join("<span class='arr'> · </span>") + "</div>" +
+        "<div class='tag'>" + esc(tag) + " · " + targets.length + " 目标" + (forceAny ? " · 需 --force-targets" : "") + "</div></div>";
+    }).join("") : "";
+    return "<div class='col-block'>" +
+      "<div class='col-cards'>" + cardHtmlForColumn(colName) + "</div>" +
+      "<div class='col-wire'>" + wire + "</div>" +
+      "</div>";
+  }).join("");
+  if (!pre) html += "<div class='hint'>正在向后端请求规划…</div>";
+  box.innerHTML = html;
 }
 
 /* ================= 预览（/api/preview，防抖 300ms） ================= */
@@ -622,44 +671,12 @@ async function firePreview() {
   } else {
     S.preview = { project, mappings: [], errors: [(res.error && res.error.message) || "预览失败"], forceTargets: [] };
   }
-  if (S.sel.seg === "mode" && S.sel.project === project) { renderWire(); renderModeFoot(S.sel.mode === null); renderDrawer(); }
+  if (S.sel.seg === "mode" && S.sel.project === project) { renderModeBody(); renderModeFoot(S.sel.mode === null); renderDrawer(); }
 }
 
 async function flushPreview() {
   clearTimeout(previewTimer);
   await firePreview();
-}
-
-function renderWire() {
-  const box = $("#wireBody");
-  const pre = S.preview && S.preview.project === S.sel.project ? S.preview : null;
-  if (!pre) { $("#wireHead").textContent = "线路预览（规划中…）"; box.innerHTML = "<div class='hint'>正在向后端请求规划…</div>"; return; }
-  /* 同一来源的多个目标合并为一行：source → t1 · t2，实况取最差 */
-  const groups = new Map();
-  for (const m of pre.mappings) {
-    if (!groups.has(m.source)) groups.set(m.source, []);
-    groups.get(m.source).push(m.target);
-  }
-  $("#wireHead").textContent = "线路预览（" + groups.size + " 个来源）";
-  let html = pre.errors.map(e => "<div class='diag'>" + esc(e) + "</div>").join("");
-  if (!groups.size && !pre.errors.length) {
-    box.innerHTML = "<div class='hint'>没有任何选择，应用后会解除全部受管链接。</div>";
-    return;
-  }
-  const force = new Set(pre.forceTargets || []);
-  html += [...groups.entries()].map(([source, targets]) => {
-    const segs = String(source).split("/");
-    const col = segs[segs.length - 2] || "";
-    const tag = segs.slice(-2).join(" · ");
-    const forceAny = targets.some(t => force.has(t));
-    return "<div class='wireline " + worstLineClass(targets) + (S.hover === col ? " hot" : "") +
-      "' data-line-col='" + esc(col) + "'>" +
-      "<div class='src'>" + esc(source) + "</div>" +
-      "<div><span class='arr'>→</span>" +
-      targets.map(t => "<span class='tgt'>" + esc(t) + "</span>").join("<span class='arr'> · </span>") + "</div>" +
-      "<div class='tag'>" + esc(tag) + " · " + targets.length + " 目标" + (forceAny ? " · 需 --force-targets" : "") + "</div></div>";
-  }).join("");
-  box.innerHTML = html;
 }
 
 function renderModeFoot(isCurrent) {
@@ -1229,31 +1246,31 @@ async function runDelete() {
 document.addEventListener("click", e => {
   const t = e.target;
 
-  /* 折叠箭头优先于导航 */
-  const tg = t.closest("[data-nav-toggle]");
-  if (tg) {
-    const [kind, project, name] = tg.dataset.navToggle.split("|");
+  /* 可展开节点：整行点击切换展开（Project / Column / Mode） */
+  const toggleExpand = (kind, project, name) => {
     const ns = S.navOpen[project] || (S.navOpen[project] = { open: false, cols: {}, modes: {} });
     if (kind === "project") ns.open = !ns.open;
     else if (kind === "column") ns.cols[name] = !ns.cols[name];
     else if (kind === "mode") ns.modes[name] = !ns.modes[name];
-    renderNav();
-    return;
-  }
+  };
 
   const nav = t.closest("[data-nav]");
   if (nav) {
     const project = nav.dataset.project;
-    if (nav.dataset.nav === "project") {
+    const kind = nav.dataset.nav;
+    if (kind === "project") toggleExpand("project", project);
+    else if (kind === "column") toggleExpand("column", project, nav.dataset.column);
+    else if (kind === "mode" && nav.dataset.mode !== undefined) toggleExpand("mode", project, nav.dataset.mode);
+    if (kind === "project") {
       S.sel = { seg: "project", project, mode: undefined };
       S.res = { column: firstColumnOf(P(project)), setting: null };
       S.ed = firstSettingOf(P(project));
-    } else if (nav.dataset.nav === "column") {
+    } else if (kind === "column") {
       /* 侧栏 Column 条目：跳转到 Project 资源视图并选中该 Column */
       S.sel = { seg: "project", project, mode: undefined };
       S.res = { column: nav.dataset.column, setting: null };
       S.ed = firstSettingOf(P(project));
-    } else if (nav.dataset.nav === "setting") {
+    } else if (kind === "setting") {
       /* 侧栏 Setting 叶子：跳转到资源视图并选中该 Setting */
       S.sel = { seg: "project", project, mode: undefined };
       S.res = { column: nav.dataset.column, setting: nav.dataset.setting };
