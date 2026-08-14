@@ -12,6 +12,8 @@ builds:
     binary: cfgfc
     env:
       - CGO_ENABLED=0
+    ldflags:
+      - -s -w -X github.com/xenon/ConfigFacilitator/internal/cli.version={{ .Version }}
     goos:
       - linux
       - darwin
