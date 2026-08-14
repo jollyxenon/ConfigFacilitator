@@ -555,8 +555,9 @@ func mutateModeColumn(repo repository.Repository, projectReference, modeReferenc
 	})
 }
 
-// ReplaceMode atomically replaces a Mode's complete Column selection map and
-// syncs a following Current in the same transaction.
+// ReplaceMode saves a Mode's complete Column selection map to ModeIndex only.
+// Saving never touches Current state or target links: applying the Mode later
+// is what syncs a following Current.
 func ReplaceMode(repo repository.Repository, projectReference, modeReference string, columns map[string]repository.ColumnSelection, forceTargets bool, options PlanOptions) error {
 	_, project, err := loadProject(repo, projectReference)
 	if err != nil {
@@ -589,29 +590,8 @@ func ReplaceMode(repo repository.Repository, projectReference, modeReference str
 		Columns:       ColumnsOf(normalized),
 		Extra:         mode.Metadata.Extra,
 	}
-	paths := []string{repo.ModeIndexPath(project.Name)}
-	follows := state.Relation != nil && state.Relation.Kind == "following" && state.Relation.OriginMode == mode.Name
-	if follows {
-		paths = append(paths, repo.CurrentStatePath(project.Name), repo.HistoryPath(project.Name))
-	}
-	return repo.WithMutation("mode-replace", paths, func() error {
-		if err := repo.SaveModeIndex(project.Name, modeIndex); err != nil {
-			return err
-		}
-		if !follows {
-			return nil
-		}
-		next := repository.CurrentState{
-			Columns:  normalized,
-			Relation: state.Relation,
-			Mappings: state.Mappings,
-		}
-		mappings, err := planner.PlanColumns(project, ColumnsOf(normalized), state.Mappings, options)
-		if err != nil {
-			return invalid("mode_replace_plan", err.Error())
-		}
-		next.Mappings = mappings
-		return linker.New().ReplaceStateLocked(project, next, linker.WithForce(forceTargets))
+	return repo.WithMutation("mode-replace", []string{repo.ModeIndexPath(project.Name)}, func() error {
+		return repo.SaveModeIndex(project.Name, modeIndex)
 	})
 }
 

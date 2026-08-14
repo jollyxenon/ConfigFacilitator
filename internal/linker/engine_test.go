@@ -572,3 +572,43 @@ func assertFileSymlinkTarget(t *testing.T, path string, want string) {
 		t.Fatalf("file content via symlink %s = %q, want source content %q", path, string(gotContent), string(wantContent))
 	}
 }
+
+// A cfgfc-managed symlink (resolved inside the warehouse root) left on a
+// target by a previous apply or a rebuilt current state must be replaceable
+// without force authorization, even with no recorded mapping for the target.
+func TestReplaceMappingsReplacesManagedLinkWithoutForce(t *testing.T) {
+	engine := New()
+	project, root := newProjectPaths(t)
+	oldSource := writeFile(t, root, ".configfacilitator/OpenCode/Column/Models/old.txt", "old")
+	newSource := writeFile(t, root, ".configfacilitator/OpenCode/Column/Models/new.txt", "new")
+	target := filepath.Join(root, "target.txt")
+	if err := os.Symlink(oldSource, target); err != nil {
+		t.Fatalf("seed symlink: %v", err)
+	}
+	if err := engine.ReplaceMappings(project, []Mapping{{Source: newSource, Target: target}}); err != nil {
+		t.Fatalf("replace over managed link without force: %v", err)
+	}
+	assertFileSymlinkTarget(t, target, newSource)
+}
+
+// A symlink pointing outside the warehouse root is not cfgfc-managed and
+// must still require force authorization.
+func TestReplaceMappingsRejectsExternalSymlinkTarget(t *testing.T) {
+	engine := New()
+	project, root := newProjectPaths(t)
+	source := writeFile(t, root, "warehouse/source.txt", "alpha")
+	external := filepath.Join(root, "outside", "user-file.txt")
+	if err := os.MkdirAll(filepath.Dir(external), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(external, []byte("user"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	target := filepath.Join(root, "target.txt")
+	if err := os.Symlink(external, target); err != nil {
+		t.Fatalf("seed symlink: %v", err)
+	}
+	if err := engine.ReplaceMappings(project, []Mapping{{Source: source, Target: target}}); err == nil {
+		t.Fatal("expected external symlink target to require force")
+	}
+}

@@ -279,6 +279,38 @@ func TestForceApplyBypassesDuplicateTarget(t *testing.T) {
 	}
 }
 
+// Saving a Mode (even the one currently driving Current) writes ModeIndex
+// only: Current state, its mappings, and target links must stay untouched.
+func TestReplaceModeSavesIndexOnly(t *testing.T) {
+	handler, root := testHandler(t)
+	seedWarehouse(t, root)
+	revision := snapshotRevision(t, handler)
+
+	_, envelope := post(t, handler, "/api/command", map[string]any{
+		"command": "mode.replace", "revision": revision, "project": "OpenCode", "mode": "Max",
+		"columns": map[string]any{},
+	})
+	if !envelope.OK {
+		t.Fatalf("mode.replace failed: code=%s message=%s", envelope.Error.Code, envelope.Error.Message)
+	}
+	data := envelope.Data.(map[string]any)
+	snapshotData := data["snapshot"].(map[string]any)
+	projects := snapshotData["projects"].(map[string]any)
+	project := projects["OpenCode"].(map[string]any)
+	// ModeIndex 已更新为空选择
+	modes := project["modes"].(map[string]any)
+	max := modes["Max"].(map[string]any)
+	if cols := max["columns"].(map[string]any); len(cols) != 0 {
+		t.Fatalf("mode columns after save = %#v, want empty", cols)
+	}
+	// Current 保持原样（映射数不变）
+	current := project["current"].(map[string]any)
+	mappings := current["mappings"].([]any)
+	if len(mappings) != 1 {
+		t.Fatalf("save must not change Current mappings, got %#v", mappings)
+	}
+}
+
 func snapshotRevision(t *testing.T, handler *Handler) string {
 	t.Helper()
 	recorder := httptest.NewRecorder()

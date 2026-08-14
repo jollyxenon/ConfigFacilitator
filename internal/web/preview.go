@@ -34,7 +34,7 @@ func (handler *Handler) modePreview(rootPath string, payload commandRequest) (in
 		return http.StatusNotFound, commandResult{}, &errorBody{Code: "resource_not_found", Message: err.Error()}
 	}
 	columns := modeColumnsOf(mode.Metadata.Columns)
-	result := handler.planForPreview(project, columns, nil)
+	result := handler.planForPreview(rootPath, project, columns, nil)
 	return http.StatusOK, commandResult{Details: result}, nil
 }
 
@@ -56,12 +56,12 @@ func (handler *Handler) currentPreview(rootPath string, payload commandRequest) 
 	if len(payload.Columns) > 0 {
 		columns = indexColumnsOf(payload.Columns)
 	}
-	result := handler.planForPreview(project, columns, state.Mappings)
+	result := handler.planForPreview(rootPath, project, columns, state.Mappings)
 	return http.StatusOK, commandResult{Details: result}, nil
 }
 
 // planForPreview runs the planner and reports unsafe targets that need force.
-func (handler *Handler) planForPreview(project warehouse.Project, columns map[string]index.ModeColumnSelection, current []repository.Mapping) previewResult {
+func (handler *Handler) planForPreview(rootPath string, project warehouse.Project, columns map[string]index.ModeColumnSelection, current []repository.Mapping) previewResult {
 	result := previewResult{Errors: []string{}, ForceTargets: []string{}}
 	mappings, err := planner.PlanColumns(project, columns, current, planOptions(handler.dependencies))
 	if err != nil {
@@ -72,9 +72,16 @@ func (handler *Handler) planForPreview(project warehouse.Project, columns map[st
 	engine := linker.New()
 	for _, mapping := range mappings {
 		ownership, inspectErr := engine.InspectOwnership(mapping)
-		if inspectErr == nil && ownership == linker.OwnershipUnmanaged {
-			result.ForceTargets = append(result.ForceTargets, mapping.Target)
+		if inspectErr != nil || ownership != linker.OwnershipUnmanaged {
+			continue
 		}
+		// cfgfc-managed symlinks (resolved inside the warehouse root) are safe
+		// to replace on apply, so they never require --force-targets.
+		managed, managedErr := engine.IsManagedLink(rootPath, mapping.Target)
+		if managedErr == nil && managed {
+			continue
+		}
+		result.ForceTargets = append(result.ForceTargets, mapping.Target)
 	}
 	return result
 }

@@ -225,11 +225,11 @@ const caret = (expanded, expandable) =>
 
 function renderNav() {
   const projects = S.snap ? Object.keys(S.snap.projects) : [];
-  /* 每个 Project 一棵可折叠树（默认缩起）：Project → Column/Mode 分组 → 条目 → 叶子，
-     字体按上下级从重到轻 */
+  /* 每个 Project 一棵可折叠树（默认缩起）：Project 整行展开 → Column/Mode 分组头
+     可展开 → 条目（叶子，点击导航）。字体按上下级从重到轻 */
   $("#navProjects").innerHTML = projects.map(name => {
     const p = P(name);
-    const ns = S.navOpen[name] || (S.navOpen[name] = { open: false, cols: {}, modes: {} });
+    const ns = S.navOpen[name] || (S.navOpen[name] = { open: false, cols: false, modes: false });
     const nCol = Object.keys(p.columns || {}).length;
     const nSet = Object.values(p.columns || {}).reduce((a, c) => a + Object.keys(c.settings || {}).length, 0);
     const on = S.sel.seg === "project" && S.sel.project === name;
@@ -239,30 +239,24 @@ function renderNav() {
       '<span class="nav-name">' + navLabel(p.displayName, name) + "</span>" +
       '<span class="nav-sub">' + nCol + "C · " + nSet + "S</span></button>";
     html += "<div class='nav-subtree'" + (ns.open ? "" : " hidden") + ">";
-    html += '<div class="nav-group"><span class="gname">Column</span><span class="gid">' + nCol + "</span></div>";
-    html += Object.keys(p.columns || {}).map(colName => {
-      const colOpen = !!ns.cols[colName];
-      const colOn = S.sel.seg === "project" && S.sel.project === name && S.res.column === colName;
-      const nS = Object.keys(p.columns[colName].settings || {}).length;
-      let row = '<button class="nav-item lv2" data-nav="column" data-project="' + esc(name) + '"' +
-        ' data-column="' + esc(colName) + '" aria-current="' + colOn + '">' +
-        '<span class="bar"></span>' + caret(colOpen, true) +
-        '<span class="nav-name">' + navLabel(p.columns[colName].displayName, colName) + "</span>" +
-        '<span class="nav-sub">' + nS + "S</span></button>";
-      row += "<div class='nav-subtree'" + (colOpen ? "" : " hidden") + ">" +
-        Object.keys(p.columns[colName].settings || {}).map(setName => {
-          const set = p.columns[colName].settings[setName];
-          const setOn = S.sel.seg === "project" && S.sel.project === name &&
-            S.res.column === colName && S.res.setting === setName;
-          return '<button class="nav-item lv3" data-nav="setting" data-project="' + esc(name) + '"' +
-            ' data-column="' + esc(colName) + '" data-setting="' + esc(setName) + '" aria-current="' + setOn + '">' +
-            '<span class="bar"></span><span class="caret"></span>' +
-            '<span class="nav-name">' + navLabel(set.displayName, setName) + "</span>" +
-            '<span class="nav-sub">' + (set.kind === "directory" ? "dir" : "file") + "</span></button>";
-        }).join("") + "</div>";
-      return row;
-    }).join("");
-    html += '<div class="nav-group"><span class="gname">Mode</span></div>';
+    /* Column 分组：组头整行可展开 */
+    html += '<button class="nav-group" data-nav-group="cols|' + esc(name) + '" aria-expanded="' + ns.cols + '">' +
+      '<span class="gname">Column</span><span class="gid">' + nCol + "</span>" +
+      '<span class="caret">' + (ns.cols ? "▾" : "▸") + "</span></button>";
+    html += "<div class='nav-subtree'" + (ns.cols ? "" : " hidden") + ">" +
+      Object.keys(p.columns || {}).map(colName => {
+        const colOn = S.sel.seg === "project" && S.sel.project === name && S.res.column === colName;
+        const nS = Object.keys(p.columns[colName].settings || {}).length;
+        return '<button class="nav-item lv2" data-nav="column" data-project="' + esc(name) + '"' +
+          ' data-column="' + esc(colName) + '" aria-current="' + colOn + '">' +
+          '<span class="bar"></span><span class="caret"></span>' +
+          '<span class="nav-name">' + navLabel(p.columns[colName].displayName, colName) + "</span>" +
+          '<span class="nav-sub">' + nS + "S</span></button>";
+      }).join("") + "</div>";
+    /* Mode 分组：组头整行可展开 */
+    html += '<button class="nav-group" data-nav-group="modes|' + esc(name) + '" aria-expanded="' + ns.modes + '">' +
+      '<span class="gname">Mode</span><span class="caret">' + (ns.modes ? "▾" : "▸") + "</span></button>";
+    html += "<div class='nav-subtree'" + (ns.modes ? "" : " hidden") + ">";
     const curOn = S.sel.seg === "mode" && S.sel.project === name && S.sel.mode === null;
     html += '<button class="nav-item lv2 current" data-nav="mode" data-project="' + esc(name) + '" aria-current="' + curOn + '">' +
       '<span class="bar"></span><span class="caret"></span>' +
@@ -275,21 +269,13 @@ function renderNav() {
       const on2 = S.sel.seg === "mode" && S.sel.project === name && S.sel.mode === m;
       const isLive = live.kind === "mode" && live.mode === m && !live.temporary;
       const n = Object.keys(p.modes[m].columns || {}).length;
-      const mOpen = !!ns.modes[m];
-      let row = '<button class="nav-item lv2" data-nav="mode" data-project="' + esc(name) + '"' +
+      html += '<button class="nav-item lv2" data-nav="mode" data-project="' + esc(name) + '"' +
         ' data-mode="' + esc(m) + '" aria-current="' + on2 + '">' +
-        '<span class="bar"></span>' + caret(mOpen, true) +
+        '<span class="bar"></span><span class="caret"></span>' +
         '<span class="nav-name">' + navLabel(p.modes[m].displayName, m) + "</span>" +
         (isLive ? badge("b-ok", "生效中") : '<span class="nav-sub">' + n + "C</span>") + "</button>";
-      row += "<div class='nav-subtree'" + (mOpen ? "" : " hidden") + ">" +
-        Object.entries(p.modes[m].columns || {}).map(([colName, decl]) =>
-          "<div class='nav-mode-col'><span class='bar'></span><span class='caret'></span>" +
-          "<span class='nav-name'>" + esc(colName) + "</span>" +
-          "<span class='nav-sub'>" + esc(decl.strategy) + (decl.settings ? " · " + decl.settings.length + "S" : "") + "</span></div>"
-        ).join("") + "</div>";
-      html += row;
     }
-    html += "</div>";
+    html += "</div></div>";
     return html;
   }).join("");
 }
@@ -311,19 +297,22 @@ function renderCrumb() {
 /* ================= Project 作用域 ================= */
 function renderTree() {
   const p = cur();
-  $("#tree").innerHTML = !p ? "" : Object.entries(p.columns || {}).map(([colName, col]) => {
-    const colOn = S.res.column === colName && S.res.setting === null;
-    const sets = Object.entries(col.settings || {}).map(([setName, set]) => {
-      const [bc, bt] = settingState(S.sel.project, colName, setName);
-      return '<button class="tree-set" data-column="' + esc(colName) + '" data-setting="' + esc(setName) + '"' +
-        ' aria-current="' + (S.res.column === colName && S.res.setting === setName) + '">' +
-        '<span class="glyph">' + (set.kind === "directory" ? "▤" : "▪") + "</span>" +
-        '<span style="flex:1">' + esc(setName) + "</span>" + badge(bc, bt) + "</button>";
-    }).join("");
-    return '<button class="tree-col" data-column="' + esc(colName) + '" aria-current="' + colOn + '">' +
-      '<span class="glyph">▾</span><span style="flex:1" class="cn">' + esc(col.displayName || colName) + "</span>" +
-      '<span class="nav-sub">' + col.targetNumber + " target</span></button>" + sets;
+  const col = p && S.res.column && p.columns[S.res.column];
+  if (!col) { $("#tree").innerHTML = "<div class='empty'>从侧边栏选择一个 Column。</div>"; return; }
+  /* 资源视图聚焦当前选中的 Column：只渲染它（及其 Setting），全部 Column 在侧边栏浏览 */
+  const colName = S.res.column;
+  const colOn = S.res.setting === null;
+  const sets = Object.entries(col.settings || {}).map(([setName, set]) => {
+    const [bc, bt] = settingState(S.sel.project, colName, setName);
+    return '<button class="tree-set" data-column="' + esc(colName) + '" data-setting="' + esc(setName) + '"' +
+      ' aria-current="' + (S.res.setting === setName) + '">' +
+      '<span class="glyph">' + (set.kind === "directory" ? "▤" : "▪") + "</span>" +
+      '<span style="flex:1">' + esc(setName) + "</span>" + badge(bc, bt) + "</button>";
   }).join("");
+  $("#tree").innerHTML =
+    '<button class="tree-col" data-column="' + esc(colName) + '" aria-current="' + colOn + '">' +
+    '<span class="glyph">▾</span><span style="flex:1" class="cn">' + esc(col.displayName || colName) + "</span>" +
+    '<span class="nav-sub">' + col.targetNumber + " target</span></button>" + sets;
 }
 
 function renderResPanel() {
@@ -510,13 +499,12 @@ function renderModeScope() {
   } else {
     const isLive = live.kind === "mode" && live.mode === S.sel.mode && !live.temporary;
     const text = isLive
-      ? "这个 Mode 正在驱动（Current）。保存选择后会立即同步到（Current）。"
+      ? "这个 Mode 正在驱动（Current）。保存选择只写 ModeIndex；应用后（Current）才跟随它。"
       : "这个 Mode 未生效。保存只写 ModeIndex；应用才会让（Current）跟随它。";
     callout.innerHTML = '<div class="callout' + (isLive ? "" : " warn") + '">' + text + "</div>";
   }
   renderLiveTable(isCurrent, live);
   renderModeBody();
-  renderModeFoot(isCurrent);
   renderModeFoot(isCurrent);
 }
 
@@ -704,10 +692,9 @@ function renderModeFoot(isCurrent) {
       "<button class='btn' data-cmd='revert'>revert</button>" +
       "<button class='btn btn-danger' data-cmd='reset'>reset</button>";
   } else {
-    const followsThisMode = live.kind === "mode" && live.mode === S.sel.mode && !live.temporary;
-    /* 阻塞不影响保存：重复目标的 Mode 可以保存，只是不能直接应用 */
+    /* 保存永远只写 ModeIndex，不触碰 Current 或目标链接；应用才同步 */
     html += "<button class='btn btn-primary' data-cmd='save-mode'" + (dirty() ? "" : " disabled") + ">" +
-      (followsThisMode ? "保存并同步（Current）" : "保存选择") + "</button>" +
+      "保存选择</button>" +
       "<button class='btn' data-cmd='discard'" + (dirty() ? "" : " disabled") + ">丢弃改动</button>" +
       "<button class='btn btn-primary' data-cmd='apply-mode'" + (blocked ? " disabled" : "") + ">应用到（Current）</button>" +
       "<button class='btn btn-danger' data-danger='mode'>delete mode…</button>";
@@ -972,7 +959,7 @@ async function runCommand(name) {
     case "apply-mode":
       return applyWithForce({ command: "apply.mode", project, mode: S.sel.mode }, "apply mode " + S.sel.mode);
     case "save-mode":
-      return applyWithForce({ command: "mode.replace", project, mode: S.sel.mode, columns: clone(decls()) }, "save mode " + S.sel.mode);
+      return execCommand({ command: "mode.replace", project, mode: S.sel.mode, columns: clone(decls()) }, { label: "save mode " + S.sel.mode });
     case "apply-temporary":
       return applyWithForce({ command: "current.replace", project, columns: clone(decls()) }, "apply temporary");
     case "apply-force":
@@ -1246,22 +1233,25 @@ async function runDelete() {
 document.addEventListener("click", e => {
   const t = e.target;
 
-  /* 可展开节点：整行点击切换展开（Project / Column / Mode） */
-  const toggleExpand = (kind, project, name) => {
-    const ns = S.navOpen[project] || (S.navOpen[project] = { open: false, cols: {}, modes: {} });
-    if (kind === "project") ns.open = !ns.open;
-    else if (kind === "column") ns.cols[name] = !ns.cols[name];
-    else if (kind === "mode") ns.modes[name] = !ns.modes[name];
-  };
+  /* Column / Mode 分组头：整行点击展开/收起 */
+  const grp = t.closest("[data-nav-group]");
+  if (grp) {
+    const [kind, project] = grp.dataset.navGroup.split("|");
+    const ns = S.navOpen[project] || (S.navOpen[project] = { open: false, cols: false, modes: false });
+    if (kind === "cols") ns.cols = !ns.cols;
+    else ns.modes = !ns.modes;
+    renderNav();
+    return;
+  }
 
+  /* 可展开节点：Project 整行点击切换展开；Column/Mode 条目是叶子，点击只导航 */
   const nav = t.closest("[data-nav]");
   if (nav) {
     const project = nav.dataset.project;
     const kind = nav.dataset.nav;
-    if (kind === "project") toggleExpand("project", project);
-    else if (kind === "column") toggleExpand("column", project, nav.dataset.column);
-    else if (kind === "mode" && nav.dataset.mode !== undefined) toggleExpand("mode", project, nav.dataset.mode);
     if (kind === "project") {
+      const ns = S.navOpen[project] || (S.navOpen[project] = { open: false, cols: false, modes: false });
+      ns.open = !ns.open;
       S.sel = { seg: "project", project, mode: undefined };
       S.res = { column: firstColumnOf(P(project)), setting: null };
       S.ed = firstSettingOf(P(project));
@@ -1269,11 +1259,6 @@ document.addEventListener("click", e => {
       /* 侧栏 Column 条目：跳转到 Project 资源视图并选中该 Column */
       S.sel = { seg: "project", project, mode: undefined };
       S.res = { column: nav.dataset.column, setting: null };
-      S.ed = firstSettingOf(P(project));
-    } else if (kind === "setting") {
-      /* 侧栏 Setting 叶子：跳转到资源视图并选中该 Setting */
-      S.sel = { seg: "project", project, mode: undefined };
-      S.res = { column: nav.dataset.column, setting: nav.dataset.setting };
       S.ed = firstSettingOf(P(project));
     } else {
       S.sel = { seg: "mode", project, mode: nav.dataset.mode !== undefined ? nav.dataset.mode : null };

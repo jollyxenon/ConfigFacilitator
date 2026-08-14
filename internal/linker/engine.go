@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"time"
 
 	"github.com/xenon/ConfigFacilitator/internal/repository"
@@ -138,7 +139,7 @@ func (engine Engine) ReplaceState(project warehouse.Project, nextState CurrentSt
 	if err := engine.validateMappings(nextState.Mappings); err != nil {
 		return err
 	}
-	if err := engine.ensureReplacementAllowed(previousState.Mappings, nextState.Mappings, options); err != nil {
+	if err := engine.ensureReplacementAllowed(filepath.Dir(project.Path), previousState.Mappings, nextState.Mappings, options); err != nil {
 		return err
 	}
 	snapshotPaths := []string{project.CurrentStatePath, project.HistoryLogPath}
@@ -151,9 +152,9 @@ func (engine Engine) ReplaceState(project warehouse.Project, nextState CurrentSt
 		return err
 	}
 	restoreManagedLinks := func() error {
-		return engine.applyMappingSet(nextState.Mappings, previousState.Mappings, replaceOptions{force: true})
+		return engine.applyMappingSet(filepath.Dir(project.Path), nextState.Mappings, previousState.Mappings, replaceOptions{force: true})
 	}
-	if err := engine.applyMappingSet(previousState.Mappings, nextState.Mappings, options); err != nil {
+	if err := engine.applyMappingSet(filepath.Dir(project.Path), previousState.Mappings, nextState.Mappings, options); err != nil {
 		rollbackErr := transaction.Rollback()
 		linkRollbackErr := restoreManagedLinks()
 		if rollbackErr != nil || linkRollbackErr != nil {
@@ -190,10 +191,10 @@ func (engine Engine) ReplaceStateLocked(project warehouse.Project, nextState Cur
 	if err := engine.validateMappings(nextState.Mappings); err != nil {
 		return err
 	}
-	if err := engine.ensureReplacementAllowed(previousState.Mappings, nextState.Mappings, options); err != nil {
+	if err := engine.ensureReplacementAllowed(filepath.Dir(project.Path), previousState.Mappings, nextState.Mappings, options); err != nil {
 		return err
 	}
-	if err := engine.applyMappingSet(previousState.Mappings, nextState.Mappings, options); err != nil {
+	if err := engine.applyMappingSet(filepath.Dir(project.Path), previousState.Mappings, nextState.Mappings, options); err != nil {
 		return err
 	}
 	return engine.persistState(project, previousState, nextState)
@@ -229,9 +230,40 @@ func (engine Engine) validateMappings(mappings []Mapping) error {
 	}
 	return nil
 }
+// IsManagedLink reports whether the target path holds a symlink whose
+// resolved destination lives inside the warehouse root. cfgfc only ever
+// creates links pointing at warehouse sources, so such a link is one of
+// ours even when it points at a different source than the requested
+// mapping (e.g. after switching Modes or rebuilding a lost current state).
+func (engine Engine) IsManagedLink(rootPath string, target string) (bool, error) {
+	info, err := os.Lstat(target)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return false, nil
+		}
+		return false, err
+	}
+	if info.Mode()&os.ModeSymlink == 0 {
+		return false, nil
+	}
+	resolved, err := filepath.EvalSymlinks(target)
+	if err != nil {
+		return false, err
+	}
+	rootAbs, err := filepath.Abs(rootPath)
+	if err != nil {
+		return false, err
+	}
+	resolvedAbs := filepath.Clean(resolved)
+	rootAbs = filepath.Clean(rootAbs)
+	return resolvedAbs == rootAbs || strings.HasPrefix(resolvedAbs, rootAbs+string(os.PathSeparator)), nil
+}
 
 // ensureReplacementAllowed rejects unmanaged or drifted targets unless force is enabled.
-func (engine Engine) ensureReplacementAllowed(previous []Mapping, next []Mapping, options replaceOptions) error {
+// A symlink that resolves inside the warehouse root is ours (cfgfc-managed):
+// switching Modes or rebuilding a lost current state may legitimately leave
+// such a link on a target, and replacing it needs no force authorization.
+func (engine Engine) ensureReplacementAllowed(rootPath string, previous []Mapping, next []Mapping, options replaceOptions) error {
 	if options.force {
 		return nil
 	}
@@ -245,6 +277,11 @@ func (engine Engine) ensureReplacementAllowed(previous []Mapping, next []Mapping
 		case OwnershipAbsent, OwnershipOwned:
 			continue
 		case OwnershipUnmanaged:
+			if managed, err := engine.IsManagedLink(rootPath, mapping.Target); err != nil {
+				return err
+			} else if managed {
+				continue
+			}
 			if previousMapping, ok := previousByTarget[mapping.Target]; ok {
 				previousOwnership, inspectErr := engine.InspectOwnership(previousMapping)
 				if inspectErr != nil {
@@ -271,7 +308,9 @@ func (engine Engine) ensureReplacementAllowed(previous []Mapping, next []Mapping
 }
 
 // applyMappingSet removes stale targets and creates the next managed mappings.
-func (engine Engine) applyMappingSet(previous []Mapping, next []Mapping, options replaceOptions) error {
+// A symlink that resolves inside the warehouse root is cfgfc-managed: it can
+// be removed and rebuilt for the new source without force authorization.
+func (engine Engine) applyMappingSet(rootPath string, previous []Mapping, next []Mapping, options replaceOptions) error {
 	previousByTarget := mappingIndex(previous)
 	nextByTarget := mappingIndex(next)
 	for _, mapping := range previous {
@@ -308,6 +347,12 @@ func (engine Engine) applyMappingSet(previous []Mapping, next []Mapping, options
 			}
 		}
 		if options.force {
+			if err := removeTargetPath(mapping.Target); err != nil {
+				return err
+			}
+		} else if managed, err := engine.IsManagedLink(rootPath, mapping.Target); err != nil {
+			return err
+		} else if managed {
 			if err := removeTargetPath(mapping.Target); err != nil {
 				return err
 			}
