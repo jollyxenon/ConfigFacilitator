@@ -18,7 +18,7 @@
 - Reconciliation: per-Project atomic `sync` — removes Index metadata for disappeared Project/Column/Setting sources, rebuilds missing Index entries from the filesystem, recreates a missing `current_state.json` as empty (deleting stale `history.log`), replans following Currents; `sync --all` aggregates per-Project success/failure
 - Root selection: `root [Path]`, without content migration
 - Automation: stable `--json` envelopes and exit codes `0`, `2`-`6`
-- Local Web UI: `cfgfc web [--port 38031]` — embedded zero-dependency frontend over `/api/snapshot`, `/api/command`, `/api/preview`; mutating commands require the whole-warehouse `revision` (409 on conflict); apply commands accept `force` to bypass duplicate-target planning conflicts (later Column wins)
+- Local Web UI: `cfgfc web [--port 38031]` — embedded zero-dependency frontend over `/api/snapshot`, `/api/command`, `/api/preview`; selected Projects can create Column, Setting, and Mode and edit existing Column/Setting Index metadata, targets, and canonical names; mutating commands require the whole-warehouse `revision` (409 on conflict); apply commands accept `force` to bypass duplicate-target planning conflicts (later Column wins)
 - Shell completion: `completion <bash|zsh|fish|powershell>` with scoped canonical-name and alias completion
 - Removed without compatibility aliases: `new`, `switch`, `list`, `update`, flag-only apply, `-a`, `-f`, and `--force`
 
@@ -77,7 +77,7 @@ Also verify root help and rejection of removed syntax without mutation.
 
 ## Documentation Expectations
 
-- Normal user and agent workflows must be CLI-only. Do not instruct direct editing of indexes, Setting sources, target arrays, Mode selections, runtime state, sessions, or transactions.
+- Normal warehouse workflows may use cfgfc CLI or the local Web UI. Do not directly edit indexes, Setting sources, target arrays, Mode selections, runtime state, sessions, or transactions.
 - Keep `README.md`, all English/Chinese docs, `skills/configfacilitator-usage/SKILL.md`, this file, and CLI help synchronized.
 - Maintain behavioral English/Chinese parity for commands, examples, safety rules, storage responsibilities, and developer workflow.
 - Keep non-root project documentation under `docs/`.

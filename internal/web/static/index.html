@@ -63,6 +63,10 @@
           <div class="vhead">
             <h1>Columns &amp; Settings</h1>
             <p>这里只组织资源：Column 的目标位置、Setting 的来源与目标覆盖。决定什么生效请去左侧 Mode。</p>
+            <div class="btnrow vhead-actions">
+              <button class="btn" data-cmd="column-create">新建 Column</button>
+              <button class="btn" data-cmd="setting-create">新建 Setting</button>
+            </div>
           </div>
           <div class="split">
             <div class="tree" id="tree"></div>
@@ -97,6 +101,9 @@
         <div class="vhead">
           <h1 id="modeTitle"></h1>
           <p id="modeSubtitle"></p>
+          <div class="btnrow vhead-actions">
+            <button class="btn" data-cmd="mode-create">新建 Mode</button>
+          </div>
         </div>
         <div id="modeCallout"></div>
         <div class="mode-scroll">

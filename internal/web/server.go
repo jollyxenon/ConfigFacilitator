@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -18,6 +19,7 @@ import (
 	"github.com/xenon/ConfigFacilitator/internal/content"
 	"github.com/xenon/ConfigFacilitator/internal/index"
 	"github.com/xenon/ConfigFacilitator/internal/linker"
+	"github.com/xenon/ConfigFacilitator/internal/mutate"
 	"github.com/xenon/ConfigFacilitator/internal/planner"
 	"github.com/xenon/ConfigFacilitator/internal/repository"
 	"github.com/xenon/ConfigFacilitator/internal/syncer"
@@ -393,40 +395,49 @@ func ComputeRevision(rootPath string) (string, error) {
 // ================= command API =================
 
 type commandRequest struct {
-	Command      string                                `json:"command"`
-	Revision     string                                `json:"revision"`
-	Project      string                                `json:"project"`
-	Column       string                                `json:"column"`
-	Setting      string                                `json:"setting"`
-	Mode         string                                `json:"mode"`
-	Name         string                                `json:"name"`
-	NewName      string                                `json:"newName"`
-	DisplayName  string                                `json:"displayName"`
-	Description  string                                `json:"description"`
-	Aliases      []string                              `json:"aliases"`
-	Path         string                                `json:"path"`
-	OldPath      string                                `json:"oldPath"`
-	Strategy     string                                `json:"strategy"`
-	Settings     []string                              `json:"settings"`
-	Columns      map[string]repository.ColumnSelection `json:"columns"`
-	Kind         string                                `json:"kind"`
-	Content      string                                `json:"content"`
-	Encoding     string                                `json:"encoding"`
-	Yes          bool                                  `json:"yes"`
-	Cascade      bool                                  `json:"cascade"`
-	ForceTargets bool                                  `json:"forceTargets"`
-	Force         bool                                  `json:"force"`
-	All           bool                                  `json:"all"`
+	Command         string                                `json:"command"`
+	Revision        string                                `json:"revision"`
+	Project         string                                `json:"project"`
+	Column          string                                `json:"column"`
+	Setting         string                                `json:"setting"`
+	Mode            string                                `json:"mode"`
+	Name            string                                `json:"name"`
+	NewName         string                                `json:"newName"`
+	DisplayName     string                                `json:"displayName"`
+	Description     string                                `json:"description"`
+	Aliases         []string                              `json:"aliases"`
+	Path            string                                `json:"path"`
+	OldPath         string                                `json:"oldPath"`
+	Strategy        string                                `json:"strategy"`
+	Settings        []string                              `json:"settings"`
+	Columns         map[string]repository.ColumnSelection `json:"columns"`
+	Kind            string                                `json:"kind"`
+	Content         string                                `json:"content"`
+	Encoding        string                                `json:"encoding"`
+	Yes             bool                                  `json:"yes"`
+	Cascade         bool                                  `json:"cascade"`
+	ForceTargets    bool                                  `json:"forceTargets"`
+	Force           bool                                  `json:"force"`
+	TargetIndex     int                                   `json:"targetIndex"`
+	TargetDir       string                                `json:"targetDir"`
+	TargetName      string                                `json:"targetName"`
+	ClearDir        bool                                  `json:"clearDir"`
+	NameFromSetting bool                                  `json:"nameFromSetting"`
+	InheritDir      bool                                  `json:"inheritDir"`
+	InheritName     bool                                  `json:"inheritName"`
+	All             bool                                  `json:"all"`
 }
 
 // registeredCommands lists every command accepted by the local API.
 var registeredCommands = map[string]bool{
 	"project.create": true, "project.delete": true,
-	"column.delete":        true,
-	"setting.delete":       true,
+	"column.create": true, "column.set": true, "column.rename": true, "column.delete": true,
+	"column.target.add": true, "column.target.set": true, "column.target.delete": true,
+	"setting.create": true, "setting.set": true, "setting.rename": true, "setting.delete": true,
+	"setting.target.set": true, "setting.target.reset": true,
 	"setting.content.list": true, "setting.content.read": true, "setting.content.write": true,
 	"setting.content.mkdir": true, "setting.content.move": true, "setting.content.delete": true,
-	"mode.replace": true, "mode.delete": true, "mode.preview": true,
+	"mode.create": true, "mode.replace": true, "mode.delete": true, "mode.preview": true,
 	"current.replace": true, "current.column.set": true, "current.column.delete": true, "current.preview": true,
 	"apply.mode": true, "apply.column": true,
 	"refresh": true, "reset": true, "revert": true, "sync": true, "root": true,
@@ -500,6 +511,36 @@ type commandResult struct {
 	Details any    `json:"details,omitempty"`
 }
 
+// metadataFromPayload validates common metadata using the shared mutation rules.
+func metadataFromPayload(kind mutate.ResourceKind, payload commandRequest) (mutate.Metadata, error) {
+	return mutate.NewMetadata(kind, payload.Name, payload.DisplayName, payload.Description, payload.Aliases)
+}
+
+// metadataPatchFromPayload turns the complete Web metadata form into one validated patch.
+func metadataPatchFromPayload(payload commandRequest) mutate.MetadataPatch {
+	displayName, description := payload.DisplayName, payload.Description
+	aliases := append([]string{}, payload.Aliases...)
+	return mutate.MetadataPatch{DisplayName: &displayName, Description: &description, Aliases: &aliases}
+}
+
+// classifyMutationErr maps shared resource mutation failures to Web API errors.
+func classifyMutationErr(err error) (int, commandResult, *errorBody) {
+	var mutationErr *mutate.Error
+	if !errors.As(err, &mutationErr) {
+		return http.StatusInternalServerError, commandResult{}, &errorBody{Code: "mutation_failed", Message: err.Error()}
+	}
+	status := http.StatusInternalServerError
+	switch mutationErr.Kind {
+	case mutate.InvalidError:
+		status = http.StatusUnprocessableEntity
+	case mutate.ConflictError, mutate.RefusalError:
+		status = http.StatusConflict
+	case mutate.MissingError:
+		status = http.StatusNotFound
+	}
+	return status, commandResult{}, &errorBody{Code: mutationErr.Code, Message: mutationErr.Message, Details: mutationErr.Details}
+}
+
 func (handler *Handler) executeCommand(rootPath string, payload commandRequest) (int, commandResult, *errorBody) {
 	repo := repository.New(rootPath)
 	options := planOptions(handler.dependencies)
@@ -511,6 +552,107 @@ func (handler *Handler) executeCommand(rootPath string, payload commandRequest) 
 			return classifyErr(err)
 		}
 		return http.StatusOK, commandResult{Message: "Created project " + payload.Name}, nil
+	case "column.set":
+		if _, err := mutate.SetColumn(repo, payload.Project, payload.Name, metadataPatchFromPayload(payload)); err != nil {
+			return classifyMutationErr(err)
+		}
+		return http.StatusOK, commandResult{Message: "Updated column " + payload.Name}, nil
+	case "column.rename":
+		if err := mutate.RenameColumn(repo, payload.Project, payload.Name, payload.NewName, payload.ForceTargets, options); err != nil {
+			return classifyMutationErr(err)
+		}
+		return http.StatusOK, commandResult{Message: "Renamed column " + payload.Name + " to " + payload.NewName}, nil
+	case "column.target.add":
+		position := mutate.TargetPosition{Dir: payload.TargetDir, Name: payload.TargetName, NameMode: "fixed"}
+		if payload.NameFromSetting {
+			position.Name = ""
+			position.NameMode = "setting"
+		}
+		if _, _, err := mutate.AddColumnTarget(repo, payload.Project, payload.Name, position, options); err != nil {
+			return classifyMutationErr(err)
+		}
+		return http.StatusOK, commandResult{Message: "Added Column target"}, nil
+	case "column.target.set":
+		var dir, name *string
+		if payload.TargetDir != "" {
+			dir = &payload.TargetDir
+		}
+		if payload.TargetName != "" {
+			name = &payload.TargetName
+		}
+		if _, err := mutate.SetColumnTarget(repo, payload.Project, payload.Name, payload.TargetIndex, dir, payload.ClearDir, name, payload.NameFromSetting, options); err != nil {
+			return classifyMutationErr(err)
+		}
+		return http.StatusOK, commandResult{Message: "Updated Column target"}, nil
+	case "column.target.delete":
+		if err := mutate.DeleteColumnTarget(repo, payload.Project, payload.Name, payload.TargetIndex, payload.Yes, options); err != nil {
+			return classifyMutationErr(err)
+		}
+		return http.StatusOK, commandResult{Message: "Deleted Column target"}, nil
+	case "column.create":
+		metadata, err := metadataFromPayload(mutate.ColumnKind, payload)
+		if err != nil {
+			return classifyMutationErr(err)
+		}
+		if err := mutate.CreateColumn(repo, payload.Project, payload.Name, metadata); err != nil {
+			return classifyMutationErr(err)
+		}
+		return http.StatusOK, commandResult{Message: "Created column " + payload.Name}, nil
+	case "setting.set":
+		if _, err := mutate.SetSetting(repo, payload.Project, payload.Column, payload.Name, metadataPatchFromPayload(payload)); err != nil {
+			return classifyMutationErr(err)
+		}
+		return http.StatusOK, commandResult{Message: "Updated setting " + payload.Name}, nil
+	case "setting.rename":
+		if err := mutate.RenameSetting(repo, payload.Project, payload.Column, payload.Name, payload.NewName, payload.ForceTargets, options); err != nil {
+			return classifyMutationErr(err)
+		}
+		return http.StatusOK, commandResult{Message: "Renamed setting " + payload.Name + " to " + payload.NewName}, nil
+	case "setting.target.set":
+		var dir, name *string
+		if payload.TargetDir != "" {
+			dir = &payload.TargetDir
+		}
+		if payload.TargetName != "" {
+			name = &payload.TargetName
+		}
+		if _, err := mutate.SetSettingTarget(repo, payload.Project, payload.Column, payload.Name, payload.TargetIndex, dir, payload.InheritDir, name, payload.InheritName, options); err != nil {
+			return classifyMutationErr(err)
+		}
+		return http.StatusOK, commandResult{Message: "Updated setting target"}, nil
+	case "setting.target.reset":
+		if _, err := mutate.ResetSettingTarget(repo, payload.Project, payload.Column, payload.Name, payload.TargetIndex, options); err != nil {
+			return classifyMutationErr(err)
+		}
+		return http.StatusOK, commandResult{Message: "Reset setting target"}, nil
+	case "setting.create":
+		metadata, err := metadataFromPayload(mutate.SettingKind, payload)
+		if err != nil {
+			return classifyMutationErr(err)
+		}
+		if payload.Encoding != "" && payload.Encoding != "utf8" {
+			return http.StatusUnprocessableEntity, commandResult{}, &errorBody{Code: "unsupported_encoding", Message: fmt.Sprintf("unsupported encoding %q", payload.Encoding)}
+		}
+		if payload.Kind == "directory" && payload.Content != "" {
+			return http.StatusUnprocessableEntity, commandResult{}, &errorBody{Code: "invalid_content_source", Message: "directory Setting creation does not accept initial content"}
+		}
+		source := content.Source{Mode: content.SourceEmpty}
+		if payload.Kind == "file" {
+			source = content.Source{Mode: content.SourceBytes, Bytes: []byte(payload.Content)}
+		}
+		if err := mutate.CreateSetting(repo, payload.Project, payload.Column, payload.Name, payload.Kind, metadata, source); err != nil {
+			return classifyMutationErr(err)
+		}
+		return http.StatusOK, commandResult{Message: "Created setting " + payload.Name}, nil
+	case "mode.create":
+		metadata, err := metadataFromPayload(mutate.ModeKind, payload)
+		if err != nil {
+			return classifyMutationErr(err)
+		}
+		if err := mutate.CreateMode(repo, payload.Project, payload.Name, metadata); err != nil {
+			return classifyMutationErr(err)
+		}
+		return http.StatusOK, commandResult{Message: "Created mode " + payload.Name}, nil
 	case "project.delete":
 		if err := workflow.ProjectDelete(repo, payload.Name, payload.Yes, payload.ForceTargets); err != nil {
 			return classifyErr(err)

@@ -1,8 +1,8 @@
 # ConfigFacilitator
 
-ConfigFacilitator is a portable Go CLI for managing a configuration warehouse through Project, Column, Setting, and Mode resources. Normal setup, content editing, target configuration, application, rename, deletion, and reconciliation are CLI-only; direct index editing is not required.
+ConfigFacilitator is a portable Go CLI and local Web UI for managing a configuration warehouse through Project, Column, Setting, and Mode resources. Normal setup, content editing, target configuration, application, rename, deletion, and reconciliation use the CLI or Web UI; direct index editing is not required.
 
-ConfigFacilitator 是一个便携式 Go CLI，通过 Project、Column、Setting 和 Mode 资源管理配置仓库。常规的创建、内容编辑、目标配置、应用、重命名、删除和同步流程都只使用 CLI，不需要直接编辑索引。
+ConfigFacilitator 是一个便携式 Go CLI 和本地 Web UI，通过 Project、Column、Setting 和 Mode 资源管理配置仓库。常规的创建、内容编辑、目标配置、应用、重命名、删除和同步流程可使用 CLI 或 Web UI，不需要直接编辑索引。
 
 ## Install / 安装
 
@@ -46,7 +46,9 @@ Destructive controls are independent: `--yes` confirms resource, Column-target, 
 
 `cfgfc web` serves a local Web UI on `127.0.0.1` (default port `38031`). The frontend is embedded in the single binary — no separate install, no network access, fully offline. Open http://127.0.0.1:38031 in a browser; the UI talks to the backend through `/api/snapshot`, `/api/command`, and `/api/preview`. Write commands carry the warehouse-wide `revision`; a stale revision returns HTTP `409`. An occupied port is a persistence failure, not an automatic fallback; press Ctrl-C to exit.
 
-`cfgfc web` 在本机 `127.0.0.1` 提供 Web UI（默认端口 `38031`）。前端嵌入单二进制——无需单独安装、不联网、完全离线。浏览器打开 http://127.0.0.1:38031 即可使用；前端通过 `/api/snapshot`、`/api/command`、`/api/preview` 与后端交互。写命令携带全仓 `revision`，过期时返回 HTTP `409`。端口被占用属于持久化失败，不会自动换端口；按 Ctrl-C 退出。
+`cfgfc web` also provides creation buttons for Column, Setting, and Mode in the selected Project, plus Index editors on existing Column/Setting details. The editors update display metadata, descriptions, aliases, Column default targets, and Setting target overrides/inheritance; canonical renames are separate transactional actions that update sources and references. Column starts with zero targets, Mode starts without selections, and Web-created Settings support empty directories or UTF-8 file content. Mutating Web requests carry the current warehouse-wide `revision`; a stale revision returns HTTP `409` without partial changes.
+
+`cfgfc web` 也会在选定 Project 中提供创建 Column、Setting 和 Mode 的按钮，并在已有 Column/Setting 详情中提供 Index 编辑。编辑器可以修改展示元数据、描述、别名、Column 默认目标和 Setting 目标覆盖/继承；canonical 重命名是独立的事务操作，会同步更新来源和引用。Column 初始没有 target，Mode 初始没有选择；Web 创建的 Setting 支持空目录或 UTF-8 文件内容。Web 变更请求携带全仓当前 `revision`，过期时返回 HTTP `409`，不会留下部分变更。
 
 ## Warehouse root / 仓库根目录
 

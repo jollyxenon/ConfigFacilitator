@@ -2,11 +2,12 @@
 
 ## 总览
 
-`cfgfc` 是单二进制 Go CLI。`cmd/cfgfc/main.go` 会转发到 `internal/cli` 中每次新建的 Cobra 命令树。公开接口面向资源：Project、Column、Setting、Mode、目标、选择、内容、上下文、状态、apply/refresh、同步和状态恢复都通过命令表达，不再依赖编辑器工作流。
+`cfgfc` 是单二进制 Go CLI，并提供本地内嵌 Web UI。`cmd/cfgfc/main.go` 会转发到 `internal/cli` 中每次新建的 Cobra 命令树；`internal/web` 提供离线 UI 和结构化命令 API。公开接口面向资源：Project、Column、Setting、Mode、目标、选择、内容、上下文、状态、apply/refresh、同步和状态恢复都通过 CLI 或 Web 命令表达，不再依赖编辑器工作流。
 
 ## 主要边界
 
 - `internal/cli`：命令构造、作用域与参数验证、人类/JSON 输出和退出分类。
+- `internal/web`：内嵌离线前端、snapshot/preview API，以及带 revision 校验的资源、Index 编辑、重命名和工作流命令。
 - `internal/warehouse`：解析生效根目录并加载索引中存在的资源；同步时会移除文件系统来源已经消失的条目。
 - `internal/index` 与 `internal/jsonc`：解析和序列化持久 JSONC 索引，同时保留支持的元数据与可解析未知字段。
 - `internal/mutate`：资源元数据、目标、选择、重命名和删除用例。
@@ -35,11 +36,13 @@ Canonical 标识来自索引 map key 和对应资源路径。`displayName` 只�
 
 Column 目标位置是从零开始的逻辑记录，会序列化为现有 `targetNumber`、`defaultTargetDir`、`defaultTargetName` 数组。Setting 覆盖序列化为相同长度的 `targetDir`、`targetName` 数组；继承的部分持久化为空条目。结构化命令保证全部数组同步变化。
 
+Column/Setting Index 编辑复用与 CLI 相同的元数据、目标、planner 和 rename 变更函数；UI 不直接写 JSONC。canonical 重命名与普通元数据/目标编辑分开，因为它可能移动来源并重写引用。
+
 Setting 可以是文件型或目录型。内容路径被限制在 Setting 根目录下，拒绝路径遍历和符号链接组件，导入时也绝不跟随符号链接。
 
 ## 变更与事务模型
 
-CLI 自有变更会在持久修改前验证名称、别名、路径、引用、目标数组、依赖、确认和所有权。单个文件使用同目录临时写入和 rename。
+CLI 和 Web 变更会在持久修改前验证名称、别名、路径、引用、目标数组、依赖、确认和所有权。单个文件使用同目录临时写入和 rename。
 
 影响多个工件的变更使用全仓排他事务：
 

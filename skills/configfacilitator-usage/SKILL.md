@@ -50,7 +50,7 @@ Never manually edit:
 | Activate the Current | `cfgfc apply mode ...` (Current follows the Mode), `cfgfc apply column ...` (independent Current) |
 | Replan active state | `cfgfc refresh`, `cfgfc refresh --all` (single-Column `--column` was removed) |
 | Current state | `cfgfc current show`, `cfgfc current column list/set/delete` |
-| Web UI | `cfgfc web [--port ...]` on `127.0.0.1` (default `38031`) |
+| Web UI | `cfgfc web [--port ...]` on `127.0.0.1` (default `38031`); selected Projects can create Column, Setting, and Mode and edit existing Column/Setting Index metadata, targets, and canonical names |
 | External reconciliation | `cfgfc sync`, `cfgfc sync -p ...`, `cfgfc sync --all` |
 | Disappeared-resource reconciliation | `cfgfc sync`, which removes corresponding Index metadata immediately without cascading references |
 | Managed-state recovery | `cfgfc reset`, `cfgfc revert` |
@@ -73,7 +73,7 @@ The removed `new`, `switch`, `list`, and `update` commands, flag-only apply form
 1. Confirm the effective root with `cfgfc root`. Change it only with explicit user intent; changing roots does not migrate data.
 2. Create the Project and select it or pass `-p` explicitly.
 3. Create Columns, then configure zero-based positions with `column target`.
-4. Create Settings with `--kind file|directory`:
+4. Create Settings with `--kind file|directory` through CLI, or use the Web UI form for an empty directory or UTF-8 file content:
    - use `--stdin` for exact file bytes from stdin;
    - use `--text` for exact literal bytes without an added newline;
    - use `--from` to copy a regular file or directory tree;

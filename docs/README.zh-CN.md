@@ -1,6 +1,6 @@
 # ConfigFacilitator 文档
 
-ConfigFacilitator 通过面向资源的 CLI 命令完整管理可移植配置仓库。JSONC 仍然是可查看的互操作格式，但常规工作流不需要编辑器。
+ConfigFacilitator 通过面向资源的 CLI 命令和本地内嵌 Web UI 管理可移植配置仓库。JSONC 仍然是可查看的互操作格式，但常规工作流不需要编辑器。
 
 ## 从这里开始
 
@@ -24,12 +24,12 @@ ConfigFacilitator 通过面向资源的 CLI 命令完整管理可移植配置仓
 - 机器输出：`--json` 输出一个稳定的成功或错误对象；退出码见命令参考
 - Shell 补全：`cfgfc completion <bash|zsh|fish|powershell>`
 - 符号链接：Linux、macOS、原生 Windows 和 WSL 都只使用真实符号链接
-- Web UI：`cfgfc web` 在 `127.0.0.1:38031` 提供内嵌离线 UI
+- Web UI：`cfgfc web` 在 `127.0.0.1:38031` 提供内嵌离线 UI；可在选定 Project 中创建 Column、Setting 和 Mode，也可编辑已有 Column/Setting Index
 
 ## 推荐使用模型
 
-1. 使用 `project`、`column`、`setting`、`mode` 命令创建和修改仓库资源。
-2. 使用 `column target` 配置逻辑目标位置，使用 `setting target` 配置每个 Setting 的覆盖值。
+1. 使用 `project`、`column`、`setting`、`mode` 命令创建和修改仓库资源，也可以在 Web UI 中通过创建表单和 Index 编辑表单管理 Column、Setting、Mode。
+2. 使用 `column target` 配置逻辑目标位置，使用 `setting target` 配置每个 Setting 的覆盖值；Web UI 同样支持 Column 默认目标和 Setting 继承控制。
 3. 使用 `setting create` 和 `setting content` 创建或修改内容；stdin 会保留精确字节。
 4. 使用资源 `list`/`show` 查看元数据，使用 `status` 查看活动状态。
 5. 应用 Mode（Current 跟随它）或用 `apply column` 设置独立 Current；只有需要重新规划时才使用 `refresh`。

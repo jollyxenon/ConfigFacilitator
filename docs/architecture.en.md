@@ -2,11 +2,12 @@
 
 ## Overview
 
-`cfgfc` is a single-binary Go CLI. `cmd/cfgfc/main.go` delegates to a fresh Cobra command tree in `internal/cli`. The public interface is resource-oriented: Project, Column, Setting, Mode, targets, selections, content, context, status, apply/refresh, reconciliation, and state recovery are all expressed through commands rather than editor workflows.
+`cfgfc` is a single-binary Go CLI with a local embedded Web UI. `cmd/cfgfc/main.go` delegates to a fresh Cobra command tree in `internal/cli`; `internal/web` serves the offline UI and structured command API. The public interface is resource-oriented: Project, Column, Setting, Mode, targets, selections, content, context, status, apply/refresh, reconciliation, and state recovery are all expressed through CLI or Web commands rather than editor workflows.
 
 ## Main boundaries
 
 - `internal/cli`: command construction, scope and argument validation, human/JSON rendering, and exit classification.
+- `internal/web`: embedded offline frontend, snapshot/preview APIs, and revision-checked resource, Index-edit, rename, and workflow commands.
 - `internal/warehouse`: resolves the effective root and loads resources present in indexes; synchronization removes entries whose filesystem-backed sources disappeared.
 - `internal/index` and `internal/jsonc`: parse and serialize durable JSONC indexes while preserving supported metadata and unknown parseable fields.
 - `internal/mutate`: resource metadata, target, selection, rename, and deletion use cases.
@@ -35,11 +36,13 @@ Canonical identity comes from index map keys and corresponding resource paths. `
 
 Column target positions are zero-based logical records. They serialize to the existing `targetNumber`, `defaultTargetDir`, and `defaultTargetName` arrays. Setting overrides serialize to same-length `targetDir` and `targetName` arrays; an inherited component is persisted as an empty entry. Structural commands keep all arrays in lockstep.
 
+Column/Setting Index edits use the same metadata, target, planner, and rename mutations as the CLI; the UI never writes JSONC directly. Canonical rename is separate from ordinary metadata/target edits because it can move sources and rewrite references.
+
 A Setting can be file-backed or directory-backed. Content paths are bounded below its root, reject traversal and symlink components, and never follow imported symlinks.
 
 ## Mutation and transaction model
 
-CLI-owned mutations validate names, aliases, paths, references, target arrays, dependencies, confirmation, and ownership before durable change. Individual files use same-directory temporary writes and rename.
+CLI and Web mutations validate names, aliases, paths, references, target arrays, dependencies, confirmation, and ownership before durable change. Individual files use same-directory temporary writes and rename.
 
 Multi-artifact mutations use a warehouse-wide exclusive transaction:
 

@@ -1,6 +1,6 @@
 # ConfigFacilitator Documentation
 
-ConfigFacilitator manages a portable configuration warehouse entirely through resource-oriented CLI commands. JSONC remains an inspectable interoperability format, but normal workflows do not require an editor.
+ConfigFacilitator manages a portable configuration warehouse through resource-oriented CLI commands and a local embedded Web UI. JSONC remains an inspectable interoperability format, but normal workflows do not require an editor.
 
 ## Start here
 
@@ -24,12 +24,12 @@ ConfigFacilitator manages a portable configuration warehouse entirely through re
 - Machine output: `--json` emits one stable success or error object; see the command reference for exit codes
 - Shell completion: `cfgfc completion <bash|zsh|fish|powershell>`
 - Symlinks: real symlinks only on Linux, macOS, native Windows, and WSL
-- Web UI: `cfgfc web` serves an embedded offline UI on `127.0.0.1:38031`
+- Web UI: `cfgfc web` serves an embedded offline UI on `127.0.0.1:38031`; it can create Column, Setting, and Mode resources and edit existing Column/Setting Index records in the selected Project
 
 ## Recommended model
 
-1. Create and mutate warehouse resources with `project`, `column`, `setting`, and `mode` commands.
-2. Configure logical target positions with `column target` and per-Setting overrides with `setting target`.
+1. Create and mutate warehouse resources with `project`, `column`, `setting`, and `mode` commands, or use the Web UI creation and Index-edit forms for Column, Setting, and Mode.
+2. Configure logical target positions with `column target` and per-Setting overrides with `setting target`; the Web UI exposes the same Column defaults and Setting inheritance controls.
 3. Create or change payloads with `setting create` and `setting content`; stdin preserves exact bytes.
 4. Inspect metadata with resource `list`/`show`, and inspect active state with `status`.
 5. Apply a Mode (the Current follows it) or set an independent Current with `apply column`, then use `refresh` only when replanning is needed.

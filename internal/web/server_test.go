@@ -14,6 +14,7 @@ import (
 	"github.com/xenon/ConfigFacilitator/internal/mutate"
 	"github.com/xenon/ConfigFacilitator/internal/planner"
 	"github.com/xenon/ConfigFacilitator/internal/repository"
+	"github.com/xenon/ConfigFacilitator/internal/warehouse"
 	"github.com/xenon/ConfigFacilitator/internal/workflow"
 )
 
@@ -311,6 +312,97 @@ func TestReplaceModeSavesIndexOnly(t *testing.T) {
 	}
 }
 
+func TestResourceCreationCommands(t *testing.T) {
+	handler, root := testHandler(t)
+	seedWarehouse(t, root)
+
+	revision := snapshotRevision(t, handler)
+	_, envelope := post(t, handler, "/api/command", map[string]any{
+		"command": "column.create", "revision": revision, "project": "OpenCode", "name": "Web", "displayName": "Web resources", "aliases": []string{"webc"},
+	})
+	if !envelope.OK {
+		t.Fatalf("column create failed: %#v", envelope.Error)
+	}
+
+	revision = snapshotRevision(t, handler)
+	_, envelope = post(t, handler, "/api/command", map[string]any{
+		"command": "setting.create", "revision": revision, "project": "OpenCode", "column": "Web", "name": "Config.txt", "kind": "file", "content": "hello\n", "encoding": "utf8",
+	})
+	if !envelope.OK {
+		t.Fatalf("file setting create failed: %#v", envelope.Error)
+	}
+	data, err := os.ReadFile(filepath.Join(root, "OpenCode", "Column", "Web", "Config.txt"))
+	if err != nil || string(data) != "hello\n" {
+		t.Fatalf("created file content = %q, err=%v", data, err)
+	}
+
+	revision = snapshotRevision(t, handler)
+	_, envelope = post(t, handler, "/api/command", map[string]any{
+		"command": "setting.create", "revision": revision, "project": "OpenCode", "column": "Web", "name": "Docs", "kind": "directory",
+	})
+	if !envelope.OK {
+		t.Fatalf("directory setting create failed: %#v", envelope.Error)
+	}
+	if info, err := os.Stat(filepath.Join(root, "OpenCode", "Column", "Web", "Docs")); err != nil || !info.IsDir() {
+		t.Fatalf("created directory = %v, err=%v", info, err)
+	}
+
+	revision = snapshotRevision(t, handler)
+	_, envelope = post(t, handler, "/api/command", map[string]any{
+		"command": "mode.create", "revision": revision, "project": "OpenCode", "name": "WebMode", "aliases": []string{"wm"},
+	})
+	if !envelope.OK {
+		t.Fatalf("mode create failed: %#v", envelope.Error)
+	}
+
+	stale := snapshotRevision(t, handler)
+	_, envelope = post(t, handler, "/api/command", map[string]any{
+		"command": "column.create", "revision": stale, "project": "OpenCode", "name": "AfterStale",
+	})
+	if !envelope.OK {
+		t.Fatalf("precondition column create failed: %#v", envelope.Error)
+	}
+	_, envelope = post(t, handler, "/api/command", map[string]any{
+		"command": "mode.create", "revision": stale, "project": "OpenCode", "name": "RejectedMode",
+	})
+	if envelope.OK || envelope.Error == nil || envelope.Error.Code != "revision_conflict" {
+		t.Fatalf("stale creation = %#v", envelope)
+	}
+	loaded, err := warehouse.LoadWarehouse(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, exists := loaded.Projects["OpenCode"].Modes["RejectedMode"]; exists {
+		t.Fatal("stale mode was created")
+	}
+
+	revision = snapshotRevision(t, handler)
+	_, envelope = post(t, handler, "/api/command", map[string]any{
+		"command": "column.create", "revision": revision, "project": "OpenCode", "name": "Models",
+	})
+	if envelope.OK || envelope.Error == nil || envelope.Error.Code != "reference_conflict" {
+		t.Fatalf("duplicate column = %#v", envelope)
+	}
+	if _, err := os.Stat(filepath.Join(root, "OpenCode", "Column", "Models")); err != nil {
+		t.Fatalf("existing column disappeared: %v", err)
+	}
+}
+
+func TestCommandRejectsDirectoryInitialContent(t *testing.T) {
+	handler, root := testHandler(t)
+	seedWarehouse(t, root)
+	revision := snapshotRevision(t, handler)
+	_, envelope := post(t, handler, "/api/command", map[string]any{
+		"command": "setting.create", "revision": revision, "project": "OpenCode", "column": "Models", "name": "Docs", "kind": "directory", "content": "not a directory",
+	})
+	if envelope.OK || envelope.Error == nil || envelope.Error.Code != "invalid_content_source" {
+		t.Fatalf("directory content = %#v", envelope)
+	}
+	if _, err := os.Stat(filepath.Join(root, "OpenCode", "Column", "Models", "Docs")); !os.IsNotExist(err) {
+		t.Fatalf("rejected directory exists, err=%v", err)
+	}
+}
+
 func snapshotRevision(t *testing.T, handler *Handler) string {
 	t.Helper()
 	recorder := httptest.NewRecorder()
@@ -328,7 +420,7 @@ func snapshotRevision(t *testing.T, handler *Handler) string {
 }
 
 // 列内多个 Setting 继承同一默认目标时，snapshot 的目标状态必须稳定为 ok
-//（cfgfc 管理的链接），而不是依赖 map 迭代顺序随机显示被占用。
+// （cfgfc 管理的链接），而不是依赖 map 迭代顺序随机显示被占用。
 func TestSnapshotTargetStateStableForSharedColumnTarget(t *testing.T) {
 	handler, root := testHandler(t)
 	seedWarehouse(t, root)
@@ -360,5 +452,135 @@ func TestSnapshotTargetStateStableForSharedColumnTarget(t *testing.T) {
 		if state := targets[target]; state != "ok" {
 			t.Fatalf("iteration %d: target %s state = %v, want ok", i, target, state)
 		}
+	}
+}
+
+func TestIndexEditingAndRenameCommands(t *testing.T) {
+	handler, root := testHandler(t)
+	seedWarehouse(t, root)
+	targetDir := filepath.Join(filepath.Dir(root), "web-target")
+	if err := os.MkdirAll(targetDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	revision := snapshotRevision(t, handler)
+
+	_, envelope := post(t, handler, "/api/command", map[string]any{
+		"command": "column.set", "revision": revision, "project": "OpenCode", "name": "Models",
+		"displayName": "Web Models", "description": "edited", "aliases": []string{"wm"},
+	})
+	if !envelope.OK {
+		t.Fatalf("column set failed: %#v", envelope.Error)
+	}
+
+	revision = snapshotRevision(t, handler)
+	_, envelope = post(t, handler, "/api/command", map[string]any{
+		"command": "column.target.add", "revision": revision, "project": "OpenCode", "name": "Models",
+		"targetDir": targetDir, "targetName": "web.json",
+	})
+	if !envelope.OK {
+		t.Fatalf("column target add failed: %#v", envelope.Error)
+	}
+
+	revision = snapshotRevision(t, handler)
+	_, envelope = post(t, handler, "/api/command", map[string]any{
+		"command": "column.target.set", "revision": revision, "project": "OpenCode", "name": "Models",
+		"targetIndex": 1, "targetName": "web-alt.json",
+	})
+	if !envelope.OK {
+		t.Fatalf("column target set failed: %#v", envelope.Error)
+	}
+
+	revision = snapshotRevision(t, handler)
+	_, envelope = post(t, handler, "/api/command", map[string]any{
+		"command": "setting.set", "revision": revision, "project": "OpenCode", "column": "Models", "name": "Alpha.txt",
+		"displayName": "Alpha Web", "description": "edited setting", "aliases": []string{"alpha-web"},
+	})
+	if !envelope.OK {
+		t.Fatalf("setting set failed: %#v", envelope.Error)
+	}
+
+	revision = snapshotRevision(t, handler)
+	_, envelope = post(t, handler, "/api/command", map[string]any{
+		"command": "setting.target.set", "revision": revision, "project": "OpenCode", "column": "Models", "name": "Alpha.txt",
+		"targetIndex": 0, "targetDir": targetDir, "targetName": "alpha.json",
+	})
+	if !envelope.OK {
+		t.Fatalf("setting target set failed: %#v", envelope.Error)
+	}
+
+	revision = snapshotRevision(t, handler)
+	_, envelope = post(t, handler, "/api/command", map[string]any{
+		"command": "setting.target.reset", "revision": revision, "project": "OpenCode", "column": "Models", "name": "Alpha.txt", "targetIndex": 0,
+	})
+	if !envelope.OK {
+		t.Fatalf("setting target reset failed: %#v", envelope.Error)
+	}
+
+	revision = snapshotRevision(t, handler)
+	_, envelope = post(t, handler, "/api/command", map[string]any{
+		"command": "column.rename", "revision": revision, "project": "OpenCode", "name": "Models", "newName": "WebModels", "forceTargets": true,
+	})
+	if !envelope.OK {
+		t.Fatalf("column rename failed: %#v", envelope.Error)
+	}
+
+	revision = snapshotRevision(t, handler)
+	_, envelope = post(t, handler, "/api/command", map[string]any{
+		"command": "setting.rename", "revision": revision, "project": "OpenCode", "column": "WebModels", "name": "Alpha.txt", "newName": "Alpha.json", "forceTargets": true,
+	})
+	if !envelope.OK {
+		t.Fatalf("setting rename failed: %#v", envelope.Error)
+	}
+
+	loaded, err := warehouse.LoadWarehouse(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	column := loaded.Projects["OpenCode"].Columns["WebModels"]
+	if column.Metadata.DisplayName != "Web Models" || column.SettingIndex.TargetNumber != 2 {
+		t.Fatalf("edited column = %#v", column)
+	}
+	if _, exists := column.Settings["Alpha.json"]; !exists {
+		t.Fatalf("renamed setting missing: %#v", column.Settings)
+	}
+	if _, err := os.Stat(filepath.Join(root, "OpenCode", "Column", "WebModels", "Alpha.json")); err != nil {
+		t.Fatalf("renamed source missing: %v", err)
+	}
+}
+
+func TestIndexEditingRejectsInvalidAndStaleRequests(t *testing.T) {
+	handler, root := testHandler(t)
+	seedWarehouse(t, root)
+	targetDir := filepath.Join(filepath.Dir(root), "targets")
+	revision := snapshotRevision(t, handler)
+	_, envelope := post(t, handler, "/api/command", map[string]any{
+		"command": "column.target.set", "revision": revision, "project": "OpenCode", "name": "Models", "targetIndex": 0, "clearDir": true, "targetName": "Alpha.txt",
+	})
+	if envelope.OK || envelope.Error == nil {
+		t.Fatalf("invalid target edit unexpectedly succeeded: %#v", envelope)
+	}
+	loaded, err := warehouse.LoadWarehouse(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.Projects["OpenCode"].Columns["Models"].SettingIndex.DefaultTargetDir[0] != targetDir {
+		t.Fatal("failed target edit partially changed the index")
+	}
+	stale := snapshotRevision(t, handler)
+	revision = snapshotRevision(t, handler)
+	_, envelope = post(t, handler, "/api/command", map[string]any{
+		"command": "column.set", "revision": revision, "project": "OpenCode", "name": "Models", "displayName": "Updated", "description": "", "aliases": []string{},
+	})
+	if !envelope.OK {
+		t.Fatalf("precondition metadata update failed: %#v", envelope.Error)
+	}
+	_, envelope = post(t, handler, "/api/command", map[string]any{
+		"command": "column.rename", "revision": stale, "project": "OpenCode", "name": "Models", "newName": "Rejected",
+	})
+	if envelope.OK || envelope.Error == nil || envelope.Error.Code != "revision_conflict" {
+		t.Fatalf("stale index rename = %#v", envelope)
+	}
+	if _, err := os.Stat(filepath.Join(root, "OpenCode", "Column", "Models")); err != nil {
+		t.Fatalf("stale rename changed source: %v", err)
 	}
 }

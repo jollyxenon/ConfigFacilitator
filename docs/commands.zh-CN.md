@@ -243,7 +243,7 @@ cfgfc root [Path]
 cfgfc web [--port <Port>]
 ```
 
-`web` 在本机 `127.0.0.1` 上提供 Web UI（默认端口 `38031`）。前端嵌入单二进制，无需单独安装或联网；浏览器通过 `/api/snapshot`、`/api/command`、`/api/preview` 与后端交互。写命令携带全仓 `revision`，过期时返回 HTTP `409`。端口被占用时命令直接报错，不会悄悄换端口。按 Ctrl-C 退出。
+`web` 在本机 `127.0.0.1` 上提供 Web UI（默认端口 `38031`）。前端嵌入单二进制，无需单独安装或联网；浏览器通过 `/api/snapshot`、`/api/command`、`/api/preview` 与后端交互。在选定 Project 中，UI 可以创建 Column、Setting 和 Mode，也可以编辑已有 Column/Setting Index 的元数据、默认目标和覆盖继承。Column/Setting canonical 重命名是独立的事务操作，会同步更新来源和引用。新 Column 没有 target，新 Mode 没有选择；Web 创建的 Setting 只支持空目录或 UTF-8 文件内容。写命令携带全仓 `revision`，过期时返回 HTTP `409`，不会留下部分变更。端口被占用时命令直接报错，不会悄悄换端口。按 Ctrl-C 退出。
 
 ## 旧命令到新命令迁移
 

@@ -8,7 +8,7 @@
 
 const $  = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
-const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const esc = s => String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const clone = v => JSON.parse(JSON.stringify(v));
 const P = name => S.snap && S.snap.projects[name];
 
@@ -336,6 +336,8 @@ function renderResPanel() {
       "<h3>目标位置（Column 默认）</h3><table class='grid'><thead><tr><th>#</th><th>目标目录</th><th>目标名</th></tr></thead><tbody>" +
       rows + "</tbody></table>" +
       "<div class='btnrow' style='margin-top:12px'>" +
+      "<button class='btn' data-index-edit='column'>编辑 Index</button>" +
+      "<button class='btn' data-index-rename='column'>重命名</button>" +
       "<button class='btn btn-danger' data-danger='column'>delete column…</button></div>";
     return;
   }
@@ -378,6 +380,8 @@ function renderResPanel() {
     "<h3>目标挂载点</h3><table class='grid'><thead><tr><th>#</th><th>Column 默认</th><th>Setting 覆盖</th><th>解析结果</th><th>实况</th></tr></thead><tbody>" +
     rows + "</tbody></table>" +
     "<div class='btnrow' style='margin-top:12px'>" +
+    "<button class='btn' data-index-edit='setting'>编辑 Index</button>" +
+    "<button class='btn' data-index-rename='setting'>重命名</button>" +
     "<button class='btn' data-goto-editor='1'>编辑内容</button>" +
     "<button class='btn btn-danger' data-danger='setting'>delete setting…</button></div>";
 }
@@ -906,6 +910,264 @@ function askForce(message) {
     ]).then(v => v === "yes");
 }
 
+/* 解析逗号分隔的 aliases；空白项不提交给后端。 */
+function parseAliases(value) {
+  if (!value.trim()) return [];
+  return value.split(",").map(alias => alias.trim()).filter(Boolean);
+}
+
+/* 生成三类资源共用的创建表单。 */
+function createFormHtml(kind, project, column) {
+  const settingFields = kind === "setting" ?
+    "<label class='create-field'><span>类型 <b>*</b></span><select name='kind'>" +
+      "<option value='file'>file</option><option value='directory'>directory</option></select></label>" +
+    "<label class='create-field create-content'><span>UTF-8 初始内容</span>" +
+      "<textarea name='content' rows='8' spellcheck='false' placeholder='可留空，按原字节写入'></textarea>" +
+      "<small>仅文件型 Setting 支持；目录型 Setting 创建为空目录。</small></label>" : "";
+  const scope = kind === "setting"
+    ? "Project <code>" + esc(project) + "</code> · Column <code>" + esc(column) + "</code>"
+    : "Project <code>" + esc(project) + "</code>";
+  return "<form id='resourceCreateForm' class='create-form' novalidate>" +
+    "<p class='create-scope'>" + scope + "</p>" +
+    "<label class='create-field'><span>canonical 名称 <b>*</b></span>" +
+      "<input name='name' required autocomplete='off' autofocus placeholder='唯一、可用于路径的名称' /></label>" +
+    "<label class='create-field'><span>展示名称</span><input name='displayName' autocomplete='off' placeholder='留空则使用 canonical 名称' /></label>" +
+    "<label class='create-field'><span>描述</span><textarea name='description' rows='3'></textarea></label>" +
+    "<label class='create-field'><span>Aliases</span><input name='aliases' autocomplete='off' placeholder='逗号分隔，例如 main, default' /></label>" +
+    settingFields +
+    "<div class='create-error' id='createError' role='alert' hidden></div>" +
+    "<button class='btn btn-sm create-reload' id='createReload' type='button' hidden>重新加载最新快照</button>" +
+    "</form>";
+}
+
+/* 创建失败时保留表单，并把后端错误显示在表单内。 */
+function showCreateError(err) {
+  const box = $("#createError");
+  if (!box) return;
+  box.hidden = false;
+  box.textContent = err.code === "revision_conflict"
+    ? "仓库已被其他窗口或 CLI 修改。请重新加载最新快照后再提交；当前输入会保留。"
+    : ((err.message || "创建失败") + (err.code ? "（" + err.code + "）" : ""));
+  const reload = $("#createReload");
+  if (reload) reload.hidden = err.code !== "revision_conflict";
+}
+
+/* 创建成功后切换到新资源，并以服务端 snapshot 为唯一状态来源。 */
+function focusCreatedResource(kind, project, column, name) {
+  const ns = S.navOpen[project] || (S.navOpen[project] = { open: true, cols: false, modes: false });
+  ns.open = true;
+  if (kind === "column") {
+    ns.cols = true;
+    S.sel = { seg: "project", project, mode: undefined };
+    S.res = { column: name, setting: null };
+    S.ed = { column: name, setting: null, path: null };
+  } else if (kind === "setting") {
+    ns.cols = true;
+    S.sel = { seg: "project", project, mode: undefined };
+    S.res = { column, setting: name };
+    S.ed = { column, setting: name, path: null };
+    S.ptab = "editor";
+  } else {
+    ns.modes = true;
+    S.sel = { seg: "mode", project, mode: name };
+  }
+  renderAll();
+  if (kind === "setting") {
+    $$('[data-ptab]').forEach(tab => tab.setAttribute("aria-selected", String(tab.dataset.ptab === "editor")));
+    $("#ptab-targets").hidden = true;
+    $("#ptab-editor").hidden = false;
+    loadContent();
+  }
+  schedulePreview();
+}
+
+/* 打开一个资源创建 modal，并在失败时保留所有字段。 */
+function openCreateResource(kind) {
+  const project = S.sel.project;
+  const column = S.res.column;
+  if (!project) { log("未选择 Project"); return; }
+  if (kind === "setting" && !column) { log("请先选择一个 Column"); return; }
+  const labels = { column: "Column", setting: "Setting", mode: "Mode" };
+  const host = $("#modalHost");
+  host.innerHTML = "<div class='modal-backdrop'><div class='modal-box create-box'>" +
+    "<h3 class='modal-title'>新建 " + labels[kind] + "</h3><div class='modal-body'>" +
+    createFormHtml(kind, project, column) + "</div><div class='modal-foot'>" +
+    "<button class='btn' type='button' data-create-cancel>取消</button>" +
+    "<button class='btn btn-primary' type='submit' form='resourceCreateForm' data-create-submit>创建</button>" +
+    "</div></div></div>";
+  host.hidden = false;
+  const form = $("#resourceCreateForm");
+  const kindSelect = $("select[name='kind']", form);
+  const contentField = $(".create-content", form);
+  if (kindSelect) {
+    kindSelect.addEventListener("change", () => {
+      const directory = kindSelect.value === "directory";
+      contentField.hidden = directory;
+      if (directory) $("textarea[name='content']", form).value = "";
+    });
+  }
+  $("[data-create-cancel]", host).addEventListener("click", () => closeModal("cancel"));
+  $("#createReload", form).addEventListener("click", async () => {
+    await loadSnapshot();
+    const box = $("#createError");
+    if (box) box.textContent = "已重新加载最新快照，可以保留当前输入重新提交。";
+    $("#createReload", form).hidden = true;
+  });
+  form.addEventListener("submit", async event => {
+    event.preventDefault();
+    const name = form.elements.name.value;
+    if (!name.trim()) { showCreateError({ code: "invalid_name", message: "canonical 名称不能为空" }); return; }
+    const payload = {
+      command: kind + ".create", project, name,
+      displayName: form.elements.displayName.value,
+      description: form.elements.description.value,
+      aliases: parseAliases(form.elements.aliases.value)
+    };
+    if (kind === "setting") Object.assign(payload, {
+      column, kind: form.elements.kind.value, content: form.elements.content.value, encoding: "utf8"
+    });
+    const submit = $("[data-create-submit]", host);
+    submit.disabled = true;
+    const ok = await execCommand(payload, {
+      label: kind + " create " + name,
+      forcePrompt: false,
+      onError: showCreateError
+    });
+    submit.disabled = false;
+    if (!ok) return;
+    closeModal("created");
+    focusCreatedResource(kind, project, column, name);
+  });
+  form.elements.name.focus();
+}
+
+/* 生成 Index 编辑表单中的 target 行。 */
+function indexTargetRows(kind, project, column, setting) {
+  const p = P(project);
+  const col = p.columns[column];
+  const count = col.targetNumber || 0;
+  const rows = [];
+  for (let i = 0; i < count; i++) {
+    const dir = kind === "column" ? (col.defaultTargetDir[i] || "") : (setting.targetDir[i] || "");
+    const name = kind === "column" ? (col.defaultTargetName[i] || "") : (setting.targetName[i] || "");
+    const hint = kind === "column" && !name ? "来自 Setting 名称" : (kind === "setting" && !dir && !name ? "继承 Column 默认" : "");
+    rows.push("<div class='index-target-row' data-index-row='" + i + "'>" +
+      "<span class='num'>#" + i + "</span>" +
+      "<input data-target-dir value='" + esc(dir) + "' placeholder='目标目录' />" +
+      "<input data-target-name value='" + esc(name) + "' placeholder='" + (kind === "column" ? "空 = Setting 名称" : "空 = 继承") + "' />" +
+      (hint ? "<small>" + esc(hint) + "</small>" : "") +
+      "<button class='btn btn-sm' type='button' data-index-target-save>保存</button>" +
+      "<button class='btn btn-sm btn-danger' type='button' data-index-target-delete>删除</button></div>");
+  }
+  return rows.join("") || "<div class='empty'>暂无 target。可在下方新增。</div>";
+}
+
+/* 在 Index modal 内显示后端错误，不清除用户正在编辑的字段。 */
+function showIndexError(err) {
+  const box = $("#indexError");
+  if (!box) return;
+  box.hidden = false;
+  box.textContent = err.code === "revision_conflict"
+    ? "仓库已变化，请重新加载最新快照后再提交；当前输入会保留。"
+    : ((err.message || "Index 修改失败") + (err.code ? "（" + err.code + "）" : ""));
+}
+
+/* 打开 Column/Setting Index 编辑 modal；target 每行独立提交，避免多个位置互相覆盖。 */
+function openIndexEditor(kind) {
+  const project = S.sel.project;
+  const column = S.res.column;
+  const p = cur();
+  const col = p && p.columns[column];
+  const setting = kind === "setting" && col ? col.settings[S.res.setting] : null;
+  if (!project || !col || (kind === "setting" && !setting)) { log("请先选择要编辑的资源"); return; }
+  const name = kind === "column" ? column : S.res.setting;
+  const item = kind === "column" ? col : setting;
+  const aliases = (item.aliases || []).join(", ");
+  const scope = kind === "column" ? "Project <code>" + esc(project) + "</code>" :
+    "Project <code>" + esc(project) + "</code> · Column <code>" + esc(column) + "</code>";
+  const host = $("#modalHost");
+  host.innerHTML = "<div class='modal-backdrop'><div class='modal-box index-box'><h3 class='modal-title'>编辑 " + (kind === "column" ? "Column" : "Setting") + " Index</h3>" +
+    "<div class='modal-body'><p class='create-scope'>" + scope + " · canonical <code>" + esc(name) + "</code></p>" +
+    "<form id='indexMetadataForm' class='create-form'><label class='create-field'><span>展示名称</span><input name='displayName' value='" + esc(item.displayName || name) + "' /></label>" +
+    "<label class='create-field'><span>描述</span><textarea name='description' rows='3'>" + esc(item.description || "") + "</textarea></label>" +
+    "<label class='create-field'><span>Aliases</span><input name='aliases' value='" + esc(aliases) + "' placeholder='逗号分隔' /></label>" +
+    "<div class='create-error' id='indexError' role='alert' hidden></div><button class='btn btn-primary' type='submit'>保存元数据</button></form>" +
+    "<h4 class='index-heading'>" + (kind === "column" ? "Column 默认 targets" : "Setting target 覆盖") + "</h4>" +
+    "<div class='index-targets' id='indexTargets'>" + indexTargetRows(kind, project, column, setting) + "</div>" +
+    (kind === "column" ? "<form id='indexAddForm' class='index-add'><input name='targetDir' placeholder='新增目标目录' /><input name='targetName' placeholder='目标名；留空则使用 Setting 名称' /><label><input type='checkbox' name='nameFromSetting' /> 名称来自 Setting</label><button class='btn btn-sm' type='submit'>新增 target</button></form>" : "<p class='create-scope'>Setting 的空字段表示继承 Column 默认 target；每行可单独保存或恢复继承。</p>") +
+    "</div><div class='modal-foot'><button class='btn' type='button' data-index-cancel>关闭</button></div></div></div>";
+  host.hidden = false;
+
+  const form = $("#indexMetadataForm", host);
+  form.addEventListener("submit", async event => {
+    event.preventDefault();
+    const payload = { command: kind + ".set", project, name, displayName: form.elements.displayName.value, description: form.elements.description.value, aliases: parseAliases(form.elements.aliases.value) };
+    if (kind === "setting") payload.column = column;
+    const ok = await execCommand(payload, { label: kind + " set " + name, onError: showIndexError });
+    if (ok) closeModal("index-saved");
+  });
+
+  $$('[data-index-target-save]', host).forEach(button => button.addEventListener("click", async () => {
+    const row = button.closest("[data-index-row]");
+    const dir = $("[data-target-dir]", row).value.trim();
+    const targetName = $("[data-target-name]", row).value.trim();
+    const payload = { command: kind === "column" ? "column.target.set" : "setting.target.set", project, name, targetIndex: Number(row.dataset.index), targetDir: dir, targetName, clearDir: !dir, nameFromSetting: !targetName, inheritDir: !dir, inheritName: !targetName };
+    if (kind === "setting") payload.column = column;
+    const ok = await execCommand(payload, { label: kind + " target set " + row.dataset.index, onError: showIndexError });
+    if (ok) closeModal("target-saved");
+  }));
+
+  $$('[data-index-target-delete]', host).forEach(button => button.addEventListener("click", async () => {
+    if (kind !== "column") return;
+    const row = button.closest("[data-index-row]");
+    const ok = await execCommand({ command: "column.target.delete", project, name, targetIndex: Number(row.dataset.index), yes: true }, { label: "column target delete", onError: showIndexError });
+    if (ok) closeModal("target-deleted");
+  }));
+
+  const add = $("#indexAddForm", host);
+  if (add) add.addEventListener("submit", async event => {
+    event.preventDefault();
+    const dir = add.elements.targetDir.value.trim();
+    const targetName = add.elements.targetName.value.trim();
+    const derived = add.elements.nameFromSetting.checked;
+    if (!dir || (!targetName && !derived)) { showIndexError({ code: "invalid_target", message: "目标目录不能为空，且必须填写目标名或选择来自 Setting" }); return; }
+    const ok = await execCommand({ command: "column.target.add", project, name, targetDir: dir, targetName, nameFromSetting: derived }, { label: "column target add", onError: showIndexError });
+    if (ok) closeModal("target-added");
+  });
+  $("[data-index-cancel]", host).addEventListener("click", () => closeModal("cancel"));
+}
+
+/* 打开独立 canonical rename modal；rename 会移动来源并重写索引/引用。 */
+function openIndexRename(kind) {
+  const project = S.sel.project;
+  const column = S.res.column;
+  const oldName = kind === "column" ? column : S.res.setting;
+  if (!project || !oldName) { log("请先选择要重命名的资源"); return; }
+  const host = $("#modalHost");
+  host.innerHTML = "<div class='modal-backdrop'><div class='modal-box create-box'><h3 class='modal-title'>重命名 " + (kind === "column" ? "Column" : "Setting") + "</h3><div class='modal-body'><p class='create-scope'>canonical 重命名会移动来源并更新相关引用。</p><form id='renameForm' class='create-form'><label class='create-field'><span>新 canonical 名称 <b>*</b></span><input name='newName' value='" + esc(oldName) + "' required /></label><div class='create-error' id='renameError' role='alert' hidden></div></form></div><div class='modal-foot'><button class='btn' type='button' data-rename-cancel>取消</button><button class='btn btn-primary' type='submit' form='renameForm'>重命名</button></div></div></div>";
+  host.hidden = false;
+  const form = $("#renameForm", host);
+  form.addEventListener("submit", async event => {
+    event.preventDefault();
+    const newName = form.elements.newName.value.trim();
+    if (!newName) { $("#renameError", host).hidden = false; $("#renameError", host).textContent = "canonical 名称不能为空"; return; }
+    const payload = { command: kind + ".rename", project, name: oldName, newName };
+    if (kind === "setting") payload.column = column;
+    const ok = await execCommand(payload, { label: kind + " rename " + oldName, onError: err => { const box = $("#renameError", host); box.hidden = false; box.textContent = err.message || "重命名失败"; } });
+    if (!ok) return;
+    closeModal("renamed");
+    if (kind === "column") {
+      S.res = { column: newName, setting: null }; S.ed = firstSettingOf(P(project));
+    } else {
+      S.res = { column, setting: newName }; S.ed = { column, setting: newName, path: null };
+    }
+    renderAll();
+    if (kind === "setting") loadContent();
+  });
+  $("[data-rename-cancel]", host).addEventListener("click", () => closeModal("cancel"));
+  form.elements.newName.focus();
+}
+
 /* ================= 命令执行 ================= */
 async function execCommand(payload, opts = {}) {
   const label = opts.label || payload.command;
@@ -927,7 +1189,10 @@ async function execCommand(payload, opts = {}) {
     return true;
   }
   const err = res.error || {};
-  if (err.code === "revision_conflict") { showConflictModal(); return false; }
+  if (err.code === "revision_conflict") {
+    if (opts.onError) opts.onError(err); else showConflictModal();
+    return false;
+  }
   const needsForce = err.code === "unsafe_target" ||
     (err.message && /unmanaged|drift|被占用|occupied/i.test(err.message));
   if (needsForce && forcePrompt) {
@@ -936,6 +1201,7 @@ async function execCommand(payload, opts = {}) {
     return false;
   }
   log(label + " 失败（" + err.code + "）：" + (err.message || "未知错误"));
+  if (opts.onError) opts.onError(err);
   return false;
 }
 
@@ -1018,6 +1284,12 @@ async function runCommand(name) {
       }
       return;
     }
+    case "column-create":
+      return openCreateResource("column");
+    case "setting-create":
+      return openCreateResource("setting");
+    case "mode-create":
+      return openCreateResource("mode");
     default:
       log("未知命令 " + name);
   }
@@ -1269,6 +1541,11 @@ document.addEventListener("click", e => {
     }
     S.hover = null; renderAll(); schedulePreview(); return;
   }
+
+  const indexEdit = t.closest("[data-index-edit]");
+  if (indexEdit) { openIndexEditor(indexEdit.dataset.indexEdit); return; }
+  const indexRename = t.closest("[data-index-rename]");
+  if (indexRename) { openIndexRename(indexRename.dataset.indexRename); return; }
 
   const ptab = t.closest("[data-ptab]");
   if (ptab) {
