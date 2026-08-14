@@ -52,12 +52,24 @@ jobs:
           node-version: 20
           registry-url: https://registry.npmjs.org
 
-      - name: Validate npm package contents
-        run: npm pack --dry-run
+      - name: Verify npm version matches tag
         working-directory: npm
+        run: |
+          PKG_VERSION="$(node -p "require('./package.json').version")"
+          if [ "v${PKG_VERSION}" != "${GITHUB_REF_NAME}" ]; then
+            echo "::error::npm package version ${PKG_VERSION} does not match tag ${GITHUB_REF_NAME}; bump npm/package.json to ${GITHUB_REF_NAME#v} before tagging"
+            exit 1
+          fi
+          echo "npm package version ${PKG_VERSION} matches tag ${GITHUB_REF_NAME}"
 
       - name: Publish to npm
-        run: npm publish --access public --provenance
         working-directory: npm
+        run: |
+          PKG_VERSION="$(node -p "require('./package.json').version")"
+          if npm view "@jollyxenon/cfgfc@${PKG_VERSION}" version >/dev/null 2>&1; then
+            echo "::notice::@jollyxenon/cfgfc@${PKG_VERSION} already published; skipping publish (release assets were rebuilt for this re-tagged version)"
+          else
+            npm publish --access public --provenance
+          fi
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
