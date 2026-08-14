@@ -24,6 +24,7 @@ const S = {
   preview: null,     /* { project, mappings[], errors[], forceTargets[] } 来自 /api/preview */
   content: {},       /* project -> "col|set" -> { entries, content, encoding, bytes, loaded } */
   hover:  null,
+  navOpen: {},        /* 侧栏折叠状态：{ [project]: { open, cols: {[col]:bool}, modes: {[mode]:bool} } } */
   snap:   null,      /* 最近一次完整 snapshot（含 revision） */
   error:  null       /* 加载错误 */
 };
@@ -43,6 +44,23 @@ const TARGET_BADGE = {
 function badge(cls, text) { return '<span class="badge ' + cls + '">' + esc(text) + "</span>"; }
 function targetBadge(path) { const [c, t] = TARGET_BADGE[tState(path)] || ["b-idle", "未知"]; return badge(c, t); }
 const lineClass = path => ({ ok: "s-ok", drift: "s-warn", occupied: "s-bad", free: "" }[tState(path)] || "");
+
+/* 同一来源的多个目标取最差实况（badge / 线路左边框） */
+const STATE_RANK = { "b-bad": 3, "b-warn": 2, "b-ok": 1, "b-idle": 0 };
+function worstTargetBadge(paths) {
+  let cls = "b-idle", text = "未知", rank = -1;
+  for (const p of paths) {
+    const [c, t] = TARGET_BADGE[tState(p)] || ["b-idle", "未知"];
+    if ((STATE_RANK[c] || 0) > rank) { rank = STATE_RANK[c]; cls = c; text = t; }
+  }
+  return badge(cls, text);
+}
+function worstLineClass(paths) {
+  let cls = "", rank = -1;
+  const lineRank = p => ({ "s-bad": 3, "s-warn": 2, "s-ok": 1, "": 0 }[lineClass(p)] || 0);
+  for (const p of paths) { const r = lineRank(p); if (r > rank) { rank = r; cls = lineClass(p); } }
+  return cls;
+}
 const sourceSegsMatch = (source, colName, setName) => {
   const segs = String(source).split("/");
   return segs.length >= 2 && segs[segs.length - 2] === colName && segs[segs.length - 1] === setName;
@@ -200,33 +218,56 @@ function renderStatusbar() {
 /* ================= 侧栏 ================= */
 const navLabel = (disp, id) => (!disp || disp === id) ? esc(id) : esc(disp) + ' <span class="nav-sub">[' + esc(id) + "]</span>";
 
+/* 展开/收起箭头：带 toggleKey 的可点，叶子行只占位保持列对齐 */
+const caret = (expanded, toggleKey) =>
+  '<span class="caret' + (expanded ? " open" : "") + '"' +
+  (toggleKey ? ' data-nav-toggle="' + esc(toggleKey) + '" aria-expanded="' + expanded + '"' : "") + ">" +
+  (toggleKey ? (expanded ? "▾" : "▸") : "") + "</span>";
+
 function renderNav() {
   const projects = S.snap ? Object.keys(S.snap.projects) : [];
-  /* 每个 Project 一棵树：Project 下并列 Column / Mode 两个分组，
-     字体按上下级从重到轻（Project > 分组头 > 条目） */
+  /* 每个 Project 一棵可折叠树（默认缩起）：Project → Column/Mode 分组 → 条目 → 叶子，
+     字体按上下级从重到轻 */
   $("#navProjects").innerHTML = projects.map(name => {
     const p = P(name);
+    const ns = S.navOpen[name] || (S.navOpen[name] = { open: false, cols: {}, modes: {} });
     const nCol = Object.keys(p.columns || {}).length;
     const nSet = Object.values(p.columns || {}).reduce((a, c) => a + Object.keys(c.settings || {}).length, 0);
     const on = S.sel.seg === "project" && S.sel.project === name;
     const live = liveState(name);
     let html = '<button class="nav-item lv1" data-nav="project" data-project="' + esc(name) + '" aria-current="' + on + '">' +
-      '<span class="bar"></span><span class="nav-name">' + navLabel(p.displayName, name) + "</span>" +
+      '<span class="bar"></span>' + caret(ns.open, "project|" + name) +
+      '<span class="nav-name">' + navLabel(p.displayName, name) + "</span>" +
       '<span class="nav-sub">' + nCol + "C · " + nSet + "S</span></button>";
+    html += "<div class='nav-subtree'" + (ns.open ? "" : " hidden") + ">";
     html += '<div class="nav-group"><span class="gname">Column</span><span class="gid">' + nCol + "</span></div>";
     html += Object.keys(p.columns || {}).map(colName => {
-      const colOn = S.sel.seg === "project" && S.sel.project === name &&
-        S.res.column === colName && S.res.setting === null;
+      const colOpen = !!ns.cols[colName];
+      const colOn = S.sel.seg === "project" && S.sel.project === name && S.res.column === colName;
       const nS = Object.keys(p.columns[colName].settings || {}).length;
-      return '<button class="nav-item lv2" data-nav="column" data-project="' + esc(name) + '"' +
+      let row = '<button class="nav-item lv2" data-nav="column" data-project="' + esc(name) + '"' +
         ' data-column="' + esc(colName) + '" aria-current="' + colOn + '">' +
-        '<span class="bar"></span><span class="nav-name">' + navLabel(p.columns[colName].displayName, colName) + "</span>" +
+        '<span class="bar"></span>' + caret(colOpen, "column|" + name + "|" + colName) +
+        '<span class="nav-name">' + navLabel(p.columns[colName].displayName, colName) + "</span>" +
         '<span class="nav-sub">' + nS + "S</span></button>";
+      row += "<div class='nav-subtree'" + (colOpen ? "" : " hidden") + ">" +
+        Object.keys(p.columns[colName].settings || {}).map(setName => {
+          const set = p.columns[colName].settings[setName];
+          const setOn = S.sel.seg === "project" && S.sel.project === name &&
+            S.res.column === colName && S.res.setting === setName;
+          return '<button class="nav-item lv3" data-nav="setting" data-project="' + esc(name) + '"' +
+            ' data-column="' + esc(colName) + '" data-setting="' + esc(setName) + '" aria-current="' + setOn + '">' +
+            '<span class="bar"></span><span class="caret"></span>' +
+            '<span class="nav-name">' + navLabel(set.displayName, setName) + "</span>" +
+            '<span class="nav-sub">' + (set.kind === "directory" ? "dir" : "file") + "</span></button>";
+        }).join("") + "</div>";
+      return row;
     }).join("");
     html += '<div class="nav-group"><span class="gname">Mode</span></div>';
     const curOn = S.sel.seg === "mode" && S.sel.project === name && S.sel.mode === null;
     html += '<button class="nav-item lv2 current" data-nav="mode" data-project="' + esc(name) + '" aria-current="' + curOn + '">' +
-      '<span class="bar"></span><span style="display:flex;align-items:center;gap:7px;min-width:0">' +
+      '<span class="bar"></span><span class="caret"></span>' +
+      '<span style="display:flex;align-items:center;gap:7px;min-width:0">' +
       '<span class="live ' + live.cls + '"></span>' +
       '<span class="nav-name">（Current）</span></span>' +
       '<span class="nav-sub">' + esc(live.text) + "</span></button>";
@@ -235,11 +276,21 @@ function renderNav() {
       const on2 = S.sel.seg === "mode" && S.sel.project === name && S.sel.mode === m;
       const isLive = live.kind === "mode" && live.mode === m && !live.temporary;
       const n = Object.keys(p.modes[m].columns || {}).length;
-      html += '<button class="nav-item lv2" data-nav="mode" data-project="' + esc(name) + '"' +
+      const mOpen = !!ns.modes[m];
+      let row = '<button class="nav-item lv2" data-nav="mode" data-project="' + esc(name) + '"' +
         ' data-mode="' + esc(m) + '" aria-current="' + on2 + '">' +
-        '<span class="bar"></span><span class="nav-name">' + navLabel(p.modes[m].displayName, m) + "</span>" +
+        '<span class="bar"></span>' + caret(mOpen, "mode|" + name + "|" + m) +
+        '<span class="nav-name">' + navLabel(p.modes[m].displayName, m) + "</span>" +
         (isLive ? badge("b-ok", "生效中") : '<span class="nav-sub">' + n + "C</span>") + "</button>";
+      row += "<div class='nav-subtree'" + (mOpen ? "" : " hidden") + ">" +
+        Object.entries(p.modes[m].columns || {}).map(([colName, decl]) =>
+          "<div class='nav-mode-col'><span class='bar'></span><span class='caret'></span>" +
+          "<span class='nav-name'>" + esc(colName) + "</span>" +
+          "<span class='nav-sub'>" + esc(decl.strategy) + (decl.settings ? " · " + decl.settings.length + "S" : "") + "</span></div>"
+        ).join("") + "</div>";
+      html += row;
     }
+    html += "</div>";
     return html;
   }).join("");
 }
@@ -470,17 +521,22 @@ function renderModeScope() {
   renderCards(isCurrent, live);
   renderWire();
   renderModeFoot(isCurrent);
-  if (S.hover) scrollToColumn(S.hover);   /* 选中的 Column 与线路行对齐 */
 }
 
 function renderLiveTable(isCurrent, live) {
   const box = $("#modeLiveTable");
   if (!isCurrent || !live.recorded.length) { box.innerHTML = ""; return; }
+  /* 同一来源的多个目标合并为一行，避免逐条占用阅读空间 */
+  const groups = new Map();
+  for (const m of live.recorded) {
+    if (!groups.has(m.source)) groups.set(m.source, []);
+    groups.get(m.source).push(m.target);
+  }
   box.innerHTML = "<div class='maptable'><table class='grid'><thead><tr>" +
     "<th>已记录来源</th><th>目标</th><th>实况</th></tr></thead><tbody>" +
-    live.recorded.map(m => "<tr><td>" + esc(m.source) + "</td>" +
-      "<td><span style='color:var(--signal)'>" + esc(m.target) + "</span></td>" +
-      "<td>" + targetBadge(m.target) + "</td></tr>").join("") +
+    [...groups.entries()].map(([source, targets]) => "<tr><td>" + esc(source) + "</td>" +
+      "<td>" + targets.map(t => "<span style='color:var(--signal)'>" + esc(t) + "</span>").join("<span style='color:var(--ink-faint)'> · </span>") + "</td>" +
+      "<td>" + worstTargetBadge(targets) + "</td></tr>").join("") +
     "</tbody></table></div>";
 }
 
@@ -577,23 +633,31 @@ async function flushPreview() {
 function renderWire() {
   const box = $("#wireBody");
   const pre = S.preview && S.preview.project === S.sel.project ? S.preview : null;
-  $("#wireHead").textContent = pre ? "线路预览（" + pre.mappings.length + " 条）" : "线路预览（规划中…）";
-  if (!pre) { box.innerHTML = "<div class='hint'>正在向后端请求规划…</div>"; return; }
+  if (!pre) { $("#wireHead").textContent = "线路预览（规划中…）"; box.innerHTML = "<div class='hint'>正在向后端请求规划…</div>"; return; }
+  /* 同一来源的多个目标合并为一行：source → t1 · t2，实况取最差 */
+  const groups = new Map();
+  for (const m of pre.mappings) {
+    if (!groups.has(m.source)) groups.set(m.source, []);
+    groups.get(m.source).push(m.target);
+  }
+  $("#wireHead").textContent = "线路预览（" + groups.size + " 个来源）";
   let html = pre.errors.map(e => "<div class='diag'>" + esc(e) + "</div>").join("");
-  if (!pre.mappings.length && !pre.errors.length) {
+  if (!groups.size && !pre.errors.length) {
     box.innerHTML = "<div class='hint'>没有任何选择，应用后会解除全部受管链接。</div>";
     return;
   }
   const force = new Set(pre.forceTargets || []);
-  html += pre.mappings.map(m => {
-    const segs = String(m.source).split("/");
+  html += [...groups.entries()].map(([source, targets]) => {
+    const segs = String(source).split("/");
     const col = segs[segs.length - 2] || "";
     const tag = segs.slice(-2).join(" · ");
-    return "<div class='wireline " + lineClass(m.target) + (S.hover === col ? " hot" : "") +
+    const forceAny = targets.some(t => force.has(t));
+    return "<div class='wireline " + worstLineClass(targets) + (S.hover === col ? " hot" : "") +
       "' data-line-col='" + esc(col) + "'>" +
-      "<div class='src'>" + esc(m.source) + "</div>" +
-      "<div><span class='arr'>→</span><span class='tgt'>" + esc(m.target) + "</span></div>" +
-      "<div class='tag'>" + esc(tag) + (force.has(m.target) ? " · 需 --force-targets" : "") + "</div></div>";
+      "<div class='src'>" + esc(source) + "</div>" +
+      "<div><span class='arr'>→</span>" +
+      targets.map(t => "<span class='tgt'>" + esc(t) + "</span>").join("<span class='arr'> · </span>") + "</div>" +
+      "<div class='tag'>" + esc(tag) + " · " + targets.length + " 目标" + (forceAny ? " · 需 --force-targets" : "") + "</div></div>";
   }).join("");
   box.innerHTML = html;
 }
@@ -698,40 +762,6 @@ function log(line) {
   body.parentElement.scrollTop = body.parentElement.scrollHeight;
 }
 
-/* ================= 线路与卡片滚动联动 ================= */
-let scrollSuppressUntil = 0;
-
-/* 双向按比例同步：滚动卡片时线路跟着滚，反之亦然，左右保持对齐 */
-function bindScrollSync() {
-  const cards = $("#cards"), wire = $("#wireBody");
-  if (!cards || !wire) return;
-  const sync = (from, to) => {
-    const maxFrom = from.scrollHeight - from.clientHeight;
-    const maxTo = to.scrollHeight - to.clientHeight;
-    if (maxFrom <= 0 || maxTo <= 0) return;
-    to.scrollTop = Math.round((from.scrollTop / maxFrom) * maxTo);
-  };
-  const onScroll = (from, to) => () => {
-    if (Date.now() < scrollSuppressUntil) return;
-    sync(from, to);
-  };
-  cards.addEventListener("scroll", onScroll(cards, wire));
-  wire.addEventListener("scroll", onScroll(wire, cards));
-}
-
-/* 把选中 Column 的卡片与线路行滚到可视区（程序滚动期间暂停联动） */
-function scrollToColumn(colName) {
-  if (!colName) return;
-  scrollSuppressUntil = Date.now() + 150;
-  for (const [paneSel, itemSel, key] of [["#cards", "[data-card]", "card"], ["#wireBody", "[data-line-col]", "lineCol"]]) {
-    const pane = $(paneSel);
-    const el = $$(itemSel).find(x => x.dataset[key] === colName);
-    if (!pane || !el) continue;
-    const paneRect = pane.getBoundingClientRect();
-    const elRect = el.getBoundingClientRect();
-    pane.scrollTop = Math.max(0, Math.round(pane.scrollTop + (elRect.top - paneRect.top) - (pane.clientHeight - elRect.height) / 2));
-  }
-}
 
 /* ================= 入口 ================= */
 function firstColumnOf(p) { return Object.keys((p && p.columns) || {})[0] || null; }
@@ -1199,6 +1229,18 @@ async function runDelete() {
 document.addEventListener("click", e => {
   const t = e.target;
 
+  /* 折叠箭头优先于导航 */
+  const tg = t.closest("[data-nav-toggle]");
+  if (tg) {
+    const [kind, project, name] = tg.dataset.navToggle.split("|");
+    const ns = S.navOpen[project] || (S.navOpen[project] = { open: false, cols: {}, modes: {} });
+    if (kind === "project") ns.open = !ns.open;
+    else if (kind === "column") ns.cols[name] = !ns.cols[name];
+    else if (kind === "mode") ns.modes[name] = !ns.modes[name];
+    renderNav();
+    return;
+  }
+
   const nav = t.closest("[data-nav]");
   if (nav) {
     const project = nav.dataset.project;
@@ -1210,6 +1252,11 @@ document.addEventListener("click", e => {
       /* 侧栏 Column 条目：跳转到 Project 资源视图并选中该 Column */
       S.sel = { seg: "project", project, mode: undefined };
       S.res = { column: nav.dataset.column, setting: null };
+      S.ed = firstSettingOf(P(project));
+    } else if (nav.dataset.nav === "setting") {
+      /* 侧栏 Setting 叶子：跳转到资源视图并选中该 Setting */
+      S.sel = { seg: "project", project, mode: undefined };
+      S.res = { column: nav.dataset.column, setting: nav.dataset.setting };
       S.ed = firstSettingOf(P(project));
     } else {
       S.sel = { seg: "mode", project, mode: nav.dataset.mode !== undefined ? nav.dataset.mode : null };
@@ -1337,6 +1384,5 @@ $("#dangerDlg").addEventListener("close", () => {
 
 /* ================= 启动 ================= */
 injectOverlayUI();
-bindScrollSync();
 loadSnapshot();
 log("cfgfc web 已加载（真实后端 /api/snapshot、/api/command、/api/preview）");
