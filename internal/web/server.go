@@ -269,10 +269,12 @@ func (handler *Handler) buildSnapshot(rootPath string) (snapshot, error) {
 					continue
 				}
 				for _, mapping := range planned {
-					if _, exists := result.Targets[mapping.Target]; exists {
-						continue
+					state := targetState(rootPath, mapping)
+					// 同一目标可能被多个 Setting 解析命中（如列内多 Setting 继承同一默认目标）；
+					// map 迭代顺序随机，必须取确定性最优状态而不是首写胜出。
+					if prev, exists := result.Targets[mapping.Target]; !exists || stateRank(state) > stateRank(prev) {
+						result.Targets[mapping.Target] = state
 					}
-					result.Targets[mapping.Target] = targetState(mapping)
 				}
 			}
 		}
@@ -291,8 +293,12 @@ func settingKind(setting warehouse.Setting) string {
 	return "file"
 }
 
-func targetState(mapping repository.Mapping) string {
-	ownership, err := linker.New().InspectOwnership(mapping)
+// targetState 报告目标实况。cfgfc 管理的链接（解析后落在仓库 root 内）一律视为
+// 已链接，无论它此刻指向哪个 source——列内多 Setting 共享同一目标时，链接指向
+// 其中任意一个都不应显示为被占用。
+func targetState(rootPath string, mapping repository.Mapping) string {
+	engine := linker.New()
+	ownership, err := engine.InspectOwnership(mapping)
 	if err != nil {
 		return "unmanaged"
 	}
@@ -302,7 +308,24 @@ func targetState(mapping repository.Mapping) string {
 	case linker.OwnershipAbsent:
 		return "free"
 	default:
+		if managed, managedErr := engine.IsManagedLink(rootPath, mapping.Target); managedErr == nil && managed {
+			return "ok"
+		}
 		return "occupied"
+	}
+}
+
+// stateRank 供同一目标的多重判定取最优点：已链接 > 被占用 > 空位 > 未管理。
+func stateRank(state string) int {
+	switch state {
+	case "ok":
+		return 3
+	case "occupied":
+		return 2
+	case "free":
+		return 1
+	default:
+		return 0
 	}
 }
 

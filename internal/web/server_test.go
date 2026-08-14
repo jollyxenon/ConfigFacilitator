@@ -326,3 +326,39 @@ func snapshotRevision(t *testing.T, handler *Handler) string {
 	}
 	return revision
 }
+
+// 列内多个 Setting 继承同一默认目标时，snapshot 的目标状态必须稳定为 ok
+//（cfgfc 管理的链接），而不是依赖 map 迭代顺序随机显示被占用。
+func TestSnapshotTargetStateStableForSharedColumnTarget(t *testing.T) {
+	handler, root := testHandler(t)
+	seedWarehouse(t, root)
+	repo := repository.New(root)
+	if err := mutate.CreateSetting(repo, "OpenCode", "Models", "Beta.txt", "file", mutate.Metadata{}, contentSourceText("beta")); err != nil {
+		t.Fatalf("setting create: %v", err)
+	}
+	// 模拟手改索引：Beta.txt 与 Alpha.txt 解析到同一目标（列内共享）
+	idx, err := repo.LoadSettingIndex("OpenCode", "Models")
+	if err != nil {
+		t.Fatal(err)
+	}
+	beta := idx.Settings["Beta.txt"]
+	beta.TargetName = []string{"Alpha.txt"}
+	idx.Settings["Beta.txt"] = beta
+	if err := repo.SaveSettingIndex("OpenCode", "Models", idx); err != nil {
+		t.Fatal(err)
+	}
+	target := filepath.Join(filepath.Dir(root), "targets", "Alpha.txt")
+	for i := 0; i < 25; i++ {
+		recorder := httptest.NewRecorder()
+		handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/api/snapshot", nil))
+		var envelope responseEnvelope
+		if err := json.Unmarshal(recorder.Body.Bytes(), &envelope); err != nil {
+			t.Fatal(err)
+		}
+		data := envelope.Data.(map[string]any)
+		targets := data["targets"].(map[string]any)
+		if state := targets[target]; state != "ok" {
+			t.Fatalf("iteration %d: target %s state = %v, want ok", i, target, state)
+		}
+	}
+}
