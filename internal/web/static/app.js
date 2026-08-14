@@ -1251,7 +1251,11 @@ document.addEventListener("click", e => {
     const kind = nav.dataset.nav;
     if (kind === "project") {
       const ns = S.navOpen[project] || (S.navOpen[project] = { open: false, cols: false, modes: false });
+      /* 收起/展开 Project 都重置分组状态：每次点开只看到 Column/Mode 分组头，
+         不保留上次的分组展开情况 */
       ns.open = !ns.open;
+      ns.cols = false;
+      ns.modes = false;
       S.sel = { seg: "project", project, mode: undefined };
       S.res = { column: firstColumnOf(P(project)), setting: null };
       S.ed = firstSettingOf(P(project));

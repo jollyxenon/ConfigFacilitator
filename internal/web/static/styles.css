@@ -162,7 +162,8 @@ button, input, select, textarea { font: inherit; color: inherit; }
   display: flex; align-items: center; gap: 6px;
   width: 100%; text-align: left; cursor: pointer;
   background: none; border: 0;
-  padding: 6px 10px 4px 28px;
+  /* 与 .nav-item 同高（5px 上下），避免点击区域过小误触 */
+  padding: 5px 10px 5px 28px;
   border-bottom: 1px solid var(--line-hair);
   color: var(--ink-muted);
 }
