@@ -243,7 +243,7 @@ cfgfc root [Path]
 cfgfc web [--port <Port>]
 ```
 
-`web` serves a local Web UI on `127.0.0.1` (default port `49631`). The frontend is embedded in the single binary and needs no separate install or network access; the browser talks to the backend through `/api/snapshot`, `/api/command`, and `/api/preview`. Write commands carry the warehouse-wide `revision`; a stale revision returns HTTP `409`. If the port is already in use, the command fails with a persistence error instead of silently picking another port. Press Ctrl-C to exit.
+`web` serves a local Web UI on `127.0.0.1` (default port `38031`). The frontend is embedded in the single binary and needs no separate install or network access; the browser talks to the backend through `/api/snapshot`, `/api/command`, and `/api/preview`. Write commands carry the warehouse-wide `revision`; a stale revision returns HTTP `409`. If the port is already in use, the command fails with a persistence error instead of silently picking another port. Press Ctrl-C to exit.
 
 ## Old-to-new migration
 

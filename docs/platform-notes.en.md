@@ -40,7 +40,7 @@ Mutating commands serialize through a warehouse-wide lock and recover an incompl
 
 ## Web UI networking
 
-`cfgfc web` binds to `127.0.0.1` only (default port `49631`), so the UI is reachable only from the same machine. The frontend is embedded in the single binary and makes no external network requests. The port can be changed with `--port`; an occupied port is a persistence failure, not an automatic fallback. Ctrl-C stops the server.
+`cfgfc web` binds to `127.0.0.1` only (default port `38031`), so the UI is reachable only from the same machine. The frontend is embedded in the single binary and makes no external network requests. The port can be changed with `--port`; an occupied port is a persistence failure, not an automatic fallback. Ctrl-C stops the server.
 
 ## Destructive behavior
 

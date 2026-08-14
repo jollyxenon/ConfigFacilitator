@@ -18,7 +18,7 @@
 - Reconciliation: per-Project atomic `sync` — removes Index metadata for disappeared Project/Column/Setting sources, rebuilds missing Index entries from the filesystem, recreates a missing `current_state.json` as empty (deleting stale `history.log`), replans following Currents; `sync --all` aggregates per-Project success/failure
 - Root selection: `root [Path]`, without content migration
 - Automation: stable `--json` envelopes and exit codes `0`, `2`-`6`
-- Local Web UI: `cfgfc web [--port 49631]` — embedded zero-dependency frontend over `/api/snapshot`, `/api/command`, `/api/preview`; mutating commands require the whole-warehouse `revision` (409 on conflict); apply commands accept `force` to bypass duplicate-target planning conflicts (later Column wins)
+- Local Web UI: `cfgfc web [--port 38031]` — embedded zero-dependency frontend over `/api/snapshot`, `/api/command`, `/api/preview`; mutating commands require the whole-warehouse `revision` (409 on conflict); apply commands accept `force` to bypass duplicate-target planning conflicts (later Column wins)
 - Shell completion: `completion <bash|zsh|fish|powershell>` with scoped canonical-name and alias completion
 - Removed without compatibility aliases: `new`, `switch`, `list`, `update`, flag-only apply, `-a`, `-f`, and `--force`
 

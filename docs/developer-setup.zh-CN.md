@@ -59,7 +59,7 @@ done
 8. 外部来源消失、sync 按 Project 隔离事务、索引与空 Current 重建、Mode/runtime 引用无法解析、apply/refresh 失败、不支持 prune 参数，以及通过资源命令显式重建；
 9. prepared 事务诊断、重启恢复、回滚和并发变更锁；
 10. 文件型与目录型目标所有权/漂移回收，并确认只处理已记录路径；
-11. Web UI 冒烟：启动 `cfgfc web`，打开 `http://127.0.0.1:49631`，演练 `/api/snapshot` 和一次 `/api/command` 写入，确认过期 `revision` 返回 `409`、端口被占用时报持久化错误、Ctrl-C 干净退出。
+11. Web UI 冒烟：启动 `cfgfc web`，打开 `http://127.0.0.1:38031`，演练 `/api/snapshot` 和一次 `/api/command` 写入，确认过期 `revision` 返回 `409`、端口被占用时报持久化错误、Ctrl-C 干净退出。
 
 主要生命周期不得通过直接编辑索引或来源来创建。只有明确测试 sync 互操作的部分才允许从外部删除文件；重建资源必须使用 cfgfc，不能声称 sync 会恢复已删除元数据。
 

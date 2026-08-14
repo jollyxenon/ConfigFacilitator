@@ -50,7 +50,7 @@ Never manually edit:
 | Activate the Current | `cfgfc apply mode ...` (Current follows the Mode), `cfgfc apply column ...` (independent Current) |
 | Replan active state | `cfgfc refresh`, `cfgfc refresh --all` (single-Column `--column` was removed) |
 | Current state | `cfgfc current show`, `cfgfc current column list/set/delete` |
-| Web UI | `cfgfc web [--port ...]` on `127.0.0.1` (default `49631`) |
+| Web UI | `cfgfc web [--port ...]` on `127.0.0.1` (default `38031`) |
 | External reconciliation | `cfgfc sync`, `cfgfc sync -p ...`, `cfgfc sync --all` |
 | Disappeared-resource reconciliation | `cfgfc sync`, which removes corresponding Index metadata immediately without cascading references |
 | Managed-state recovery | `cfgfc reset`, `cfgfc revert` |

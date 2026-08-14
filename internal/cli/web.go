@@ -22,12 +22,12 @@ func newWebCommand(context *commandContext) *cobra.Command {
 		Use:     "web",
 		Short:   "Serve the local Web UI",
 		Args:    usageArgs(cobra.NoArgs),
-		Example: "  cfgfc web\n  cfgfc web --port 49632",
+		Example: "  cfgfc web\n  cfgfc web --port 38032",
 		RunE: func(command *cobra.Command, args []string) error {
 			return runWeb(context, port)
 		},
 	}
-	command.Flags().IntVar(&port, "port", 49631, "Listen on this localhost port")
+	command.Flags().IntVar(&port, "port", 38031, "Listen on this localhost port")
 	return command
 }
 

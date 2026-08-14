@@ -24,7 +24,7 @@ ConfigFacilitator 通过面向资源的 CLI 命令完整管理可移植配置仓
 - 机器输出：`--json` 输出一个稳定的成功或错误对象；退出码见命令参考
 - Shell 补全：`cfgfc completion <bash|zsh|fish|powershell>`
 - 符号链接：Linux、macOS、原生 Windows 和 WSL 都只使用真实符号链接
-- Web UI：`cfgfc web` 在 `127.0.0.1:49631` 提供内嵌离线 UI
+- Web UI：`cfgfc web` 在 `127.0.0.1:38031` 提供内嵌离线 UI
 
 ## 推荐使用模型
 

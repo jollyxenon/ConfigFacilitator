@@ -59,7 +59,7 @@ For command/workflow changes, use a temporary HOME/profile and persist a separat
 8. external disappearance, per-Project sync transaction isolation, index and empty-Current rebuild, unresolved Mode/runtime references, apply/refresh failure, unsupported prune flags, and explicit resource recreation;
 9. prepared-transaction diagnostics, restart recovery, rollback, and concurrent mutation locking;
 10. file-backed and directory-backed target ownership/drift reclamation limited to recorded paths;
-11. Web UI smoke: start `cfgfc web`, open `http://127.0.0.1:49631`, exercise `/api/snapshot` and a `/api/command` write, confirm a stale `revision` returns `409`, a used port fails with a persistence error, and Ctrl-C exits cleanly.
+11. Web UI smoke: start `cfgfc web`, open `http://127.0.0.1:38031`, exercise `/api/snapshot` and a `/api/command` write, confirm a stale `revision` returns `409`, a used port fails with a persistence error, and Ctrl-C exits cleanly.
 
 Do not use direct index/source editing to build the primary lifecycle. External file removal is allowed only for the explicit sync interoperability portion; recreate resources through cfgfc rather than claiming sync restores deleted metadata.
 

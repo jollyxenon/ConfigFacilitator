@@ -243,7 +243,7 @@ cfgfc root [Path]
 cfgfc web [--port <Port>]
 ```
 
-`web` 在本机 `127.0.0.1` 上提供 Web UI（默认端口 `49631`）。前端嵌入单二进制，无需单独安装或联网；浏览器通过 `/api/snapshot`、`/api/command`、`/api/preview` 与后端交互。写命令携带全仓 `revision`，过期时返回 HTTP `409`。端口被占用时命令直接报错，不会悄悄换端口。按 Ctrl-C 退出。
+`web` 在本机 `127.0.0.1` 上提供 Web UI（默认端口 `38031`）。前端嵌入单二进制，无需单独安装或联网；浏览器通过 `/api/snapshot`、`/api/command`、`/api/preview` 与后端交互。写命令携带全仓 `revision`，过期时返回 HTTP `409`。端口被占用时命令直接报错，不会悄悄换端口。按 Ctrl-C 退出。
 
 ## 旧命令到新命令迁移
 

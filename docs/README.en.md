@@ -24,7 +24,7 @@ ConfigFacilitator manages a portable configuration warehouse entirely through re
 - Machine output: `--json` emits one stable success or error object; see the command reference for exit codes
 - Shell completion: `cfgfc completion <bash|zsh|fish|powershell>`
 - Symlinks: real symlinks only on Linux, macOS, native Windows, and WSL
-- Web UI: `cfgfc web` serves an embedded offline UI on `127.0.0.1:49631`
+- Web UI: `cfgfc web` serves an embedded offline UI on `127.0.0.1:38031`
 
 ## Recommended model
 
