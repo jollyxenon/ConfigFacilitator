@@ -171,6 +171,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
   color: var(--ink-muted);
 }
 .nav-group:hover { background: var(--surface-2); color: var(--ink); }
+.nav-group[aria-current="true"] { background: var(--signal-bg); color: var(--ink); }
 .nav-group .gname {
   flex: 1; font-family: var(--font-disp);
   font-size: 10.5px; font-weight: 600;

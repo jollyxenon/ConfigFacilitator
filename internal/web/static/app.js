@@ -18,6 +18,7 @@ const SCRATCH = "__scratch__";
 const S = {
   sel:    { seg: "mode", project: null, mode: null },   /* mode: null = (Current) */
   ptab:   "targets",
+  treeAll: false,  /* true = 侧栏只点了 COLUMN 分组头（资源树/编辑器列表展示全部 Column）；false = 侧栏点了具体 Column（只展示它） */
   res:    { column: null, setting: null },
   ed:     { column: null, setting: null, path: null },  /* path: 目录 Setting 内打开的相对文件 */
   draft:  {},        /* project -> (mode|"__scratch__") -> { col: {settings[],strategy} } */
@@ -239,8 +240,10 @@ function renderNav() {
       '<span class="nav-name">' + navLabel(p.displayName, name) + "</span>" +
       '<span class="nav-sub">' + nCol + "C · " + nSet + "S</span></button>";
     html += "<div class='nav-subtree'" + (ns.open ? "" : " hidden") + ">";
-    /* Column 分组：组头整行可展开 */
-    html += '<button class="nav-group" data-nav-group="cols|' + esc(name) + '" aria-expanded="' + ns.cols + '">' +
+    /* Column 分组：组头整行可展开；点击还把主区切到「全部 Column」资源视图 */
+    const allOn = S.sel.seg === "project" && S.sel.project === name && S.treeAll;
+    html += '<button class="nav-group" data-nav-group="cols|' + esc(name) + '" aria-expanded="' + ns.cols + '"' +
+      (allOn ? ' aria-current="true"' : "") + '>' +
       '<span class="gname">Column</span><span class="gid">' + nCol + "</span>" +
       '<span class="caret">' + (ns.cols ? "▾" : "▸") + "</span></button>";
     html += "<div class='nav-subtree'" + (ns.cols ? "" : " hidden") + ">" +
@@ -295,24 +298,32 @@ function renderCrumb() {
 }
 
 /* ================= Project 作用域 ================= */
-function renderTree() {
+/* 单个 Column 的树块：Column 头行 + 其全部 Setting 行（全部视图与单选视图共用） */
+function treeBlockFor(colName) {
   const p = cur();
-  const col = p && S.res.column && p.columns[S.res.column];
-  if (!col) { $("#tree").innerHTML = "<div class='empty'>从侧边栏选择一个 Column。</div>"; return; }
-  /* 资源视图聚焦当前选中的 Column：只渲染它（及其 Setting），全部 Column 在侧边栏浏览 */
-  const colName = S.res.column;
-  const colOn = S.res.setting === null;
+  const col = p.columns[colName];
   const sets = Object.entries(col.settings || {}).map(([setName, set]) => {
     const [bc, bt] = settingState(S.sel.project, colName, setName);
     return '<button class="tree-set" data-column="' + esc(colName) + '" data-setting="' + esc(setName) + '"' +
-      ' aria-current="' + (S.res.setting === setName) + '">' +
+      ' aria-current="' + (S.res.column === colName && S.res.setting === setName) + '">' +
       '<span class="glyph">' + (set.kind === "directory" ? "▤" : "▪") + "</span>" +
       '<span style="flex:1">' + esc(setName) + "</span>" + badge(bc, bt) + "</button>";
   }).join("");
-  $("#tree").innerHTML =
-    '<button class="tree-col" data-column="' + esc(colName) + '" aria-current="' + colOn + '">' +
+  return '<button class="tree-col" data-column="' + esc(colName) + '" aria-current="' +
+    (S.res.column === colName && S.res.setting === null) + '">' +
     '<span class="glyph">▾</span><span style="flex:1" class="cn">' + esc(col.displayName || colName) + "</span>" +
     '<span class="nav-sub">' + col.targetNumber + " target</span></button>" + sets;
+}
+
+function renderTree() {
+  const p = cur();
+  if (!p) { $("#tree").innerHTML = "<div class='empty'>从侧边栏选择一个 Column。</div>"; return; }
+  /* 侧栏只点了 COLUMN 分组头 → 展示全部 Column 及其 Setting；侧栏点了具体 Column → 只展示它 */
+  const colNames = S.treeAll
+    ? Object.keys(p.columns || {})
+    : (S.res.column && p.columns[S.res.column] ? [S.res.column] : []);
+  if (!colNames.length) { $("#tree").innerHTML = "<div class='empty'>从侧边栏选择一个 Column。</div>"; return; }
+  $("#tree").innerHTML = colNames.map(treeBlockFor).join("");
 }
 
 function renderResPanel() {
@@ -388,7 +399,12 @@ function renderResPanel() {
 
 function renderEdList() {
   const p = cur();
-  $("#edList").innerHTML = !p ? "" : Object.entries(p.columns || {}).map(([colName, col]) =>
+  if (!p) { $("#edList").innerHTML = ""; return; }
+  /* 与资源树同一作用域：全部 Column（侧栏只点了 COLUMN）或当前 Column（侧栏点了具体 Column） */
+  const cols = S.treeAll
+    ? Object.entries(p.columns || {})
+    : (S.res.column && p.columns[S.res.column] ? [[S.res.column, p.columns[S.res.column]]] : []);
+  $("#edList").innerHTML = cols.map(([colName, col]) =>
     "<div class='ed-group'>" + esc(colName) + "</div>" +
     Object.entries(col.settings || {}).map(([setName, set]) => {
       const info = S.content[S.sel.project] && S.content[S.sel.project][colName + "|" + setName];
@@ -973,9 +989,7 @@ function focusCreatedResource(kind, project, column, name) {
   }
   renderAll();
   if (kind === "setting") {
-    $$('[data-ptab]').forEach(tab => tab.setAttribute("aria-selected", String(tab.dataset.ptab === "editor")));
-    $("#ptab-targets").hidden = true;
-    $("#ptab-editor").hidden = false;
+    switchPtab("editor");
     loadContent();
   }
   schedulePreview();
@@ -1501,18 +1515,40 @@ async function runDelete() {
   log(ctx.label + " 删除被拒绝（" + err.code + "）：" + (err.message || "未知错误") + "，请在对话框勾选授权后重试");
 }
 
+/* ================= 标签切换（Column 与 Setting / 内容编辑） ================= */
+function switchPtab(name) {
+  S.ptab = name;
+  $$("[data-ptab]").forEach(x => x.setAttribute("aria-selected", String(x.dataset.ptab === name)));
+  $("#ptab-targets").hidden = name !== "targets";
+  $("#ptab-editor").hidden = name !== "editor";
+}
+
 /* ================= 事件 ================= */
 document.addEventListener("click", e => {
   const t = e.target;
 
-  /* Column / Mode 分组头：整行点击展开/收起 */
+  /* Column / Mode 分组头：整行点击展开/收起；COLUMN 分组头还会把主区切到「全部 Column」资源视图 */
   const grp = t.closest("[data-nav-group]");
   if (grp) {
     const [kind, project] = grp.dataset.navGroup.split("|");
     const ns = S.navOpen[project] || (S.navOpen[project] = { open: false, cols: false, modes: false });
-    if (kind === "cols") ns.cols = !ns.cols;
-    else ns.modes = !ns.modes;
-    renderNav();
+    if (kind === "cols") {
+      ns.cols = !ns.cols;
+      const alreadyAll = S.sel.seg === "project" && S.sel.project === project && S.treeAll;
+      if (!alreadyAll) {
+        S.sel = { seg: "project", project, mode: undefined };
+        S.treeAll = true;
+        S.res = { column: firstColumnOf(P(project)), setting: null };
+        S.ed = firstSettingOf(P(project));
+        switchPtab("targets");
+        renderAll(); schedulePreview();
+      } else {
+        renderNav();
+      }
+    } else {
+      ns.modes = !ns.modes;
+      renderNav();
+    }
     return;
   }
 
@@ -1532,10 +1568,12 @@ document.addEventListener("click", e => {
       S.res = { column: firstColumnOf(P(project)), setting: null };
       S.ed = firstSettingOf(P(project));
     } else if (kind === "column") {
-      /* 侧栏 Column 条目：跳转到 Project 资源视图并选中该 Column */
+      /* 侧栏 Column 条目：跳转到 Project 资源视图，只展示该 Column 及其 Setting */
       S.sel = { seg: "project", project, mode: undefined };
+      S.treeAll = false;
       S.res = { column: nav.dataset.column, setting: null };
-      S.ed = firstSettingOf(P(project));
+      const col = P(project).columns[nav.dataset.column];
+      S.ed = { column: nav.dataset.column, setting: col ? Object.keys(col.settings || {})[0] || null : null, path: null };
     } else {
       S.sel = { seg: "mode", project, mode: nav.dataset.mode !== undefined ? nav.dataset.mode : null };
     }
@@ -1549,10 +1587,7 @@ document.addEventListener("click", e => {
 
   const ptab = t.closest("[data-ptab]");
   if (ptab) {
-    S.ptab = ptab.dataset.ptab;
-    $$("[data-ptab]").forEach(x => x.setAttribute("aria-selected", String(x === ptab)));
-    $("#ptab-targets").hidden = S.ptab !== "targets";
-    $("#ptab-editor").hidden = S.ptab !== "editor";
+    switchPtab(ptab.dataset.ptab);
     if (S.ptab === "editor" && !contentInfo().loaded) loadContent();
     return;
   }
